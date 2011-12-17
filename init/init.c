@@ -100,6 +100,7 @@ static time_t process_needs_restart;
 
 static const char *ENV[32];
 
+static unsigned lpm_bootmode = 0;
 static unsigned charging_mode = 0;
 
 /* add_environment - add "key=value" to the current environment */
@@ -737,6 +738,12 @@ static void import_kernel_nv(char *name, int for_emulator)
 
     if (!strcmp(name,"qemu")) {
         strlcpy(qemu, value, sizeof(qemu));
+#ifdef BOARD_LPM_BOOT_ARGUMENT_NAME
+    } else if (!strcmp(name,BOARD_LPM_BOOT_ARGUMENT_NAME)) {
+        if (!strcmp(value,BOARD_LPM_BOOT_ARGUMENT_VALUE)) {
+            lpm_bootmode = 1;
+        }
+#endif
     } else if (!strcmp(name,BOARD_CHARGING_CMDLINE_NAME)) {
         strlcpy(battchg_pause, value, sizeof(battchg_pause));
     } else if (!strncmp(name, "androidboot.", 12) && name_len > 12) {
@@ -1015,6 +1022,25 @@ static void selinux_initialize(void)
     security_setenforce(is_enforcing);
 }
 
+static int charging_mode_booting(void)
+{
+#ifndef BOARD_CHARGING_MODE_BOOTING_LPM
+    return lpm_bootmode;
+#else
+    int f;
+    char cmb;
+    f = open(BOARD_CHARGING_MODE_BOOTING_LPM, O_RDONLY);
+    if (f < 0)
+        return 0;
+
+    if (1 != read(f, (void *)&cmb,1))
+        return 0;
+
+    close(f);
+    return ('1' == cmb);
+#endif
+}
+
 int main(int argc, char **argv)
 {
     int fd_count = 0;
@@ -1088,13 +1114,18 @@ int main(int argc, char **argv)
 
     is_ffbm = !strncmp(bootmode, "ffbm", 4);
     if (!is_ffbm)
-        is_charger = !strcmp(bootmode, "charger");
+        is_charger = !strcmp(bootmode, "charger") || charging_mode_booting();
 
     INFO("property init\n");
     property_load_boot_defaults();
 
     INFO("reading config file\n");
-    init_parse_config_file("/init.rc");
+
+    if (!charging_mode_booting())
+       init_parse_config_file("/init.rc");
+    else
+       init_parse_config_file("/lpm.rc");
+
 
     action_for_each_trigger("early-init", action_add_queue_tail);
 
