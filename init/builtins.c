@@ -15,6 +15,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -51,6 +52,7 @@
 int add_environment(const char *name, const char *value);
 
 extern int init_module(void *, unsigned long, const char *);
+extern int init_export_rc_file(const char *);
 
 static int write_file(const char *path, const char *value)
 {
@@ -232,6 +234,23 @@ int do_class_reset(int nargs, char **args)
 {
     service_for_each_class(args[1], service_reset);
     return 0;
+}
+
+int do_export_rc(int nargs, char **args)
+{
+        /* Import environments from a specified file.
+         * The file content is of the form:
+         *     export <env name> <value>
+         * e.g.
+         *     export LD_PRELOAD /system/lib/xyz.so
+         *     export PROMPT abcde
+         * Differences between "import" and "export_rc":
+         * 1) export_rc can only import environment vars
+         * 2) export_rc is performed when the command
+         *    is executed rather than at the time the
+         *    command is parsed (i.e. "import")
+         */
+    return init_export_rc_file(args[1]);
 }
 
 int do_domainname(int nargs, char **args)
