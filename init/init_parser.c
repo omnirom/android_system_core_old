@@ -48,6 +48,8 @@ static void parse_line_service(struct parse_state *state, int nargs, char **args
 static void *parse_action(struct parse_state *state, int nargs, char **args);
 static void parse_line_action(struct parse_state *state, int nargs, char **args);
 
+void add_environment(const char *name, const char *value);
+
 #define SECTION 0x01
 #define COMMAND 0x02
 #define OPTION  0x04
@@ -98,6 +100,7 @@ static int lookup_keyword(const char *s)
         if (!strcmp(s, "nable")) return K_enable;
         if (!strcmp(s, "xec")) return K_exec;
         if (!strcmp(s, "xport")) return K_export;
+        if (!strcmp(s, "xport_rc")) return K_export_rc;
         break;
     case 'g':
         if (!strcmp(s, "roup")) return K_group;
@@ -409,6 +412,63 @@ int init_parse_config_file(const char *fn)
 
     parse_config(fn, data);
     DUMP();
+    return 0;
+}
+
+typedef enum {
+    ENV_NOTREADY,
+    ENV_NAME,
+    ENV_VALUE,
+    ENV_WAITFORNEXTLINE,
+} export_rc_state_t;
+
+int init_export_rc_file(const char *fn)
+{
+    char *data;
+    struct parse_state state;
+    char *env = NULL;
+    export_rc_state_t env_state = ENV_NOTREADY;
+
+    data = read_file(fn, 0);
+    if (!data) return -1;
+
+    state.filename = fn;
+    state.line = 0;
+    state.ptr = data;
+    state.nexttoken = 0;
+    state.parse_line = parse_line_no_op;
+    for (;;) {
+        switch (next_token(&state)) {
+        case T_EOF:
+            free(data);
+            return 0;
+        case T_NEWLINE:
+            env_state = ENV_NOTREADY;
+            break;
+        case T_TEXT:
+            switch (env_state) {
+            case ENV_NOTREADY:
+                if (strcmp(state.text, "export") == 0) {
+                    env_state = ENV_NAME;
+                } else {
+                    env_state = ENV_WAITFORNEXTLINE;
+                }
+                break;
+            case ENV_NAME:
+                env = state.text;
+                env_state = ENV_VALUE;
+                break;
+            case ENV_VALUE:
+                add_environment(env, state.text);
+                env_state = ENV_WAITFORNEXTLINE;
+                break;
+            default:
+                break;
+            }
+            break;
+        }
+    }
+
     return 0;
 }
 
