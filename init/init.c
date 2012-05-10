@@ -1071,6 +1071,12 @@ int main(int argc, char **argv)
     else
        init_parse_config_file("/lpm.rc");
 
+    /* Check for an emmc initialisation file and read if present */
+    if (emmc_boot && access("/init.emmc.rc", R_OK) == 0) {
+        INFO("Reading emmc config file");
+            init_parse_config_file("/init.emmc.rc");
+    }
+
     /* Check for a target specific initialisation file and read if present */
     if (access("/init.target.rc", R_OK) == 0) {
         INFO("Reading target specific config file");
