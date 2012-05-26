@@ -27,6 +27,10 @@ ifneq (,$(filter userdebug eng,$(TARGET_BUILD_VARIANT)))
 LOCAL_CFLAGS += -DALLOW_LOCAL_PROP_OVERRIDE=1
 endif
 
+ifeq ($(TARGET_NO_INITLOGO),true)
+LOCAL_CFLAGS += -DNO_INITLOGO
+endif
+
 SYSTEM_CORE_INIT_DEFINES := BOARD_CHARGING_MODE_BOOTING_LPM
 
 $(foreach system_core_init_define,$(SYSTEM_CORE_INIT_DEFINES), \
