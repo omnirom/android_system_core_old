@@ -49,6 +49,8 @@
 #include "util.h"
 #include "log.h"
 
+#include <device_perms.h>
+
 #define PERSISTENT_PROPERTY_DIR  "/data/property"
 
 static int persistent_properties_loaded = 0;
@@ -57,6 +59,7 @@ static int property_area_inited = 0;
 static int property_set_fd = -1;
 
 /* White list of permissions for setting property services. */
+#ifndef PROPERTY_PERMS
 struct {
     const char *prefix;
     unsigned int uid;
@@ -91,16 +94,20 @@ struct {
     { "service.adb.tcp.port", AID_SHELL,    0 },
     { "persist.sys.",     AID_SYSTEM,   0 },
     { "persist.service.", AID_SYSTEM,   0 },
+    { "persist.service.", AID_RADIO,    0 },
     { "persist.security.", AID_SYSTEM,   0 },
     { "persist.service.bdroid.", AID_BLUETOOTH,   0 },
     { "selinux."         , AID_SYSTEM,   0 },
     { NULL, 0, 0 }
 };
+/* Avoid extending this array. Check device_perms.h */
+#endif
 
 /*
  * White list of UID that are allowed to start/stop services.
  * Currently there are no user apps that require.
  */
+#ifndef CONTROL_PERMS
 struct {
     const char *service;
     unsigned int uid;
@@ -110,6 +117,8 @@ struct {
     { "ril-daemon",AID_RADIO, AID_RADIO },
      {NULL, 0, 0 }
 };
+/* Avoid extending this array. Check device_perms.h */
+#endif
 
 typedef struct {
     size_t size;
