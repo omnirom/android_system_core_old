@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2011 The Android Open Source Project
+ * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -141,6 +142,12 @@ typedef enum {
     AUDIO_FORMAT_HE_AAC_V1           = 0x05000000UL,
     AUDIO_FORMAT_HE_AAC_V2           = 0x06000000UL,
     AUDIO_FORMAT_VORBIS              = 0x07000000UL,
+#ifdef QCOM_HARDWARE
+    AUDIO_FORMAT_EVRC                = 0x08000000UL,
+    AUDIO_FORMAT_QCELP               = 0x09000000UL,
+    AUDIO_FORMAT_EVRCB               = 0x0a000000UL,
+    AUDIO_FORMAT_EVRCWB              = 0x0b000000UL,
+#endif
     AUDIO_FORMAT_MAIN_MASK           = 0xFF000000UL,
     AUDIO_FORMAT_SUB_MASK            = 0x00FFFFFFUL,
 
@@ -236,10 +243,29 @@ enum {
     AUDIO_CHANNEL_IN_Z_AXIS          = 0x2000,
     AUDIO_CHANNEL_IN_VOICE_UPLINK    = 0x4000,
     AUDIO_CHANNEL_IN_VOICE_DNLINK    = 0x8000,
+#ifdef QCOM_HARDWARE
+    AUDIO_CHANNEL_IN_FRONT_LEFT      = 0x10000,
+    AUDIO_CHANNEL_IN_FRONT_RIGHT     = 0x20000,
+    AUDIO_CHANNEL_IN_FRONT_CENTER    = 0x40000,
+    AUDIO_CHANNEL_IN_LOW_FREQUENCY   = 0x80000,
+    AUDIO_CHANNEL_IN_BACK_LEFT       = 0x100000,
+    AUDIO_CHANNEL_IN_BACK_RIGHT      = 0x200000,
+#endif
 
     AUDIO_CHANNEL_IN_MONO   = AUDIO_CHANNEL_IN_FRONT,
     AUDIO_CHANNEL_IN_STEREO = (AUDIO_CHANNEL_IN_LEFT | AUDIO_CHANNEL_IN_RIGHT),
     AUDIO_CHANNEL_IN_FRONT_BACK = (AUDIO_CHANNEL_IN_FRONT | AUDIO_CHANNEL_IN_BACK),
+#ifdef QCOM_HARDWARE
+    AUDIO_CHANNEL_IN_VOICE_UPLINK_MONO = (AUDIO_CHANNEL_IN_VOICE_UPLINK | AUDIO_CHANNEL_IN_MONO),
+    AUDIO_CHANNEL_IN_VOICE_DNLINK_MONO = (AUDIO_CHANNEL_IN_VOICE_DNLINK | AUDIO_CHANNEL_IN_MONO),
+    AUDIO_CHANNEL_IN_VOICE_CALL_MONO   = (AUDIO_CHANNEL_IN_VOICE_UPLINK_MONO | AUDIO_CHANNEL_IN_VOICE_DNLINK_MONO),
+    AUDIO_CHANNEL_IN_5POINT1 = (AUDIO_CHANNEL_IN_FRONT_LEFT |
+                               AUDIO_CHANNEL_IN_FRONT_RIGHT |
+                               AUDIO_CHANNEL_IN_FRONT_CENTER |
+                               AUDIO_CHANNEL_IN_LOW_FREQUENCY |
+                               AUDIO_CHANNEL_IN_BACK_LEFT |
+                               AUDIO_CHANNEL_IN_BACK_RIGHT),
+#endif
     AUDIO_CHANNEL_IN_ALL    = (AUDIO_CHANNEL_IN_LEFT |
                                AUDIO_CHANNEL_IN_RIGHT |
                                AUDIO_CHANNEL_IN_FRONT |
@@ -252,6 +278,9 @@ enum {
                                AUDIO_CHANNEL_IN_X_AXIS |
                                AUDIO_CHANNEL_IN_Y_AXIS |
                                AUDIO_CHANNEL_IN_Z_AXIS |
+#ifdef QCOM_HARDWARE
+                               AUDIO_CHANNEL_IN_5POINT1 |
+#endif
                                AUDIO_CHANNEL_IN_VOICE_UPLINK |
                                AUDIO_CHANNEL_IN_VOICE_DNLINK),
 };
@@ -383,7 +412,12 @@ typedef enum {
                                         // controls related to voice calls.
     AUDIO_OUTPUT_FLAG_FAST = 0x4,       // output supports "fast tracks",
                                         // defined elsewhere
-    AUDIO_OUTPUT_FLAG_DEEP_BUFFER = 0x8 // use deep audio buffers
+    AUDIO_OUTPUT_FLAG_DEEP_BUFFER = 0x8,// use deep audio buffers
+#ifdef QCOM_HARDWARE
+//Qualcomm Flags
+    AUDIO_OUTPUT_FLAG_LPA = 0x1000,     // use LPA
+    AUDIO_OUTPUT_FLAG_TUNNEL = 0x2000   // use Tunnel
+#endif
 } audio_output_flags_t;
 
 static inline bool audio_is_output_device(audio_devices_t device)
@@ -493,7 +527,7 @@ static inline audio_channel_mask_t audio_channel_out_mask_from_count(uint32_t ch
     }
 }
 
-/* Similar to above, but for input.  Currently handles only mono and stereo. */
+/* Similar to above, but for input.  Currently handles mono and stereo and 5.1 input. */
 static inline audio_channel_mask_t audio_channel_in_mask_from_count(uint32_t channel_count)
 {
     switch (channel_count) {
@@ -501,6 +535,10 @@ static inline audio_channel_mask_t audio_channel_in_mask_from_count(uint32_t cha
         return AUDIO_CHANNEL_IN_MONO;
     case 2:
         return AUDIO_CHANNEL_IN_STEREO;
+#ifdef QCOM_HARDWARE
+    case 6:
+        return AUDIO_CHANNEL_IN_5POINT1;
+#endif
     default:
         return 0;
     }
@@ -521,6 +559,12 @@ static inline bool audio_is_valid_format(audio_format_t format)
     case AUDIO_FORMAT_HE_AAC_V1:
     case AUDIO_FORMAT_HE_AAC_V2:
     case AUDIO_FORMAT_VORBIS:
+#ifdef QCOM_HARDWARE
+    case AUDIO_FORMAT_QCELP:
+    case AUDIO_FORMAT_EVRC:
+    case AUDIO_FORMAT_EVRCB:
+    case AUDIO_FORMAT_EVRCWB:
+#endif
         return true;
     default:
         return false;
