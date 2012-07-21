@@ -894,6 +894,9 @@ static void process_key(struct charger *charger, int code, int64_t now)
                 kick_animation(charger->batt_anim);
             }
         }
+    } else {
+        if (key->pending)
+            kick_animation(charger->batt_anim);
     }
 
     key->pending = false;
@@ -902,6 +905,7 @@ static void process_key(struct charger *charger, int code, int64_t now)
 static void handle_input_state(struct charger *charger, int64_t now)
 {
     process_key(charger, KEY_POWER, now);
+    process_key(charger, KEY_HOME, now);
 
     if (charger->next_key_check != -1 && now > charger->next_key_check)
         charger->next_key_check = -1;
