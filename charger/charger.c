@@ -79,6 +79,8 @@
 #include <cutils/log.h>
 #endif
 
+#define SYS_POWER_STATE "/sys/power/state"
+
 struct key_state {
     bool pending;
     bool down;
@@ -299,6 +301,28 @@ static int read_file_int(const char *path, int *val)
     return 0;
 
 err:
+    return -1;
+}
+
+static int write_file(const char *path, char *buf, size_t sz)
+{
+    int fd;
+    size_t cnt;
+
+    fd = open(path, O_WRONLY, 0);
+    if (fd < 0)
+        goto err;
+
+    cnt = write(fd, buf, sz);
+    if (cnt <= 0)
+        goto err;
+
+    close(fd);
+    return cnt;
+
+err:
+    if (fd >= 0)
+        close(fd);
     return -1;
 }
 
@@ -693,6 +717,7 @@ static void redraw_screen(struct charger *charger)
 
 static void kick_animation(struct animation *anim)
 {
+    write_file(SYS_POWER_STATE, "on", strlen("on"));
     anim->run = true;
 }
 
@@ -717,6 +742,7 @@ static void update_screen_state(struct charger *charger, int64_t now)
         reset_animation(batt_anim);
         charger->next_screen_transition = -1;
         gr_fb_blank(true);
+        write_file(SYS_POWER_STATE, "mem", strlen("mem"));
         LOGV("[%lld] animation done\n", now);
         if (charger->num_supplies_online > 0)
             request_suspend(true);
