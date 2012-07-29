@@ -72,6 +72,16 @@ typedef enum {
     AUDIO_SOURCE_MAX                 = AUDIO_SOURCE_CNT - 1,
 } audio_source_t;
 
+#ifdef QCOM_HARDWARE
+typedef enum {
+    QCOM_AUDIO_SOURCE_DEFAULT                       = 0x100,
+    QCOM_AUDIO_SOURCE_DIGITAL_BROADCAST_MAIN_AD     = 0x101,
+    QCOM_AUDIO_SOURCE_DIGITAL_BROADCAST_MAIN_ONLY   = 0x104,
+    QCOM_AUDIO_SOURCE_ANALOG_BROADCAST              = 0x102,
+    QCOM_AUDIO_SOURCE_HDMI_IN                       = 0x103,
+} qcom_audio_source_t;
+#endif
+
 /* special audio session values
  * (XXX: should this be living in the audio effects land?)
  */
@@ -145,8 +155,15 @@ typedef enum {
 #ifdef QCOM_HARDWARE
     AUDIO_FORMAT_EVRC                = 0x08000000UL,
     AUDIO_FORMAT_QCELP               = 0x09000000UL,
-    AUDIO_FORMAT_EVRCB               = 0x0a000000UL,
-    AUDIO_FORMAT_EVRCWB              = 0x0b000000UL,
+    AUDIO_FORMAT_AC3                 = 0x0a000000UL,
+    AUDIO_FORMAT_AC3_PLUS            = 0x0b000000UL,
+    AUDIO_FORMAT_DTS                 = 0x0c000000UL,
+    AUDIO_FORMAT_WMA                 = 0x0d000000UL,
+    AUDIO_FORMAT_WMA_PRO             = 0x0e000000UL,
+    AUDIO_FORMAT_AAC_ADIF            = 0x0f000000UL,
+    AUDIO_FORMAT_EVRCB               = 0x10000000UL,
+    AUDIO_FORMAT_EVRCWB              = 0x11000000UL,
+    AUDIO_FORMAT_EAC3                = 0x12000000UL,
 #endif
     AUDIO_FORMAT_MAIN_MASK           = 0xFF000000UL,
     AUDIO_FORMAT_SUB_MASK            = 0x00FFFFFFUL,
@@ -194,6 +211,10 @@ enum {
                                   AUDIO_CHANNEL_OUT_FRONT_RIGHT |
                                   AUDIO_CHANNEL_OUT_FRONT_CENTER |
                                   AUDIO_CHANNEL_OUT_BACK_CENTER),
+#ifdef QCOM_HARDWARE
+    AUDIO_CHANNEL_OUT_PENTA =    (AUDIO_CHANNEL_OUT_QUAD |
+                                  AUDIO_CHANNEL_OUT_FRONT_CENTER),
+#endif
     AUDIO_CHANNEL_OUT_5POINT1  = (AUDIO_CHANNEL_OUT_FRONT_LEFT |
                                   AUDIO_CHANNEL_OUT_FRONT_RIGHT |
                                   AUDIO_CHANNEL_OUT_FRONT_CENTER |
@@ -567,6 +588,12 @@ static inline bool audio_is_valid_format(audio_format_t format)
     case AUDIO_FORMAT_EVRC:
     case AUDIO_FORMAT_EVRCB:
     case AUDIO_FORMAT_EVRCWB:
+    case AUDIO_FORMAT_AC3:
+    case AUDIO_FORMAT_EAC3:
+    case AUDIO_FORMAT_AAC_ADIF:
+    case AUDIO_FORMAT_WMA:
+    case AUDIO_FORMAT_WMA_PRO:
+    case AUDIO_FORMAT_DTS:
 #endif
         return true;
     default:
