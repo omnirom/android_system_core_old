@@ -416,7 +416,10 @@ typedef enum {
 #ifdef QCOM_HARDWARE
 //Qualcomm Flags
     AUDIO_OUTPUT_FLAG_LPA = 0x1000,     // use LPA
-    AUDIO_OUTPUT_FLAG_TUNNEL = 0x2000   // use Tunnel
+    AUDIO_OUTPUT_FLAG_TUNNEL = 0x2000,   // use Tunnel
+    AUDIO_OUTPUT_FLAG_VOIP_RX = 0x4000   // use this flag in combination with DIRECT to
+                                         // indicate HAL to activate EC & NS
+                                         // path for VOIP calls
 #endif
 } audio_output_flags_t;
 
