@@ -89,7 +89,7 @@
 /sys/devices/virtual/usb_composite/*   enable      0664  root   system
 
 /sys/devices/system/cpu/cpufreq ondemand/boostfreq   0664    system  system
-/sys/devices/system/cpu/cpufreq ondemand/boostpulse  0666    system  system
+/sys/devices/system/cpu/cpufreq ondemand/boostpulse  0664    system  system
 /sys/devices/system/cpu/cpufreq ondemand/boosttime   0664    system  system
 /sys/devices/system/cpu/cpufreq ondemand/sampling_rate   0664    system  system
 /sys/devices/system/cpu/cpufreq ondemand/io_is_busy      0664    system  system
@@ -97,7 +97,7 @@
 /sys/devices/system/cpu/cpufreq ondemand/powersave_bias  0664    system  system
 /sys/devices/system/cpu/cpufreq ondemand/sampling_down_factor    0664    system  system
 
-/sys/devices/system/cpu/cpufreq interactive/boostpulse  0666    system  system
+/sys/devices/system/cpu/cpufreq interactive/boostpulse  0664    system  system
 /sys/devices/system/cpu/cpufreq interactive/timer_rate  0664    system  system
 /sys/devices/system/cpu/cpufreq interactive/min_sample_rate 0664    system  system
 /sys/devices/system/cpu/cpufreq interactive/hispeed_freq    0664    system  system
