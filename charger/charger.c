@@ -717,7 +717,9 @@ static void redraw_screen(struct charger *charger)
 
 static void kick_animation(struct animation *anim)
 {
+#ifdef ALLOW_SUSPEND_IN_CHARGER
     write_file(SYS_POWER_STATE, "on", strlen("on"));
+#endif
     anim->run = true;
 }
 
@@ -742,7 +744,9 @@ static void update_screen_state(struct charger *charger, int64_t now)
         reset_animation(batt_anim);
         charger->next_screen_transition = -1;
         gr_fb_blank(true);
+#ifdef ALLOW_SUSPEND_IN_CHARGER
         write_file(SYS_POWER_STATE, "mem", strlen("mem"));
+#endif
         LOGV("[%lld] animation done\n", now);
         if (charger->num_supplies_online > 0)
             request_suspend(true);
