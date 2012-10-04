@@ -72,6 +72,23 @@ int __android_log_dev_available(void)
     return (g_log_status == kLogAvailable);
 }
 
+#ifdef HTCLOG
+signed int __htclog_read_masks(char *buf, signed int len)
+{
+    return 0;
+}
+
+int __htclog_init_mask(const char *a1, unsigned int a2, int a3)
+{
+    return 0;
+}
+
+int __htclog_print_private(int a1, const char *a2, const char *fmt, ...)
+{
+    return 0;
+}
+#endif
+
 static int __write_to_log_null(log_id_t log_fd, struct iovec *vec, size_t nr)
 {
     return -1;
