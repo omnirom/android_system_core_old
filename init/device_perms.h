@@ -27,3 +27,13 @@ struct {
      {NULL, 0, 0 }
 };
 */
+
+// Alternatively you can append to the existing property_perms and/or
+// control_perms structs with the following:
+/*
+#define CONTROL_PERMS_APPEND \
+    { "rawip_vsnet1",AID_RADIO, AID_RADIO }, \
+    { "rawip_vsnet2",AID_RADIO, AID_RADIO }, \
+    { "rawip_vsnet3",AID_RADIO, AID_RADIO }, \
+    { "rawip_vsnet4",AID_RADIO, AID_RADIO },
+*/
