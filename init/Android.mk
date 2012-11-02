@@ -39,6 +39,10 @@ SYSTEM_CORE_INIT_DEFINES := BOARD_CHARGING_MODE_BOOTING_LPM \
     BOARD_LPM_BOOT_ARGUMENT_NAME \
     BOARD_LPM_BOOT_ARGUMENT_VALUE
 
+ifneq ($(TARGET_NR_SVC_SUPP_GIDS),)
+LOCAL_CFLAGS += -DNR_SVC_SUPP_GIDS=$(TARGET_NR_SVC_SUPP_GIDS)
+endif
+
 $(foreach system_core_init_define,$(SYSTEM_CORE_INIT_DEFINES), \
   $(if $($(system_core_init_define)), \
     $(eval LOCAL_CFLAGS += -D$(system_core_init_define)=\"$($(system_core_init_define))\") \
