@@ -73,7 +73,9 @@ struct svcenvinfo {
                                  so it can be restarted with its class */
 #define SVC_RC_DISABLED 0x80  /* Remember if the disabled flag was set in the rc script */
 
+#ifndef NR_SVC_SUPP_GIDS
 #define NR_SVC_SUPP_GIDS 12    /* twelve supplementary groups */
+#endif
 
 #define COMMAND_RETRY_TIMEOUT 5
 
