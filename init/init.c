@@ -705,15 +705,14 @@ static void import_kernel_nv(char *name, int for_emulator)
 
     if (!strcmp(name,"qemu")) {
         strlcpy(qemu, value, sizeof(qemu));
-<<<<<<< ours
     } else if (!strcmp(name,BOARD_CHARGING_CMDLINE_NAME)) {
         strlcpy(battchg_pause, value, sizeof(battchg_pause));
-=======
+#ifdef WANTS_EMMC_BOOT
     } else if (!strcmp(name,"androidboot.emmc")) {
         if (!strcmp(value,"true")) {
             emmc_boot = 1;
         }
->>>>>>> theirs
+#endif
     } else if (!strncmp(name, "androidboot.", 12) && name_len > 12) {
         const char *boot_prop_name = name + 12;
         char prop[PROP_NAME_MAX];
