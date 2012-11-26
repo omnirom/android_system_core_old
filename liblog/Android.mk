@@ -70,19 +70,22 @@ endif
 LOCAL_MULTILIB := both
 include $(BUILD_HOST_SHARED_LIBRARY)
 
+ifeq ($(TARGET_USES_MOTOROLA_LOG),true)
+LIBLOG_CFLAGS := -DMOTOROLA_LOG
+endif
 
 # Shared and static library for target
 # ========================================================
 include $(CLEAR_VARS)
 LOCAL_MODULE := liblog
 LOCAL_SRC_FILES := $(liblog_target_sources)
-LOCAL_CFLAGS := -Werror
+LOCAL_CFLAGS := $(LIBLOG_CFLAGS) -Werror
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := liblog
 LOCAL_WHOLE_STATIC_LIBRARIES := liblog
-LOCAL_CFLAGS := -Werror
+LOCAL_CFLAGS := $(LIBLOG_CFLAGS) -Werror
 include $(BUILD_SHARED_LIBRARY)
 
 include $(call first-makefiles-under,$(LOCAL_PATH))
