@@ -64,15 +64,20 @@ LOCAL_LDLIBS := -lpthread
 LOCAL_CFLAGS := -DFAKE_LOG_DEVICE=1 -m64
 include $(BUILD_HOST_STATIC_LIBRARY)
 
+ifeq ($(TARGET_USES_MOTOROLA_LOG),true)
+LIBLOG_CFLAGS := -DMOTOROLA_LOG
+endif
 
 # Shared and static library for target
 # ========================================================
 include $(CLEAR_VARS)
+LOCAL_CFLAGS += $(LIBLOG_CFLAGS)
 LOCAL_MODULE := liblog
 LOCAL_SRC_FILES := $(liblog_sources)
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
+LOCAL_CFLAGS += $(LIBLOG_CFLAGS)
 LOCAL_MODULE := liblog
 LOCAL_WHOLE_STATIC_LIBRARIES := liblog
 include $(BUILD_SHARED_LIBRARY)
