@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2011 The Android Open Source Project
- * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -164,6 +164,9 @@ typedef enum {
     AUDIO_FORMAT_EVRCB               = 0x10000000UL,
     AUDIO_FORMAT_EVRCWB              = 0x11000000UL,
     AUDIO_FORMAT_EAC3                = 0x12000000UL,
+    AUDIO_FORMAT_DTS_LBR             = 0x13000000UL,
+    AUDIO_FORMAT_AMR_WB_PLUS         = 0x14000000UL,
+    AUDIO_FORMAT_MP2                 = 0x15000000UL,
 #endif
     AUDIO_FORMAT_MAIN_MASK           = 0xFF000000UL,
     AUDIO_FORMAT_SUB_MASK            = 0x00FFFFFFUL,
@@ -203,6 +206,11 @@ enum {
     AUDIO_CHANNEL_OUT_MONO     = AUDIO_CHANNEL_OUT_FRONT_LEFT,
     AUDIO_CHANNEL_OUT_STEREO   = (AUDIO_CHANNEL_OUT_FRONT_LEFT |
                                   AUDIO_CHANNEL_OUT_FRONT_RIGHT),
+#ifdef QCOM_HARDWARE
+    AUDIO_CHANNEL_OUT_2POINT1  = (AUDIO_CHANNEL_OUT_FRONT_LEFT |
+                                  AUDIO_CHANNEL_OUT_FRONT_RIGHT |
+                                  AUDIO_CHANNEL_OUT_FRONT_CENTER),
+#endif
     AUDIO_CHANNEL_OUT_QUAD     = (AUDIO_CHANNEL_OUT_FRONT_LEFT |
                                   AUDIO_CHANNEL_OUT_FRONT_RIGHT |
                                   AUDIO_CHANNEL_OUT_BACK_LEFT |
@@ -221,6 +229,15 @@ enum {
                                   AUDIO_CHANNEL_OUT_LOW_FREQUENCY |
                                   AUDIO_CHANNEL_OUT_BACK_LEFT |
                                   AUDIO_CHANNEL_OUT_BACK_RIGHT),
+#ifdef QCOM_HARDWARE
+    AUDIO_CHANNEL_OUT_6POINT1  = (AUDIO_CHANNEL_OUT_FRONT_LEFT |
+                                  AUDIO_CHANNEL_OUT_FRONT_RIGHT |
+                                  AUDIO_CHANNEL_OUT_FRONT_CENTER |
+                                  AUDIO_CHANNEL_OUT_LOW_FREQUENCY |
+                                  AUDIO_CHANNEL_OUT_BACK_LEFT |
+                                  AUDIO_CHANNEL_OUT_BACK_RIGHT |
+                                  AUDIO_CHANNEL_OUT_BACK_CENTER),
+#endif
     // matches the correct AudioFormat.CHANNEL_OUT_7POINT1_SURROUND definition for 7.1
     AUDIO_CHANNEL_OUT_7POINT1  = (AUDIO_CHANNEL_OUT_FRONT_LEFT |
                                   AUDIO_CHANNEL_OUT_FRONT_RIGHT |
@@ -277,15 +294,15 @@ enum {
     AUDIO_CHANNEL_IN_STEREO = (AUDIO_CHANNEL_IN_LEFT | AUDIO_CHANNEL_IN_RIGHT),
     AUDIO_CHANNEL_IN_FRONT_BACK = (AUDIO_CHANNEL_IN_FRONT | AUDIO_CHANNEL_IN_BACK),
 #ifdef QCOM_HARDWARE
-    AUDIO_CHANNEL_IN_VOICE_UPLINK_MONO = (AUDIO_CHANNEL_IN_VOICE_UPLINK | AUDIO_CHANNEL_IN_MONO),
-    AUDIO_CHANNEL_IN_VOICE_DNLINK_MONO = (AUDIO_CHANNEL_IN_VOICE_DNLINK | AUDIO_CHANNEL_IN_MONO),
-    AUDIO_CHANNEL_IN_VOICE_CALL_MONO   = (AUDIO_CHANNEL_IN_VOICE_UPLINK_MONO | AUDIO_CHANNEL_IN_VOICE_DNLINK_MONO),
     AUDIO_CHANNEL_IN_5POINT1 = (AUDIO_CHANNEL_IN_FRONT_LEFT |
                                AUDIO_CHANNEL_IN_FRONT_RIGHT |
                                AUDIO_CHANNEL_IN_FRONT_CENTER |
                                AUDIO_CHANNEL_IN_LOW_FREQUENCY |
                                AUDIO_CHANNEL_IN_BACK_LEFT |
                                AUDIO_CHANNEL_IN_BACK_RIGHT),
+    AUDIO_CHANNEL_IN_VOICE_UPLINK_MONO = (AUDIO_CHANNEL_IN_VOICE_UPLINK | AUDIO_CHANNEL_IN_MONO),
+    AUDIO_CHANNEL_IN_VOICE_DNLINK_MONO = (AUDIO_CHANNEL_IN_VOICE_DNLINK | AUDIO_CHANNEL_IN_MONO),
+    AUDIO_CHANNEL_IN_VOICE_CALL_MONO   = (AUDIO_CHANNEL_IN_VOICE_UPLINK_MONO | AUDIO_CHANNEL_IN_VOICE_DNLINK_MONO),
 #endif
     AUDIO_CHANNEL_IN_ALL    = (AUDIO_CHANNEL_IN_LEFT |
                                AUDIO_CHANNEL_IN_RIGHT |
@@ -303,7 +320,7 @@ enum {
                                AUDIO_CHANNEL_IN_5POINT1 |
 #endif
                                AUDIO_CHANNEL_IN_VOICE_UPLINK |
-                               AUDIO_CHANNEL_IN_VOICE_DNLINK),
+                               AUDIO_CHANNEL_IN_VOICE_DNLINK)
 };
 
 typedef uint32_t audio_channel_mask_t;
@@ -355,6 +372,13 @@ enum {
     AUDIO_DEVICE_OUT_USB_ACCESSORY             = 0x2000,
     AUDIO_DEVICE_OUT_USB_DEVICE                = 0x4000,
     AUDIO_DEVICE_OUT_REMOTE_SUBMIX             = 0x8000,
+#ifdef QCOM_HARDWARE
+    AUDIO_DEVICE_OUT_ANC_HEADSET               = 0x10000,
+    AUDIO_DEVICE_OUT_ANC_HEADPHONE             = 0x20000,
+    AUDIO_DEVICE_OUT_PROXY                     = 0x40000,
+    AUDIO_DEVICE_OUT_FM                        = 0x80000,
+    AUDIO_DEVICE_OUT_FM_TX                     = 0x100000,
+#endif
     AUDIO_DEVICE_OUT_DEFAULT                   = AUDIO_DEVICE_BIT_DEFAULT,
     AUDIO_DEVICE_OUT_ALL      = (AUDIO_DEVICE_OUT_EARPIECE |
                                  AUDIO_DEVICE_OUT_SPEAKER |
@@ -372,6 +396,13 @@ enum {
                                  AUDIO_DEVICE_OUT_USB_ACCESSORY |
                                  AUDIO_DEVICE_OUT_USB_DEVICE |
                                  AUDIO_DEVICE_OUT_REMOTE_SUBMIX |
+#ifdef QCOM_HARDWARE
+                                 AUDIO_DEVICE_OUT_ANC_HEADSET |
+                                 AUDIO_DEVICE_OUT_ANC_HEADPHONE |
+                                 AUDIO_DEVICE_OUT_PROXY |
+                                 AUDIO_DEVICE_OUT_FM |
+                                 AUDIO_DEVICE_OUT_FM_TX |
+#endif
                                  AUDIO_DEVICE_OUT_DEFAULT),
     AUDIO_DEVICE_OUT_ALL_A2DP = (AUDIO_DEVICE_OUT_BLUETOOTH_A2DP |
                                  AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES |
@@ -412,6 +443,10 @@ enum {
     AUDIO_DEVICE_IN_DGTL_DOCK_HEADSET     = AUDIO_DEVICE_BIT_IN | 0x400,
     AUDIO_DEVICE_IN_USB_ACCESSORY         = AUDIO_DEVICE_BIT_IN | 0x800,
     AUDIO_DEVICE_IN_USB_DEVICE            = AUDIO_DEVICE_BIT_IN | 0x1000,
+    AUDIO_DEVICE_IN_ANC_HEADSET           = AUDIO_DEVICE_BIT_IN | 0x2000,
+    AUDIO_DEVICE_IN_PROXY                 = AUDIO_DEVICE_BIT_IN | 0x4000,
+    AUDIO_DEVICE_IN_FM_RX                 = AUDIO_DEVICE_BIT_IN | 0x8000,
+    AUDIO_DEVICE_IN_FM_RX_A2DP            = AUDIO_DEVICE_BIT_IN | 0x10000,
     AUDIO_DEVICE_IN_DEFAULT               = AUDIO_DEVICE_BIT_IN | AUDIO_DEVICE_BIT_DEFAULT,
 #endif
 
@@ -428,6 +463,10 @@ enum {
                                AUDIO_DEVICE_IN_DGTL_DOCK_HEADSET |
                                AUDIO_DEVICE_IN_USB_ACCESSORY |
                                AUDIO_DEVICE_IN_USB_DEVICE |
+                               AUDIO_DEVICE_IN_ANC_HEADSET |
+                               AUDIO_DEVICE_IN_FM_RX |
+                               AUDIO_DEVICE_IN_FM_RX_A2DP |
+                               AUDIO_DEVICE_IN_PROXY |
                                AUDIO_DEVICE_IN_DEFAULT),
     AUDIO_DEVICE_IN_ALL_SCO = AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET,
 };
@@ -456,8 +495,8 @@ typedef enum {
                                         // defined elsewhere
     AUDIO_OUTPUT_FLAG_DEEP_BUFFER = 0x8,// use deep audio buffers
 #ifdef QCOM_HARDWARE
-//Qualcomm Flags
-    AUDIO_OUTPUT_FLAG_LPA = 0x1000,     // use LPA
+    //Qualcomm Flags
+    AUDIO_OUTPUT_FLAG_LPA = 0x1000,      // use LPA
     AUDIO_OUTPUT_FLAG_TUNNEL = 0x2000,   // use Tunnel
     AUDIO_OUTPUT_FLAG_VOIP_RX = 0x4000   // use this flag in combination with DIRECT to
                                          // indicate HAL to activate EC & NS
@@ -615,6 +654,9 @@ static inline bool audio_is_valid_format(audio_format_t format)
     case AUDIO_FORMAT_WMA:
     case AUDIO_FORMAT_WMA_PRO:
     case AUDIO_FORMAT_DTS:
+    case AUDIO_FORMAT_DTS_LBR:
+    case AUDIO_FORMAT_AMR_WB_PLUS:
+    case AUDIO_FORMAT_MP2:
 #endif
         return true;
     default:
@@ -642,6 +684,11 @@ static inline size_t audio_bytes_per_sample(audio_format_t format)
     case AUDIO_FORMAT_PCM_8_BIT:
         size = sizeof(uint8_t);
         break;
+#ifdef QCOM_HARDWARE
+    case AUDIO_FORMAT_AMR_WB:
+        size = 61;
+        break;
+#endif
     default:
         break;
     }
