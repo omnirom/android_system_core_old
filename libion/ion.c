@@ -61,7 +61,9 @@ int ion_alloc(int fd, size_t len, size_t align, unsigned int heap_mask,
         struct ion_allocation_data data = {
                 .len = len,
                 .align = align,
+#ifndef OLD_ION_API
 		.heap_mask = heap_mask,
+#endif
                 .flags = flags,
         };
 
@@ -149,8 +151,12 @@ int ion_import(int fd, int share_fd, struct ion_handle **handle)
 
 int ion_sync_fd(int fd, int handle_fd)
 {
+#ifdef OLD_ION_API
+    return 0;
+#else
     struct ion_fd_data data = {
         .fd = handle_fd,
     };
     return ion_ioctl(fd, ION_IOC_SYNC, &data);
+#endif
 }
