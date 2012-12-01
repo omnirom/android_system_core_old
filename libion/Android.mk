@@ -3,6 +3,9 @@ ifneq ($(TARGET_BOARD_PLATFORM),omap3)
 LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
+ifeq ($(BOARD_HAVE_OLD_ION_API),true)
+LOCAL_CFLAGS += -DOLD_ION_API
+endif
 LOCAL_SRC_FILES := ion.c
 LOCAL_MODULE := libion
 LOCAL_MODULE_TAGS := optional
