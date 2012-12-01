@@ -68,11 +68,17 @@ static int property_triggers_enabled = 0;
 static int   bootchart_count;
 #endif
 
+#ifndef BOARD_CHARGING_CMDLINE_NAME
+#define BOARD_CHARGING_CMDLINE_NAME "androidboot.battchg_pause"
+#define BOARD_CHARGING_CMDLINE_VALUE "true"
+#endif
+
 static char console[32];
 static char bootmode[32];
 static char hardware[32];
 static unsigned revision = 0;
 static char qemu[32];
+static char battchg_pause[32];
 
 static struct action *cur_action = NULL;
 static struct command *cur_command = NULL;
@@ -93,6 +99,8 @@ static char console_name[PROP_VALUE_MAX] = "/dev/console";
 static time_t process_needs_restart;
 
 static const char *ENV[32];
+
+static unsigned charging_mode = 0;
 
 /* add_environment - add "key=value" to the current environment */
 int add_environment(const char *key, const char *val)
@@ -729,6 +737,8 @@ static void import_kernel_nv(char *name, int for_emulator)
 
     if (!strcmp(name,"qemu")) {
         strlcpy(qemu, value, sizeof(qemu));
+    } else if (!strcmp(name,BOARD_CHARGING_CMDLINE_NAME)) {
+        strlcpy(battchg_pause, value, sizeof(battchg_pause));
     } else if (!strncmp(name, "androidboot.", 12) && name_len > 12) {
         const char *boot_prop_name = name + 12;
         char prop[PROP_NAME_MAX];
@@ -1102,6 +1112,11 @@ int main(int argc, char **argv)
     queue_builtin_action(mix_hwrng_into_linux_rng_action, "mix_hwrng_into_linux_rng");
     queue_builtin_action(property_service_init_action, "property_service_init");
     queue_builtin_action(signal_init_action, "signal_init");
+
+    /* Older bootloaders use non-standard charging modes. Check for
+     * those now, after mounting the filesystems */
+    if (strcmp(battchg_pause, BOARD_CHARGING_CMDLINE_VALUE) == 0)
+        is_charger = 1;
 
     /* Don't mount filesystems or start core system services if in charger mode. */
     if (is_charger) {
