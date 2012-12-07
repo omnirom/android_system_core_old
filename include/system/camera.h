@@ -168,6 +168,7 @@ enum {
     /* Unused by the older blobs, but referenced */
     CAMERA_CMD_ENABLE_FOCUS_MOVE_MSG = 11,
     CAMERA_CMD_PING = 12,
+    CAMERA_CMD_SET_VIDEO_BUFFER_COUNT = 13,
 #else
     /**
      * Enable/disable focus move callback (CAMERA_MSG_FOCUS_MOVE). Passing
