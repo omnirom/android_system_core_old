@@ -1,0 +1,44 @@
+Auditd Daemon
+
+The audit daemon is a simplified version of its desktop
+counterpart designed to gather the audit logs from the
+audit kernel subsystem. The audit subsystem of the kernel
+includes Linux Security Modules (LSM) messages as well.
+
+To enable the audit subsystem, you must add this to your
+kernel config:
+CONFIG_AUDIT=y
+CONFIG_AUDITSYSCALL=y
+
+To enable a LSM, you must consult that LSM's documentation, the
+example below is for SELinux:
+CONFIG_SECURITY_SELINUX=y
+
+This does not include possible dependencies that may need to be
+satisfied for that particular LSM.
+
+The daemon maintains two log files audit.log and audit.old
+at /data/misc/audit/. On boot, if audit.log exists, and
+the size is greater than 0, audit.log is renamed to
+audit.old. The log file is also renamed, or rotated, when
+a threshold is hit. This threshold is hard-coded to 100KB
+but can be adjusted through the AUDITD_MAX_LOG_FILE_SIZEKB
+Makefile file variable that can be overridden in the device.mk
+
+The daemon is not included by default, and must explicitly be
+added to PRODUCT_PACKAGES. This could be set in the device.mk
+
+The daemon also has no external interfaces, but one could
+use inotify to start and build a system from this. The log
+files are owned by UID audit and readable by system. A
+system UID application could conceivably be used to consume
+these logs.
+
+Example configuration in device.mk:
+
+# 1MB Log file threshold
+AUDITD_MAX_LOG_FILE_SIZEKB := 1000
+
+PRODUCT_PACKAGES += auditd
+
+

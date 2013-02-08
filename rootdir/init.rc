@@ -251,6 +251,7 @@ on post-fs-data
     # create basic filesystem structure
     mkdir /data/misc 01771 system misc
     mkdir /data/misc/adb 02750 system shell
+    mkdir /data/misc/audit 02750 audit system
     mkdir /data/misc/bluedroid 0770 bluetooth net_bt_stack
     mkdir /data/misc/bluetooth 0770 system system
     mkdir /data/misc/keystore 0700 keystore keystore
@@ -492,6 +493,10 @@ service console /system/bin/sh
     user shell
     group shell log
     seclabel u:r:shell:s0
+
+service auditd /system/bin/auditd -k
+    seclabel u:r:logd:s0
+    class main
 
 on property:ro.debuggable=1
     start console
