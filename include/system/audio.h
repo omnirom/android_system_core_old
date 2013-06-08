@@ -713,6 +713,20 @@ static inline bool audio_is_linear_pcm(audio_format_t format)
     return ((format & AUDIO_FORMAT_MAIN_MASK) == AUDIO_FORMAT_PCM);
 }
 
+#ifdef QCOM_HARDWARE
+static inline bool audio_is_supported_compressed(audio_format_t format)
+{
+    if (format == AUDIO_FORMAT_AMR_NB ||
+        format == AUDIO_FORMAT_AMR_WB ||
+        format == AUDIO_FORMAT_EVRC ||
+        format == AUDIO_FORMAT_QCELP ||
+        format == AUDIO_FORMAT_AAC)
+        return true;
+    else
+        return false;
+}
+#endif
+
 static inline size_t audio_bytes_per_sample(audio_format_t format)
 {
     size_t size = 0;
@@ -729,6 +743,18 @@ static inline size_t audio_bytes_per_sample(audio_format_t format)
         size = sizeof(uint8_t);
         break;
 #ifdef QCOM_HARDWARE
+    case AUDIO_FORMAT_AMR_NB:
+        size = 32;
+        break;
+    case AUDIO_FORMAT_EVRC:
+        size = 23;
+        break;
+    case AUDIO_FORMAT_QCELP:
+        size = 35;
+        break;
+    case AUDIO_FORMAT_AAC:
+        size = 2048;
+        break;
     case AUDIO_FORMAT_AMR_WB:
         size = 61;
         break;
