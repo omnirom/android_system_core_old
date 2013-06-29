@@ -97,6 +97,11 @@
 /sys/devices/system/cpu/cpufreq ondemand/powersave_bias  0664    system  system
 /sys/devices/system/cpu/cpufreq ondemand/sampling_down_factor    0664    system  system
 /sys/devices/system/cpu/cpufreq ondemand/up_threshold   0664    system  system
+/sys/devices/system/cpu/cpufreq ondemand/up_threshold_multi_core   0664    system  system
+/sys/devices/system/cpu/cpufreq ondemand/down_differential_multi_core   0664    system  system
+/sys/devices/system/cpu/cpufreq ondemand/optimal_freq   0664    system  system
+/sys/devices/system/cpu/cpufreq ondemand/sync_freq   0664    system  system
+/sys/devices/system/cpu/cpufreq ondemand/up_threshold_any_cpu_load   0664    system  system
 
 /sys/devices/system/cpu/cpufreq interactive/boostpulse  0664    system  system
 /sys/devices/system/cpu/cpufreq interactive/timer_rate  0664    system  system
