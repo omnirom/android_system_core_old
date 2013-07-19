@@ -8,6 +8,7 @@
 #include <selinux/selinux.h>
 #include <selinux/label.h>
 #include <selinux/android.h>
+#include <private/android_filesystem_config.h>
 
 static struct selabel_handle *sehandle;
 static const char *progname;
@@ -33,6 +34,16 @@ static int restore(const char *pathname, const struct stat *sb)
         fprintf(stderr, "Could not lookup context for %s:  %s\n", pathname,
                 strerror(errno));
         return -1;
+    }
+    if (sb->st_uid >= AID_APP && strcmp(newcontext,",c") && strcmp(newcontext,"app_data_file") >= 0) {
+        char *catcontext;
+        uid_t appid = sb->st_uid - AID_APP;
+
+        catcontext = malloc(strlen(newcontext)+16);
+        sprintf(catcontext,"%s:c%d,c%d",newcontext,appid & 0xff,
+                                         256 + (appid>>8 & 0xff));
+        freecon(newcontext);
+        newcontext = catcontext;
     }
     if (strcmp(newcontext, "<<none>>") &&
         strcmp(oldcontext, newcontext)) {
