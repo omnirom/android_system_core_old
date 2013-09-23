@@ -87,7 +87,15 @@ enum {
     CAMERA_MSG_PREVIEW_METADATA = 0x0400, // dataCallback
     // Notify on autofocus start and stop. This is useful in continuous
     // autofocus - FOCUS_MODE_CONTINUOUS_VIDEO and FOCUS_MODE_CONTINUOUS_PICTURE.
+#if defined(QCOM_ICS_COMPAT) && defined(QCOM_HARDWARE)
+    CAMERA_MSG_STATS_DATA       = 0x800,
+    CAMERA_MSG_FOCUS_MOVE = 0x1000,       // notifyCallback
+#else
     CAMERA_MSG_FOCUS_MOVE = 0x0800,       // notifyCallback
+#ifdef QCOM_HARDWARE
+    CAMERA_MSG_STATS_DATA       = 0x1000,
+#endif
+#endif
     CAMERA_MSG_ALL_MSGS = 0xFFFF
 };
 
@@ -147,6 +155,14 @@ enum {
      */
     CAMERA_CMD_STOP_FACE_DETECTION = 7,
 
+#if defined(QCOM_ICS_COMPAT) && defined(QCOM_HARDWARE)
+    CAMERA_CMD_HISTOGRAM_ON     = 8,
+    CAMERA_CMD_HISTOGRAM_OFF     = 9,
+    CAMERA_CMD_HISTOGRAM_SEND_DATA  = 10,
+    /* Unused by the older blobs, but referenced */
+    CAMERA_CMD_ENABLE_FOCUS_MOVE_MSG = 11,
+    CAMERA_CMD_PING = 12,
+#else
     /**
      * Enable/disable focus move callback (CAMERA_MSG_FOCUS_MOVE). Passing
      * arg1 = 0 will disable, while passing arg1 = 1 will enable the callback.
@@ -174,6 +190,8 @@ enum {
      * count is non-positive or too big to be realized.
      */
     CAMERA_CMD_SET_VIDEO_BUFFER_COUNT = 10,
+#endif
+
 };
 
 /** camera fatal errors */
@@ -196,6 +214,15 @@ enum {
     /** The facing of the camera is the same as that of the screen. */
     CAMERA_FACING_FRONT = 1
 };
+
+#ifdef QCOM_HARDWARE
+enum {
+    CAMERA_SUPPORT_MODE_2D = 0x01, /* Camera Sensor supports 2D mode. */
+    CAMERA_SUPPORT_MODE_3D = 0x02, /* Camera Sensor supports 3D mode. */
+    CAMERA_SUPPORT_MODE_NONZSL = 0x04, /* Camera Sensor in NON-ZSL mode. */
+    CAMERA_SUPPORT_MODE_ZSL = 0x08 /* Camera Sensor supports ZSL mode. */
+};
+#endif
 
 enum {
     /** Hardware face detection. It does not use much CPU. */
