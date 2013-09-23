@@ -11,6 +11,7 @@ int do_export(int nargs, char **args);
 int do_hostname(int nargs, char **args);
 int do_ifup(int nargs, char **args);
 int do_insmod(int nargs, char **args);
+int do_log(int nargs, char **args);
 int do_mkdir(int nargs, char **args);
 int do_mount_all(int nargs, char **args);
 int do_mount(int nargs, char **args);
@@ -60,6 +61,7 @@ enum {
     KEYWORD(insmod,      COMMAND, 1, do_insmod)
     KEYWORD(import,      SECTION, 1, 0)
     KEYWORD(keycodes,    OPTION,  0, 0)
+    KEYWORD(log,         COMMAND, 1, do_log)
     KEYWORD(mkdir,       COMMAND, 1, do_mkdir)
     KEYWORD(mount_all,   COMMAND, 1, do_mount_all)
     KEYWORD(mount,       COMMAND, 3, do_mount)
