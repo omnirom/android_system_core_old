@@ -135,7 +135,12 @@ LOCAL_SRC_FILES += memory.c
 endif # !x86-atom
 endif # !arm
 
+ifneq ($(TARGET_RECOVERY_PRE_COMMAND),)
+    LOCAL_CFLAGS += -DRECOVERY_PRE_COMMAND='$(TARGET_RECOVERY_PRE_COMMAND)'
+endif
+
 LOCAL_C_INCLUDES := $(libcutils_c_includes) $(KERNEL_HEADERS)
+
 LOCAL_STATIC_LIBRARIES := liblog
 LOCAL_CFLAGS += $(targetSmpFlag)
 include $(BUILD_STATIC_LIBRARY)
