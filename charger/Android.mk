@@ -30,6 +30,10 @@ LOCAL_STATIC_LIBRARIES += libsuspend
 endif
 LOCAL_STATIC_LIBRARIES += libz libstdc++ libcutils liblog libm libc
 
+ifneq ($(BOARD_BATTERY_DEVICE_NAME),)
+LOCAL_CFLAGS += -DBATTERY_DEVICE_NAME=\"$(BOARD_BATTERY_DEVICE_NAME)\"
+endif
+
 include $(BUILD_EXECUTABLE)
 
 define _add-charger-image
