@@ -33,6 +33,8 @@
 #include "ueventd_parser.h"
 #include "property_service.h"
 
+std::string boot_device;
+
 int ueventd_main(int argc, char **argv)
 {
     /*
@@ -63,6 +65,8 @@ int ueventd_main(int argc, char **argv)
 
     ueventd_parse_config_file("/ueventd.rc");
     ueventd_parse_config_file(android::base::StringPrintf("/ueventd.%s.rc", hardware.c_str()).c_str());
+
+    boot_device = property_get("ro.boot.bootdevice");
 
     device_init();
 
