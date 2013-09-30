@@ -48,6 +48,7 @@
 #include "ueventd_parser.h"
 #include "util.h"
 #include "log.h"
+#include "property_service.h"
 
 #define SYSFS_PREFIX    "/sys"
 static const char *firmware_dirs[] = { "/etc/firmware",
@@ -55,6 +56,8 @@ static const char *firmware_dirs[] = { "/etc/firmware",
                                        "/firmware/image" };
 
 extern struct selabel_handle *sehandle;
+
+extern std::string boot_device;
 
 static int device_fd = -1;
 
@@ -532,6 +535,11 @@ static char **get_block_device_symlinks(struct uevent *uevent)
         link_num++;
     else
         links[link_num] = NULL;
+
+    if (pdev && !boot_device.empty() && strstr(device, boot_device.c_str())) {
+        /* Create bootdevice symlink for platform boot stroage device */
+        make_link_init(link_path, "/dev/block/bootdevice");
+    }
 
     return links;
 }
