@@ -399,6 +399,38 @@ int do_mkdir(int nargs, char **args)
     return 0;
 }
 
+int do_mknod(int nargs, char **args)
+{
+    dev_t dev;
+    int major;
+    int minor;
+    int mode;
+
+    /* mknod <path> <type> <major> <minor> */
+
+    if (nargs != 5) {
+        return -1;
+    }
+
+    major = strtoul(args[3], 0, 0);
+    minor = strtoul(args[4], 0, 0);
+    dev = (major << 8) | minor;
+
+    if (strcmp(args[2], "c") == 0) {
+        mode = S_IFCHR;
+    } else {
+        mode = S_IFBLK;
+    }
+    if (mknod(args[1], mode, dev)) {
+        ERROR("init: mknod failed");
+        return -1;
+    }
+
+    return 0;
+}
+
+
+
 static struct {
     const char *name;
     unsigned flag;
