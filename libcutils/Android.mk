@@ -116,6 +116,7 @@ LOCAL_MODULE := libcutils
 LOCAL_SRC_FILES := $(commonSources) \
         android_reboot.c \
         ashmem-dev.c \
+        pmem-dev.cpp \
         debugger.c \
         klog.c \
         mq.c \
