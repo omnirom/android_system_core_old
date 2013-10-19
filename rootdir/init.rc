@@ -268,8 +268,8 @@ on post-fs-data
     # Set indication (checked by vold) that we have finished this action
     #setprop vold.post_fs_data_done 1
 
-# Include extra init file with custom extras
-    import /init.custom.rc
+# Include extra init file with omni extras
+    import /init.omni.rc
 
 on boot
     # interactive governor
