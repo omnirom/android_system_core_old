@@ -331,7 +331,7 @@ void BatteryMonitor::init(struct healthd_config *hc, bool nosvcmgr) {
                     path.clear();
                     path.appendFormat("%s/%s/capacity", POWER_SUPPLY_SYSFS_PATH,
                                       name);
-                    if (access(path, R_OK) == 0)
+                    if (access(path, R_OK) == 0 && getIntField(path) > 0)
                         mHealthdConfig->batteryCapacityPath = path;
                 }
 
