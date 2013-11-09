@@ -99,6 +99,7 @@ int main(int argc, char** argv)
     printf("BOARD_KERNEL_CMDLINE %s\n", header.cmdline);
     printf("BOARD_KERNEL_BASE %08x\n", header.kernel_addr - 0x00008000);
     printf("BOARD_PAGE_SIZE %d\n", header.page_size);
+    printf("BOARD_DT_SIZE %d\n", header.dt_size);
     
     if (pagesize == 0) {
         pagesize = header.page_size;
@@ -149,6 +150,18 @@ int main(int argc, char** argv)
     total_read += header.ramdisk_size;
     fwrite(ramdisk, header.ramdisk_size, 1, r);
     fclose(r);
+
+    total_read += read_padding(f, header.ramdisk_size, pagesize);
+
+    sprintf(tmp, "%s/%s", directory, basename(filename));
+    strcat(tmp, "-dt.img");
+    FILE *d = fopen(tmp, "wb");
+    byte* dt = (byte*)malloc(header.dt_size);
+    //printf("Reading dt...\n");
+    fread(dt, header.dt_size, 1, f);
+    total_read += header.dt_size;
+    fwrite(dt, header.dt_size, 1, r);
+    fclose(d);
     
     fclose(f);
     
