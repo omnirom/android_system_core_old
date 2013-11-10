@@ -1751,11 +1751,11 @@ static int usage()
     ERROR("usage: sdcard [OPTIONS] <source_path> <dest_path>\n"
             "    -u: specify UID to run as\n"
             "    -g: specify GID to run as\n"
-            "    -w: specify GID required to write (default sdcard_rw, requires -d or -l)\n"
+            "    -w: specify GID required to write (default sdcard_rw)\n"
             "    -t: specify number of threads to use (default %d)\n"
             "    -d: derive file permissions based on path\n"
             "    -l: derive file permissions based on legacy internal layout\n"
-            "    -s: split derived permissions for pics, av\n"
+            "    -s: split derived permissions for pics, av (requires -d or -l)\n"
             "\n", DEFAULT_NUM_THREADS);
     return 1;
 }
