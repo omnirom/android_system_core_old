@@ -126,7 +126,11 @@ int backup_service(BackupOperation op, char* args) {
         adb_close(s[0]);
 
         // off we go
-        execvp("/system/bin/bu", (char * const *)bu_args);
+        if (access("/system/bin/bu", F_OK) == 0)
+            execvp("/system/bin/bu", (char * const *)bu_args);
+        else if (access("/sbin/bu", F_OK) == 0)
+            execvp("/sbin/bu", (char * const *)bu_args);
+
         // oops error - close up shop and go home
         fprintf(stderr, "Unable to exec 'bu', bailing\n");
         exit(-1);
