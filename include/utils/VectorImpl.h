@@ -106,6 +106,7 @@ protected:
     virtual void            do_move_forward(void* dest, const void* from, size_t num) const = 0;
     virtual void            do_move_backward(void* dest, const void* from, size_t num) const = 0;
 
+#if NEEDS_VECTORIMPL_SYMBOLS
     // take care of FBC...
     virtual void            reservedVectorImpl1();
     virtual void            reservedVectorImpl2();
@@ -115,7 +116,8 @@ protected:
     virtual void            reservedVectorImpl6();
     virtual void            reservedVectorImpl7();
     virtual void            reservedVectorImpl8();
-    
+#endif
+
 private:
         void* _grow(size_t where, size_t amount);
         void  _shrink(size_t where, size_t amount);
@@ -166,6 +168,7 @@ public:
 protected:
     virtual int             do_compare(const void* lhs, const void* rhs) const = 0;
 
+#if NEEDS_VECTORIMPL_SYMBOLS
     // take care of FBC...
     virtual void            reservedSortedVectorImpl1();
     virtual void            reservedSortedVectorImpl2();
@@ -175,6 +178,7 @@ protected:
     virtual void            reservedSortedVectorImpl6();
     virtual void            reservedSortedVectorImpl7();
     virtual void            reservedSortedVectorImpl8();
+#endif
 
 private:
             ssize_t         _indexOrderOf(const void* item, size_t* order = 0) const;
