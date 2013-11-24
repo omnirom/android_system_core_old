@@ -25,5 +25,8 @@ void healthd_board_init(struct healthd_config *config)
 int healthd_board_battery_update(struct android::BatteryProperties *props)
 {
     // return 0 to log periodic polled battery status to kernel log
+#ifdef HEALTHD_SILENCE_LOG
+    return 1;
+#endif
     return 0;
 }

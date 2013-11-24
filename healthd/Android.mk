@@ -4,6 +4,10 @@ ifneq ($(BUILD_TINY_ANDROID),true)
 
 LOCAL_PATH := $(call my-dir)
 
+ifneq ($(strip $(HEALTHD_CHATTY_MODE)),true)
+    common_cflags += -DHEALTHD_SILENCE_LOG
+endif
+
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES := healthd_board_default.cpp
 LOCAL_MODULE := libhealthd.default
