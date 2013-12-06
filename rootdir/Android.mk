@@ -15,7 +15,7 @@ include $(BUILD_PREBUILT)
 endif
 #######################################
 # init.environ.rc
-
+ifneq ($(TARGET_PROVIDES_ENVIRON_RC),true)
 include $(CLEAR_VARS)
 LOCAL_MODULE_CLASS := ETC
 LOCAL_MODULE := init.environ.rc
@@ -34,5 +34,5 @@ $(LOCAL_BUILT_MODULE): $(LOCAL_PATH)/init.environ.rc.in
 	@echo "Generate: $< -> $@"
 	@mkdir -p $(dir $@)
 	$(hide) sed -e 's?%BOOTCLASSPATH%?$(PRODUCT_BOOTCLASSPATH)?g' $< >$@
-
+endif
 #######################################
