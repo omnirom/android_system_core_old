@@ -20,6 +20,8 @@
 #include <stdbool.h>
 #include <sys/system_properties.h>
 
+#ifndef BUILD_OLD_SYS_PROPS
+
 extern void handle_property_set_fd(void);
 extern void property_init(void);
 extern void property_load_boot_defaults(void);
@@ -46,5 +48,20 @@ int property_get(const char *name, char *value)
 
     return __property_get(name, value);
 }
+
+#else /* BUILD_OLD_SYS_PROPS */
+
+extern void handle_property_set_fd(void);
+extern void property_init(void);
+extern void property_load_boot_defaults(void);
+extern void load_persist_props(void);
+extern void start_property_service(void);
+void get_property_workspace(int *fd, int *sz);
+extern int property_get(const char *name, char *value);
+extern int property_set(const char *name, const char *value);
+extern int properties_inited();
+int get_property_set_fd(void);
+
+#endif /* BUILD_OLD_SYS_PROPS */
 
 #endif	/* _INIT_PROPERTY_H */
