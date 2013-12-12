@@ -285,6 +285,15 @@ static void add_platform_device(const char *path)
     }
 #endif
 
+    list_for_each_reverse(node, &platform_names) {
+        bus = node_to_item(node, struct platform_node, list);
+        if ((bus->path_len < path_len) &&
+                (path[bus->path_len] == '/') &&
+                !strncmp(path, bus->path, bus->path_len))
+            /* subdevice of an existing platform, ignore it */
+            return;
+    }
+
     INFO("adding platform device %s (%s)\n", name, path);
 
     bus = (platform_node*) calloc(1, sizeof(struct platform_node));
