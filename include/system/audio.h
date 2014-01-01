@@ -728,6 +728,28 @@ static inline bool audio_is_supported_compressed(audio_format_t format)
 }
 #endif
 
+static inline bool audio_is_compress_capture_format(audio_format_t format)
+{
+    if (format == AUDIO_FORMAT_AMR_WB)
+        return true;
+    else
+        return false;
+}
+
+static inline bool audio_is_compress_voip_format(audio_format_t format)
+{
+
+    if (format == AUDIO_FORMAT_AMR_NB ||
+        format == AUDIO_FORMAT_AMR_WB ||
+        format == AUDIO_FORMAT_EVRC ||
+        format == AUDIO_FORMAT_EVRCB ||
+        format == AUDIO_FORMAT_EVRCWB ||
+        format == AUDIO_FORMAT_EVRCNW)
+        return true;
+    else
+        return false;
+}
+
 static inline size_t audio_bytes_per_sample(audio_format_t format)
 {
     size_t size = 0;
@@ -761,6 +783,7 @@ static inline size_t audio_bytes_per_sample(audio_format_t format)
         break;
 #endif
     default:
+        size = sizeof(uint8_t);
         break;
     }
     return size;
