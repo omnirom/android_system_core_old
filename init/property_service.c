@@ -100,6 +100,7 @@ struct {
     { "persist.service.bdroid.", AID_BLUETOOTH,   0 },
     { "selinux."         , AID_SYSTEM,   0 },
     { "wc_transport.",     AID_BLUETOOTH,   AID_SYSTEM },
+    { "net.pdp",          AID_RADIO,    AID_RADIO },
 #ifdef PROPERTY_PERMS_APPEND
 PROPERTY_PERMS_APPEND
 #endif
