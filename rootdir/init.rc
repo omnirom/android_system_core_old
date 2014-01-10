@@ -22,6 +22,14 @@ on early-init
 # create mountpoints
     mkdir /mnt 0775 root system
 
+# allow system UID to setenforce and set booleans
+    chown system system /selinux/enforce
+    chown system system /sys/fs/selinux/enforce
+    chown -R system system /selinux/booleans
+    chown -R system system /sys/fs/selinux/booleans
+    chown system system /selinux/commit_pending_bools
+    chown system system /sys/fs/selinux/commit_pending_bools
+
 on init
 
 sysclktz 0
@@ -435,6 +443,8 @@ service healthd-charger /sbin/healthd -n
 on property:selinux.reload_policy=1
     restart ueventd
     restart installd
+    chown -R system system /selinux/booleans
+    chown -R system system /sys/fs/selinux/booleans
 
 service console /system/bin/sh
     class core
