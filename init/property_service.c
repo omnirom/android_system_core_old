@@ -101,6 +101,7 @@ struct {
     { "selinux."         , AID_SYSTEM,   0 },
     { "wc_transport.",     AID_BLUETOOTH,   AID_SYSTEM },
     { "net.pdp",          AID_RADIO,    AID_RADIO },
+    { "service.bootanim.exit", AID_GRAPHICS, 0 },
 #ifdef PROPERTY_PERMS_APPEND
 PROPERTY_PERMS_APPEND
 #endif
