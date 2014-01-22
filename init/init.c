@@ -48,6 +48,10 @@
 
 #include <sys/system_properties.h>
 
+#ifndef INITLOGO
+#include <linux/kd.h>
+#endif
+
 #include "devices.h"
 #include "init.h"
 #include "log.h"
@@ -658,7 +662,7 @@ static int console_init_action(int nargs, char **args)
     if (fd >= 0)
         have_console = 1;
     close(fd);
-
+#ifdef INITLOGO
     if( load_565rle_image(INIT_IMAGE_FILE) ) {
         fd = open("/dev/tty0", O_WRONLY);
         if (fd >= 0) {
@@ -682,6 +686,13 @@ static int console_init_action(int nargs, char **args)
             close(fd);
         }
     }
+#else
+    fd = open("/dev/tty0", O_RDWR | O_SYNC);
+    if (fd >= 0) {
+        ioctl(fd, KDSETMODE, KD_GRAPHICS);
+        close(fd);
+    }
+#endif
     return 0;
 }
 

@@ -10,7 +10,6 @@ LOCAL_SRC_FILES:= \
 	property_service.c \
 	util.c \
 	parser.c \
-	logo.c \
 	keychords.c \
 	signal_handler.c \
 	init_parser.c \
@@ -29,6 +28,11 @@ endif
 
 ifeq ($(BOARD_WANTS_EMMC_BOOT),true)
 LOCAL_CFLAGS += -DWANTS_EMMC_BOOT
+endif
+
+ifneq ($(TARGET_NO_INITLOGO),true)
+LOCAL_SRC_FILES += logo.c
+LOCAL_CFLAGS += -DINITLOGO
 endif
 
 SYSTEM_CORE_INIT_DEFINES := BOARD_CHARGING_MODE_BOOTING_LPM
