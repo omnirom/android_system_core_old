@@ -46,18 +46,18 @@ enum {
     OK                = 0,    // Everything's swell.
     NO_ERROR          = 0,    // No errors.
     
-    UNKNOWN_ERROR       = 0x80000000,
+    UNKNOWN_ERROR       = (status_t)0x80000000,
 
     NO_MEMORY           = -ENOMEM,
     INVALID_OPERATION   = -ENOSYS,
     BAD_VALUE           = -EINVAL,
-    BAD_TYPE            = 0x80000001,
+    BAD_TYPE            = (status_t)0x80000001,
     NAME_NOT_FOUND      = -ENOENT,
     PERMISSION_DENIED   = -EPERM,
     NO_INIT             = -ENODEV,
     ALREADY_EXISTS      = -EEXIST,
     DEAD_OBJECT         = -EPIPE,
-    FAILED_TRANSACTION  = 0x80000002,
+    FAILED_TRANSACTION  = (status_t)0x80000002,
     JPARKS_BROKE_IT     = -EPIPE,
 #if !defined(HAVE_MS_C_RUNTIME)
     BAD_INDEX           = -EOVERFLOW,
@@ -72,7 +72,7 @@ enum {
     TIMED_OUT           = 0x80000005,
     UNKNOWN_TRANSACTION = 0x80000006,
 #endif    
-    FDS_NOT_ALLOWED     = 0x80000007,
+    FDS_NOT_ALLOWED     = (status_t)0x80000007,
 };
 
 // Restore define; enumeration is in "android" namespace, so the value defined
