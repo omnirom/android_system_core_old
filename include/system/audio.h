@@ -540,8 +540,8 @@ typedef struct {
 #define AUDIO_OFFLOAD_INFO_VERSION_CURRENT AUDIO_OFFLOAD_INFO_VERSION_0_1
 
 static const audio_offload_info_t AUDIO_INFO_INITIALIZER = {
-    version: AUDIO_OFFLOAD_INFO_VERSION_CURRENT,
-    size: sizeof(audio_offload_info_t),
+    .version = AUDIO_OFFLOAD_INFO_VERSION_CURRENT,
+    .size = sizeof(audio_offload_info_t),
 };
 
 static inline bool audio_is_output_device(audio_devices_t device)
