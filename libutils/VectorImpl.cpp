@@ -141,6 +141,8 @@ ssize_t VectorImpl::insertAt(const void* item, size_t index, size_t numItems)
 {
     if (index > size())
         return BAD_INDEX;
+    if (numItems < 1)
+        return index;
     void* where = _grow(index, numItems);
     if (where) {
         if (item) {
