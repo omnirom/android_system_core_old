@@ -1818,7 +1818,7 @@ error:
     return res;
 }
 
-int sdcard_main(int argc, char **argv)
+int main(int argc, char **argv)
 {
     int res;
     const char *source_path = NULL;
