@@ -22,6 +22,7 @@ commonSources:= \
 	BlobCache.cpp \
 	CallStack.cpp \
 	FileMap.cpp \
+	Flattenable.cpp \
 	JenkinsHash.cpp \
 	LinearAllocator.cpp \
 	LinearTransform.cpp \
