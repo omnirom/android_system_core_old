@@ -79,21 +79,35 @@ public:
  * Flattenable objects must implement this protocol.
  */
 
+#ifndef STE_HARDWARE
 template <typename T>
+#endif
 class Flattenable {
 public:
     // size in bytes of the flattened object
+#ifdef STE_HARDWARE
+    virtual size_t getFlattenedSize() const = 0;
+#else
     inline size_t getFlattenedSize() const;
+#endif
 
     // number of file descriptors to flatten
+#ifdef STE_HARDWARE
+    virtual size_t getFdCount() const = 0;
+#else
     inline size_t getFdCount() const;
+#endif
 
     // flattens the object into buffer.
     // size should be at least of getFlattenedSize()
     // file descriptors are written in the fds[] array but ownership is
     // not transfered (ie: they must be dupped by the caller of
     // flatten() if needed).
+#ifdef STE_HARDWARE
+    virtual status_t flatten(void*& buffer, size_t& size, int*& fds, size_t& count) const = 0;
+#else
     inline status_t flatten(void*& buffer, size_t& size, int*& fds, size_t& count) const;
+#endif
 
     // unflattens the object from buffer.
     // size should be equal to the value of getFlattenedSize() when the
@@ -102,6 +116,13 @@ public:
     // don't need to be dupped(). ie: the caller of unflatten doesn't
     // keep ownership. If a fd is not retained by unflatten() it must be
     // explicitly closed.
+#ifdef STE_HARDWARE
+    virtual status_t unflatten(void const*& buffer, size_t& size, int const*& fds, size_t& count) = 0;
+
+protected:
+    virtual ~Flattenable() = 0;
+};
+#else
     inline status_t unflatten(void const*& buffer, size_t& size, int const*& fds, size_t& count);
 };
 
@@ -123,6 +144,7 @@ inline status_t Flattenable<T>::unflatten(
         void const*& buffer, size_t& size, int const*& fds, size_t& count) {
     return static_cast<T*>(this)->T::unflatten(buffer, size, fds, count);
 }
+#endif
 
 /*
  * LightFlattenable is a protocol allowing object to serialize themselves out

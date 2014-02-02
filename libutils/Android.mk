@@ -43,6 +43,11 @@ commonSources:= \
 	VectorImpl.cpp \
 	misc.cpp
 
+ifeq ($(BOARD_USES_STE_HARDWARE),true)
+commonSources+= \
+	Flattenable.cpp
+endif
+
 host_commonCflags := -DLIBUTILS_NATIVE=1 $(TOOL_CFLAGS)
 
 ifeq ($(HOST_OS),windows)
