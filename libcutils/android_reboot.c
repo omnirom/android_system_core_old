@@ -92,7 +92,11 @@ static void remount_ro(void)
 
 
     /* Now poll /proc/mounts till it's done */
+#ifdef STE_HARDWARE
+    while (!remount_ro_done() && (cnt < 50)) {
+#else
     while (!remount_ro_done() && (cnt < 3600)) {
+#endif
         usleep(100000);
         cnt++;
     }
