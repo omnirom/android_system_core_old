@@ -7,6 +7,7 @@ LOCAL_SRC_FILES:= \
 	builtins.c \
 	init.c \
 	devices.c \
+	property_service.c \
 	util.c \
 	parser.c \
 	keychords.c \
@@ -16,12 +17,6 @@ LOCAL_SRC_FILES:= \
 	ueventd_parser.c \
 	watchdogd.c \
 	vendor_init.c
-
-ifeq ($(BUILD_OLD_SYS_PROPS),true)
-LOCAL_SRC_FILES += property_service_old.c
-else
-LOCAL_SRC_FILES += property_service.c
-endif
 
 ifeq ($(strip $(INIT_BOOTCHART)),true)
 LOCAL_SRC_FILES += bootchart.c
