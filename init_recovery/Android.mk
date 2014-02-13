@@ -1,13 +1,13 @@
-# Copyright 2005 The Android Open Source Project
 
-LOCAL_PATH:= $(call my-dir)
+
+LOCAL_PATH:= system/core/init
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES:= \
+common_src_files := \
 	builtins.c \
 	init.c \
 	devices.c \
-	property_service.c \
+	property_service_old.c \
 	util.c \
 	parser.c \
 	keychords.c \
@@ -19,7 +19,7 @@ LOCAL_SRC_FILES:= \
 	vendor_init.c
 
 ifeq ($(strip $(INIT_BOOTCHART)),true)
-LOCAL_SRC_FILES += bootchart.c
+common_src_files += bootchart.c
 LOCAL_CFLAGS    += -DBOOTCHART=1
 endif
 
@@ -32,7 +32,7 @@ LOCAL_CFLAGS += -DWANTS_EMMC_BOOT
 endif
 
 ifneq ($(TARGET_NO_INITLOGO),true)
-LOCAL_SRC_FILES += logo.c
+common_src_files += logo.c
 LOCAL_CFLAGS += -DINITLOGO
 endif
 
@@ -50,18 +50,17 @@ $(foreach system_core_init_define,$(SYSTEM_CORE_INIT_DEFINES), \
   ) \
   )
 
-LOCAL_MODULE:= init
+LOCAL_MODULE:= init_recovery
 
 LOCAL_FORCE_STATIC_EXECUTABLE := true
-LOCAL_MODULE_PATH := $(TARGET_ROOT_OUT)
-LOCAL_UNSTRIPPED_PATH := $(TARGET_ROOT_OUT_UNSTRIPPED)
+LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)
+#LOCAL_UNSTRIPPED_PATH := $(TARGET_ROOT_OUT_UNSTRIPPED)
 
-LOCAL_STATIC_LIBRARIES := \
+common_static_libs := \
 	libfs_mgr \
 	liblogwrap \
 	libcutils \
 	liblog \
-	libc \
 	libselinux \
 	libmincrypt \
 	libext4_utils_static
@@ -69,24 +68,8 @@ LOCAL_STATIC_LIBRARIES := \
 ifneq ($(strip $(TARGET_INIT_VENDOR_LIB)),)
 LOCAL_WHOLE_STATIC_LIBRARIES += $(TARGET_INIT_VENDOR_LIB)
 endif
+LOCAL_SRC_FILES := $(common_src_files)
+LOCAL_STATIC_LIBRARIES := $(common_static_libs) libc_oldprops
+LOCAL_CFLAGS += -DBUILD_OLD_SYS_PROPS
 
 include $(BUILD_EXECUTABLE)
-
-# Make a symlink from /sbin/ueventd and /sbin/watchdogd to /init
-SYMLINKS := \
-	$(TARGET_ROOT_OUT)/sbin/ueventd \
-	$(TARGET_ROOT_OUT)/sbin/watchdogd
-
-$(SYMLINKS): INIT_BINARY := $(LOCAL_MODULE)
-$(SYMLINKS): $(LOCAL_INSTALLED_MODULE) $(LOCAL_PATH)/Android.mk
-	@echo "Symlink: $@ -> ../$(INIT_BINARY)"
-	@mkdir -p $(dir $@)
-	@rm -rf $@
-	$(hide) ln -sf ../$(INIT_BINARY) $@
-
-ALL_DEFAULT_INSTALLED_MODULES += $(SYMLINKS)
-
-# We need this so that the installed files could be picked up based on the
-# local module name
-ALL_MODULES.$(LOCAL_MODULE).INSTALLED := \
-    $(ALL_MODULES.$(LOCAL_MODULE).INSTALLED) $(SYMLINKS)
