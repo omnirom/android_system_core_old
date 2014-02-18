@@ -55,7 +55,6 @@ struct socketinfo {
     uid_t uid;
     gid_t gid;
     int perm;
-    const char *socketcon;
 };
 
 struct svcenvinfo {
