@@ -25,6 +25,7 @@
 static const char *coldboot_done = "/dev/.coldboot_done";
 
 int mtd_name_to_number(const char *name);
+int emmc_name_to_number(const char *name);
 int create_socket(const char *name, int type, mode_t perm,
                   uid_t uid, gid_t gid, const char *socketcon);
 void *read_file(const char *fn, unsigned *_sz);

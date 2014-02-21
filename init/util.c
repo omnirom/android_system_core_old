@@ -260,6 +260,80 @@ int mtd_name_to_number(const char *name)
     return -1;
 }
 
+#ifndef MAX_EMMC_PARTITIONS
+#define MAX_EMMC_PARTITIONS 32
+#endif
+
+static struct {
+    char name[16];
+    int number;
+} emmc_part_map[MAX_EMMC_PARTITIONS];
+
+static int emmc_part_count = -1;
+
+static void find_emmc_partitions(void)
+{
+    int fd;
+    char buf[1024];
+    char *pemmcbufp;
+    ssize_t pemmcsize;
+    int r;
+
+    fd = open("/proc/emmc", O_RDONLY);
+    if (fd < 0)
+        return;
+
+    buf[sizeof(buf) - 1] = '\0';
+    pemmcsize = read(fd, buf, sizeof(buf) - 1);
+    pemmcbufp = buf;
+    while (pemmcsize > 0) {
+        int emmcnum, emmcsize, emmcerasesize;
+        char emmcname[16];
+        emmcname[0] = '\0';
+        emmcnum = -1;
+        r = sscanf(pemmcbufp, "mmcblk0p%d: %x %x %15s",
+                   &emmcnum, &emmcsize, &emmcerasesize, emmcname);
+        if ((r == 4) && (emmcname[0] == '"')) {
+            char *x = strchr(emmcname + 1, '"');
+            if (x) {
+                *x = 0;
+            }
+            INFO("emmc partition %d, %s\n", emmcnum, emmcname + 1);
+            if (emmc_part_count < MAX_EMMC_PARTITIONS) {
+                strcpy(emmc_part_map[emmc_part_count].name, emmcname + 1);
+                emmc_part_map[emmc_part_count].number = emmcnum;
+                emmc_part_count++;
+            } else {
+                ERROR("Too many emmc partitions! Override with BOARD_VOLD_MAX_PARTITIONS\n");
+            }
+        }
+        while (pemmcsize > 0 && *pemmcbufp != '\n') {
+            pemmcbufp++;
+            pemmcsize--;
+        }
+        if (pemmcsize > 0) {
+            pemmcbufp++;
+            pemmcsize--;
+        }
+    }
+    close(fd);
+}
+
+int emmc_name_to_number(const char *name)
+{
+    int n;
+    if (emmc_part_count < 0) {
+        emmc_part_count = 0;
+        find_emmc_partitions();
+    }
+    for (n = 0; n < emmc_part_count; n++) {
+        if (!strcmp(name, emmc_part_map[n].name)) {
+            return emmc_part_map[n].number;
+        }
+    }
+    return -1;
+}
+
 /*
  * gettime() - returns the time in seconds of the system's monotonic clock or
  * zero on error.
