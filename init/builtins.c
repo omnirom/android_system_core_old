@@ -476,6 +476,22 @@ int do_mount(int nargs, char **args)
         }
 
         goto exit_success;
+    } else if (!strncmp(source, "emmc@", 5)) {
+        n = emmc_name_to_number(source + 5);
+        if (n < 0) {
+            return -1;
+        }
+
+        sprintf(tmp, "/dev/block/mmcblk0p%d", n);
+
+        if (wait) {
+            wait_for_file(tmp, COMMAND_RETRY_TIMEOUT);
+        }
+        if (mount(tmp, target, system, flags, options) < 0) {
+            return -1;
+        }
+
+        goto exit_success;
     } else if (!strncmp(source, "loop@", 5)) {
         int mode, loop, fd;
         struct loop_info info;
