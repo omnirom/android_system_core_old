@@ -100,7 +100,7 @@ endif
 
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := \
+adbd_source_files := \
 	adb.c \
 	backup_service.c \
 	fdevent.c \
@@ -117,22 +117,42 @@ LOCAL_SRC_FILES := \
 	usb_linux_client.c \
 	log_service.c
 
-LOCAL_CFLAGS := -O2 -g -DADB_HOST=0 -Wall -Wno-unused-parameter
-LOCAL_CFLAGS += -D_XOPEN_SOURCE -D_GNU_SOURCE
+adbd_cflags := -O2 -g -DADB_HOST=0 -Wall -Wno-unused-parameter
+adbd_cflags += -D_XOPEN_SOURCE -D_GNU_SOURCE
 
 ifneq (,$(filter userdebug eng,$(TARGET_BUILD_VARIANT)))
-LOCAL_CFLAGS += -DALLOW_ADBD_ROOT=1
+adbd_cflags += -DALLOW_ADBD_ROOT=1
 endif
 
+adbd_static_libs := liblog libcutils libmincrypt libselinux
+
 LOCAL_MODULE := adbd
+
+LOCAL_SRC_FILES := $(adbd_source_files)
+LOCAL_CFLAGS := $(adbd_cflags)
 
 LOCAL_FORCE_STATIC_EXECUTABLE := true
 LOCAL_MODULE_PATH := $(TARGET_ROOT_OUT_SBIN)
 LOCAL_UNSTRIPPED_PATH := $(TARGET_ROOT_OUT_SBIN_UNSTRIPPED)
 
-LOCAL_STATIC_LIBRARIES := liblog libcutils libc libmincrypt libselinux
+LOCAL_STATIC_LIBRARIES := $(adbd_static_libs) libc
 include $(BUILD_EXECUTABLE)
 
+# adbd_oldprops for recovery
+# =========================================================
+
+include $(CLEAR_VARS)
+
+LOCAL_MODULE := adbd_oldprops
+
+LOCAL_SRC_FILES := $(adbd_source_files)
+LOCAL_CFLAGS := $(adbd_cflags)
+
+LOCAL_FORCE_STATIC_EXECUTABLE := true
+LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
+
+LOCAL_STATIC_LIBRARIES := $(adbd_static_libs) libc_oldprops
+include $(BUILD_EXECUTABLE)
 
 # adb host tool for device-as-host
 # =========================================================
