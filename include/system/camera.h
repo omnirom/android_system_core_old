@@ -191,9 +191,9 @@ enum {
     CAMERA_CMD_HISTOGRAM_SEND_DATA  = 13,
     CAMERA_CMD_LONGSHOT_ON = 14,
     CAMERA_CMD_LONGSHOT_OFF = 15,
+#endif
     CAMERA_CMD_METADATA_ON = 100,
     CAMERA_CMD_METADATA_OFF = 101,
-#endif
 };
 
 /** camera fatal errors */
