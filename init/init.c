@@ -825,10 +825,6 @@ static void import_kernel_nv(char *name, int for_emulator)
         cnt = snprintf(prop, sizeof(prop), "ro.boot.%s", boot_prop_name);
         if (cnt < PROP_NAME_MAX)
             property_set(prop, value);
-#ifdef HAS_SEMC_BOOTLOADER
-    } else if (!strcmp(name,"serialno")) {
-        property_set("ro.boot.serialno", value);
-#endif
     }
 }
 
