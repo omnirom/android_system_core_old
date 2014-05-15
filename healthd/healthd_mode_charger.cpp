@@ -410,7 +410,7 @@ static void android_blue(void)
 }
 
 /* returns the last y-offset of where the surface ends */
-static int draw_surface_centered(struct charger* /*charger*/, GRSurface* surface)
+static int draw_surface_centered(struct charger* /*charger*/, GRSurface surface)
 {
     int w;
     int h;
@@ -870,7 +870,7 @@ static void charger_event_handler(uint32_t /*epevents*/)
         ev_dispatch();
 }
 
-void healthd_mode_charger_init(struct healthd_config* config)
+void healthd_mode_charger_init(struct healthd_config* /*config*/)
 {
     int ret;
     struct charger *charger = &charger_state;
