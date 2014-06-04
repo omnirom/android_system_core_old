@@ -94,6 +94,11 @@
 #define AID_QCOM_ONCRPC   3009  /* can read/write /dev/oncrpc files */
 #define AID_QCOM_DIAG     3010  /* can read/write /dev/diag */
 
+#ifdef MTK_G_MT6589
+#define AID_CCCI          9996
+#define AID_NVRAM         9997
+#endif
+
 #define AID_MISC          9998  /* access to misc storage */
 #define AID_NOBODY        9999
 
@@ -168,6 +173,10 @@ static const struct android_id_info android_ids[] = {
     { "net_bt_stack",  AID_NET_BT_STACK, },
     { "qcom_oncrpc",   AID_QCOM_ONCRPC, },
     { "qcom_diag",     AID_QCOM_DIAG, },
+#ifdef MTK_G_MT6589
+    { "ccci",          AID_CCCI, },
+    { "nvram",         AID_NVRAM, },
+#endif
     { "misc",          AID_MISC, },
     { "nobody",        AID_NOBODY, },
 };
