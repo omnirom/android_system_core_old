@@ -115,7 +115,8 @@ LOCAL_SRC_FILES := $(commonSources) \
         uevent.c
 
 ifeq ($(TARGET_BOARD_PLATFORM),mt6589)
-LOCAL_SRC_FILES += pmem-dev.cpp
+LOCAL_SRC_FILES += pmem-dev.cpp \
+        MediatekHacks.cpp
 endif # $(TARGET_BOARD_PLATFORM),mt6589
 
 ifeq ($(TARGET_ARCH),arm)
