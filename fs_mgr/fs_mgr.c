@@ -539,6 +539,7 @@ int fs_mgr_mount_all(struct fstab *fstab)
         }
 
         if ((fstab->recs[i].fs_mgr_flags & MF_VERIFY) && device_is_secure()) {
+            wait_for_file("/dev/device-mapper", WAIT_TIMEOUT);
             int rc = fs_mgr_setup_verity(&fstab->recs[i]);
             if (device_is_debuggable() && rc == FS_MGR_SETUP_VERITY_DISABLED) {
                 INFO("Verity disabled");
