@@ -764,6 +764,7 @@ static void set_next_key_check(struct charger *charger,
 
 static void process_key(struct charger *charger, int code, int64_t now)
 {
+    struct animation *batt_anim = charger->batt_anim;
     struct key_state *key = &charger->keys[code];
 
     if (code == KEY_POWER) {
@@ -800,7 +801,19 @@ static void process_key(struct charger *charger, int code, int64_t now)
         } else {
             /* if the power key got released, force screen state cycle */
             if (key->pending) {
-                kick_animation(charger->batt_anim);
+                if (!batt_anim->run) {
+                    request_suspend(false);
+                    kick_animation(batt_anim);
+                } else {
+                    reset_animation(batt_anim);
+                    charger->next_screen_transition = -1;
+                    #ifdef HEALTHD_FORCE_BACKLIGHT_CONTROL
+                            set_backlight(false);
+                    #endif
+                    gr_fb_blank(true);
+                    if (charger->charger_connected)
+                        request_suspend(true);
+                }
             }
         }
     }
