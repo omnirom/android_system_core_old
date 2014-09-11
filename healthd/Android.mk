@@ -2,6 +2,19 @@
 
 LOCAL_PATH := $(call my-dir)
 
+include $(CLEAR_VARS)
+
+HEALTHD_PATH := \
+    RED_LED_PATH \
+    GREEN_LED_PATH \
+    BLUE_LED_PATH
+
+$(foreach healthd_charger_define,$(HEALTHD_PATH), \
+  $(if $($(healthd_charger_define)), \
+    $(eval LOCAL_CFLAGS += -D$(healthd_charger_define)=\"$($(healthd_charger_define))\") \
+  ) \
+)
+
 ifeq ($(strip $(BOARD_CHARGER_NO_UI)),true)
 LOCAL_CHARGER_NO_UI := true
 endif
