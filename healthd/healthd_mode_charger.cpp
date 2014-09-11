@@ -195,6 +195,94 @@ Charger::Charger(const sp<IHealth>& service)
 
 Charger::~Charger() {}
 
+#ifdef HEALTHD_ENABLE_TRICOLOR_LED
+
+#ifndef RED_LED_PATH
+#define RED_LED_PATH     "/sys/class/leds/red/brightness"
+#endif
+#ifndef GREEN_LED_PATH
+#define GREEN_LED_PATH   "/sys/class/leds/green/brightness"
+#endif
+#ifndef BLUE_LED_PATH
+#define BLUE_LED_PATH    "/sys/class/leds/blue/brightness"
+#endif
+
+enum {
+    RED_LED = 0x01 << 0,
+    GREEN_LED = 0x01 << 1,
+    BLUE_LED = 0x01 << 2,
+};
+
+struct led_ctl {
+    int color;
+    const char *path;
+};
+
+struct led_ctl leds[3] =
+    {{RED_LED, RED_LED_PATH},
+    {GREEN_LED, GREEN_LED_PATH},
+    {BLUE_LED, BLUE_LED_PATH}};
+
+struct soc_led_color_mapping {
+    int soc;
+    int color;
+};
+
+struct soc_led_color_mapping soc_leds[3] = {
+    {15, RED_LED},
+    {90, RED_LED | GREEN_LED},
+    {100, GREEN_LED},
+};
+#endif
+
+#ifdef HEALTHD_ENABLE_TRICOLOR_LED
+static int set_tricolor_led(int on, int color)
+{
+    int fd, i;
+    char buffer[10];
+
+    for (i = 0; i < (int)ARRAY_SIZE(leds); i++) {
+        if ((color & leds[i].color) && (access(leds[i].path, R_OK | W_OK) == 0)) {
+            fd = open(leds[i].path, O_RDWR);
+            if (fd < 0) {
+                LOGE("Could not open led node %d\n", i);
+                continue;
+            }
+            if (on)
+                snprintf(buffer, sizeof(int), "%d\n", 255);
+            else
+                snprintf(buffer, sizeof(int), "%d\n", 0);
+
+            if (write(fd, buffer, strlen(buffer)) < 0)
+                LOGE("Could not write to led node\n");
+            close(fd);
+        }
+    }
+
+    return 0;
+}
+
+static int set_battery_soc_leds(int soc)
+{
+    int i, color;
+    static int old_color = 0;
+
+    for (i = 0; i < (int)ARRAY_SIZE(soc_leds); i++) {
+        if (soc <= soc_leds[i].soc)
+            break;
+    }
+    color = soc_leds[i].color;
+    if (old_color != color) {
+        set_tricolor_led(0, old_color);
+        set_tricolor_led(1, color);
+        old_color = color;
+        LOGV("soc = %d, set led color 0x%x\n", soc, soc_leds[i].color);
+    }
+
+    return 0;
+}
+#endif
+
 /* current time in milliseconds */
 static int64_t curr_time_ms() {
     timespec tm;
@@ -511,7 +599,23 @@ void Charger::HandleInputState(int64_t now) {
 
 void Charger::HandlePowerSupplyState(int64_t now) {
     int timer_shutdown = UNPLUGGED_SHUTDOWN_TIME;
+#ifdef HEALTHD_ENABLE_TRICOLOR_LED
+    static int old_soc = 0;
+    int soc = 0;
+#endif
+
     if (!have_battery_state_) return;
+
+#ifdef HEALTHD_ENABLE_TRICOLOR_LED
+    if (health_info_ && health_info_.batteryLevel >= 0) {
+        soc = health_info_.batteryLevel;
+    }
+
+    if (old_soc != soc) {
+        old_soc = soc;
+        set_battery_soc_leds(soc);
+    }
+#endif
 
     if (!charger_online()) {
         request_suspend(false);
