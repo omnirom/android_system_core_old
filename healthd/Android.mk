@@ -27,14 +27,15 @@ LOCAL_UNSTRIPPED_PATH := $(TARGET_ROOT_OUT_SBIN_UNSTRIPPED)
 
 LOCAL_CFLAGS := -D__STDC_LIMIT_MACROS -Werror
 
-HEALTHD_PATH := \
+HEALTHD_ADDITIONAL_DEFINES := \
     RED_LED_PATH \
     GREEN_LED_PATH \
     BLUE_LED_PATH \
     TW_BRIGHTNESS_PATH \
-    TW_SECONDARY_BRIGHTNESS_PATH
+    TW_SECONDARY_BRIGHTNESS_PATH \
+    HEALTHD_UNPLUGGED_SHUTDOWN_TIME
 
-$(foreach healthd_charger_define,$(HEALTHD_PATH), \
+$(foreach healthd_charger_define,$(HEALTHD_ADDITIONAL_DEFINES), \
   $(if $($(healthd_charger_define)), \
     $(eval LOCAL_CFLAGS += -D$(healthd_charger_define)=\"$($(healthd_charger_define))\") \
   ) \
