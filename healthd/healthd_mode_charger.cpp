@@ -451,6 +451,21 @@ static void draw_battery(struct charger *charger)
     }
 }
 
+#define STR_LEN    64
+static void draw_capacity(struct charger *charger)
+{
+    char cap_str[STR_LEN];
+    int x, y;
+    int str_len_px;
+
+    snprintf(cap_str, (STR_LEN - 1), "%d%%", charger->batt_anim->capacity);
+    str_len_px = gr_measure(cap_str);
+    x = (gr_fb_width() - str_len_px) / 2;
+    y = (gr_fb_height() + char_height + 1000) / 2;
+    android_green();
+    gr_text(x, y, cap_str, 0);
+}
+
 static void redraw_screen(struct charger *charger)
 {
     struct animation *batt_anim = charger->batt_anim;
@@ -458,10 +473,12 @@ static void redraw_screen(struct charger *charger)
     clear_screen();
 
     /* try to display *something* */
-    if (batt_anim->capacity < 0 || batt_anim->num_frames == 0)
+    if (batt_anim->capacity < 0 || batt_anim->num_frames == 0) {
         draw_unknown(charger);
-    else
+    } else {
         draw_battery(charger);
+        draw_capacity(charger);
+    }
     gr_flip();
 }
 
