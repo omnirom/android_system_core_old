@@ -228,12 +228,8 @@ struct fuse_handler {
     struct fuse* fuse;
     int token;
 
-    /* To save memory, we never use the contents of the request buffer and the read
-     * buffer at the same time.  This allows us to share the underlying storage. */
-    union {
-        __u8 request_buffer[MAX_REQUEST_SIZE];
-        __u8 read_buffer[MAX_READ];
-    };
+    __u8 request_buffer[MAX_REQUEST_SIZE];
+    __u8 read_buffer[MAX_READ];
 };
 
 static inline void *id_to_ptr(__u64 nid)
@@ -1219,10 +1215,6 @@ static int handle_read(struct fuse* fuse, struct fuse_handler* handler,
     __u64 offset = req->offset;
     int res;
 
-    /* Don't access any other fields of hdr or req beyond this point, the read buffer
-     * overlaps the request buffer and will clobber data in the request.  This
-     * saves us 128KB per request handler thread at the cost of this scary comment. */
-
     TRACE("[%d] READ %p(%d) %u@%llu\n", handler->token,
             h, h->fd, size, offset);
     if (size > sizeof(handler->read_buffer)) {
@@ -1567,9 +1559,6 @@ static void handle_fuse_requests(struct fuse_handler* handler)
         size_t data_len = len - sizeof(struct fuse_in_header);
         __u64 unique = hdr->unique;
         int res = handle_fuse_request(fuse, handler, hdr, data, data_len);
-
-        /* We do not access the request again after this point because the underlying
-         * buffer storage may have been reused while processing the request. */
 
         if (res != NO_STATUS) {
             if (res) {
