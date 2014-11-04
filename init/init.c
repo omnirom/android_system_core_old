@@ -578,7 +578,7 @@ static int wait_for_coldboot_done_action(int nargs, char **args)
 {
     int ret;
     INFO("wait for %s\n", coldboot_done);
-    ret = wait_for_file(coldboot_done, COMMAND_RETRY_TIMEOUT);
+    ret = wait_for_file(coldboot_done, COLDBOOT_RETRY_TIMEOUT);
     if (ret)
         ERROR("Timed out waiting for %s\n", coldboot_done);
     return ret;
