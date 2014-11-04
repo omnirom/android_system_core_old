@@ -28,6 +28,10 @@
 static int klog_fd = -1;
 static int klog_level = KLOG_DEFAULT_LEVEL;
 
+int klog_get_level(void) {
+    return klog_level;
+}
+
 void klog_set_level(int level) {
     klog_level = level;
 }
@@ -49,18 +53,24 @@ void klog_init(void)
 
 #define LOG_BUF_MAX 512
 
-void klog_write(int level, const char *fmt, ...)
+void klog_vwrite(int level, const char *fmt, va_list ap)
 {
     char buf[LOG_BUF_MAX];
-    va_list ap;
 
     if (level > klog_level) return;
     if (klog_fd < 0) klog_init();
     if (klog_fd < 0) return;
 
-    va_start(ap, fmt);
     vsnprintf(buf, LOG_BUF_MAX, fmt, ap);
     buf[LOG_BUF_MAX - 1] = 0;
-    va_end(ap);
+
     write(klog_fd, buf, strlen(buf));
+}
+
+void klog_write(int level, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    klog_vwrite(level, fmt, ap);
+    va_end(ap);
 }

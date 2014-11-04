@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2008 The Android Open Source Project
+# Copyright (C) 2008-2014 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,11 @@
 LOCAL_PATH := $(my-dir)
 include $(CLEAR_VARS)
 
+ifneq ($(TARGET_USES_LOGD),false)
 liblog_sources := logd_write.c
+else
+liblog_sources := logd_write_kern.c
+endif
 
 # some files must not be compiled when building against Mingw
 # they correspond to features not used by our host development tools
@@ -42,19 +46,28 @@ else
 endif
 
 liblog_host_sources := $(liblog_sources) fake_log_device.c
-
+liblog_target_sources := $(liblog_sources) log_time.cpp
+ifneq ($(TARGET_USES_LOGD),false)
+liblog_target_sources += log_read.c
+else
+liblog_target_sources += log_read_kern.c
+endif
 
 # Shared and static library for host
 # ========================================================
 LOCAL_MODULE := liblog
 LOCAL_SRC_FILES := $(liblog_host_sources)
-LOCAL_LDLIBS := -lpthread
-LOCAL_CFLAGS := -DFAKE_LOG_DEVICE=1
+LOCAL_CFLAGS := -DFAKE_LOG_DEVICE=1 -Werror
+LOCAL_MULTILIB := both
 include $(BUILD_HOST_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := liblog
 LOCAL_WHOLE_STATIC_LIBRARIES := liblog
+ifeq ($(strip $(HOST_OS)),linux)
+LOCAL_LDLIBS := -lrt
+endif
+LOCAL_MULTILIB := both
 include $(BUILD_HOST_SHARED_LIBRARY)
 
 
@@ -76,11 +89,15 @@ endif
 include $(CLEAR_VARS)
 LOCAL_CFLAGS += $(LIBLOG_CFLAGS)
 LOCAL_MODULE := liblog
-LOCAL_SRC_FILES := $(liblog_sources)
+LOCAL_SRC_FILES := $(liblog_target_sources)
+LOCAL_CFLAGS := -Werror
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_CFLAGS += $(LIBLOG_CFLAGS)
 LOCAL_MODULE := liblog
 LOCAL_WHOLE_STATIC_LIBRARIES := liblog
+LOCAL_CFLAGS := -Werror
 include $(BUILD_SHARED_LIBRARY)
+
+include $(call first-makefiles-under,$(LOCAL_PATH))

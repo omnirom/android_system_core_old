@@ -19,6 +19,7 @@
 
 #include <limits.h>
 
+#include "adb_trace.h"
 #include "transport.h"  /* readx(), writex() */
 
 #define MAX_PAYLOAD 4096
@@ -36,7 +37,7 @@
 #define ADB_VERSION_MAJOR 1         // Used for help/version information
 #define ADB_VERSION_MINOR 0         // Used for help/version information
 
-#define ADB_SERVER_VERSION    31    // Increment this when we want to force users to start a new adb server
+#define ADB_SERVER_VERSION    32    // Increment this when we want to force users to start a new adb server
 
 typedef struct amessage amessage;
 typedef struct apacket apacket;
@@ -121,6 +122,12 @@ struct asocket {
         ** us to send data via enqueue again
         */
     void (*ready)(asocket *s);
+
+        /* shutdown is called by the peer before it goes away.
+        ** the socket should not do any further calls on its peer.
+        ** Always followed by a call to close. Optional, i.e. can be NULL.
+        */
+    void (*shutdown)(asocket *s);
 
         /* close is called by the peer when it has gone away.
         ** we are not allowed to make any further calls on the
@@ -233,7 +240,7 @@ struct alistener
 
 void print_packet(const char *label, apacket *p);
 
-asocket *find_local_socket(unsigned id);
+asocket *find_local_socket(unsigned local_id, unsigned remote_id);
 void install_local_socket(asocket *s);
 void remove_socket(asocket *s);
 void close_all_sockets(atransport *t);
@@ -317,16 +324,11 @@ asocket*  create_jdwp_tracker_service_socket();
 int       create_jdwp_connection_fd(int  jdwp_pid);
 #endif
 
+int handle_forward_request(const char* service, transport_type ttype, char* serial, int reply_fd);
+
 #if !ADB_HOST
-typedef enum {
-    BACKUP,
-    RESTORE
-} BackupOperation;
-int backup_service(BackupOperation operation, char* args);
 void framebuffer_service(int fd, void *cookie);
-void log_service(int fd, void *cookie);
 void remount_service(int fd, void *cookie);
-char * get_log_file_path(const char * log_name);
 #endif
 
 /* packet allocator */
@@ -335,85 +337,6 @@ void put_apacket(apacket *p);
 
 int check_header(apacket *p);
 int check_data(apacket *p);
-
-/* define ADB_TRACE to 1 to enable tracing support, or 0 to disable it */
-
-#define  ADB_TRACE    1
-
-/* IMPORTANT: if you change the following list, don't
- * forget to update the corresponding 'tags' table in
- * the adb_trace_init() function implemented in adb.c
- */
-typedef enum {
-    TRACE_ADB = 0,   /* 0x001 */
-    TRACE_SOCKETS,
-    TRACE_PACKETS,
-    TRACE_TRANSPORT,
-    TRACE_RWX,       /* 0x010 */
-    TRACE_USB,
-    TRACE_SYNC,
-    TRACE_SYSDEPS,
-    TRACE_JDWP,      /* 0x100 */
-    TRACE_SERVICES,
-    TRACE_AUTH,
-} AdbTrace;
-
-#if ADB_TRACE
-
-#if !ADB_HOST
-/*
- * When running inside the emulator, guest's adbd can connect to 'adb-debug'
- * qemud service that can display adb trace messages (on condition that emulator
- * has been started with '-debug adb' option).
- */
-
-/* Delivers a trace message to the emulator via QEMU pipe. */
-void adb_qemu_trace(const char* fmt, ...);
-/* Macro to use to send ADB trace messages to the emulator. */
-#define DQ(...)    adb_qemu_trace(__VA_ARGS__)
-#else
-#define DQ(...) ((void)0)
-#endif  /* !ADB_HOST */
-
-  extern int     adb_trace_mask;
-  extern unsigned char    adb_trace_output_count;
-  void    adb_trace_init(void);
-
-#  define ADB_TRACING  ((adb_trace_mask & (1 << TRACE_TAG)) != 0)
-
-  /* you must define TRACE_TAG before using this macro */
-#  define  D(...)                                      \
-        do {                                           \
-            if (ADB_TRACING) {                         \
-                int save_errno = errno;                \
-                adb_mutex_lock(&D_lock);               \
-                fprintf(stderr, "%s::%s():",           \
-                        __FILE__, __FUNCTION__);       \
-                errno = save_errno;                    \
-                fprintf(stderr, __VA_ARGS__ );         \
-                fflush(stderr);                        \
-                adb_mutex_unlock(&D_lock);             \
-                errno = save_errno;                    \
-           }                                           \
-        } while (0)
-#  define  DR(...)                                     \
-        do {                                           \
-            if (ADB_TRACING) {                         \
-                int save_errno = errno;                \
-                adb_mutex_lock(&D_lock);               \
-                errno = save_errno;                    \
-                fprintf(stderr, __VA_ARGS__ );         \
-                fflush(stderr);                        \
-                adb_mutex_unlock(&D_lock);             \
-                errno = save_errno;                    \
-           }                                           \
-        } while (0)
-#else
-#  define  D(...)          ((void)0)
-#  define  DR(...)         ((void)0)
-#  define  ADB_TRACING     0
-#endif
-
 
 #if !DEBUG_PACKETS
 #define print_packet(tag,p) do {} while (0)
@@ -469,6 +392,11 @@ int connection_state(atransport *t);
 
 extern int HOST;
 extern int SHELL_EXIT_NOTIFY_FD;
+
+typedef enum {
+    SUBPROC_PTY = 0,
+    SUBPROC_RAW = 1,
+} subproc_mode;
 
 #define CHUNK_SIZE (64*1024)
 

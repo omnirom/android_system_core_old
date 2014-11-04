@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,14 +30,14 @@
 #include <time.h>
 
 #include <private/android_filesystem_config.h>
+#include <cutils/properties.h>
 #include <logwrap/logwrap.h>
 
 #include "mincrypt/rsa.h"
 #include "mincrypt/sha.h"
 #include "mincrypt/sha256.h"
 
-#include "ext4_utils.h"
-#include "ext4.h"
+#include "ext4_sb.h"
 
 #include "fs_mgr_priv.h"
 #include "fs_mgr_priv_verity.h"
@@ -85,7 +86,6 @@ static RSAPublicKey *load_key(char *path)
 
 static int verify_table(char *signature, char *table, int table_length)
 {
-    int fd;
     RSAPublicKey *key;
     uint8_t hash_buf[SHA_DIGEST_SIZE];
     int retval = -1;
@@ -121,6 +121,7 @@ static int get_target_device_size(char *blk_device, uint64_t *device_size)
 {
     int data_device;
     struct ext4_super_block sb;
+    struct fs_info info = {0};
 
     data_device = open(blk_device, O_RDONLY);
     if (data_device < 0) {
@@ -140,7 +141,7 @@ static int get_target_device_size(char *blk_device, uint64_t *device_size)
         return -1;
     }
 
-    ext4_parse_sb(&sb);
+    ext4_parse_sb(&sb, &info);
     *device_size = info.len;
 
     close(data_device);
@@ -178,7 +179,7 @@ static int read_verity_metadata(char *block_device, char **signature, char **tab
         goto out;
     }
     if (magic_number != VERITY_METADATA_MAGIC_NUMBER) {
-        ERROR("Couldn't find verity metadata at offset %llu!\n", device_length);
+        ERROR("Couldn't find verity metadata at offset %"PRIu64"!\n", device_length);
         goto out;
     }
 
@@ -334,6 +335,26 @@ static int test_access(char *device) {
     return -1;
 }
 
+static int set_verified_property(char *name) {
+    int ret;
+    char *key;
+    ret = asprintf(&key, "partition.%s.verified", name);
+    if (ret < 0) {
+        ERROR("Error formatting verified property");
+        return ret;
+    }
+    ret = PROP_NAME_MAX - strlen(key);
+    if (ret < 0) {
+        ERROR("Verified property name is too long");
+        return -1;
+    }
+    ret = property_set(key, "1");
+    if (ret < 0)
+        ERROR("Error setting verified property %s: %d", key, ret);
+    free(key);
+    return ret;
+}
+
 int fs_mgr_setup_verity(struct fstab_rec *fstab) {
 
     int retval = -1;
@@ -349,6 +370,13 @@ int fs_mgr_setup_verity(struct fstab_rec *fstab) {
     // set the dm_ioctl flags
     io->flags |= 1;
     io->target_count = 1;
+
+    // check to ensure that the verity device is ext4
+    // TODO: support non-ext4 filesystems
+    if (strcmp(fstab->fs_type, "ext4")) {
+        ERROR("Cannot verify non-ext4 device (%s)", fstab->fs_type);
+        return retval;
+    }
 
     // get the device mapper fd
     int fd;
@@ -402,7 +430,8 @@ int fs_mgr_setup_verity(struct fstab_rec *fstab) {
         goto out;
     }
 
-    retval = 0;
+    // set the property indicating that the partition is verified
+    retval = set_verified_property(mount_point);
 
 out:
     close(fd);

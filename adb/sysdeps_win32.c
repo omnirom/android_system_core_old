@@ -1,6 +1,6 @@
 #include "sysdeps.h"
-#include <windows.h>
 #include <winsock2.h>
+#include <windows.h>
 #include <stdio.h>
 #include <errno.h>
 #define  TRACE_TAG  TRACE_SYSDEPS
@@ -701,6 +701,13 @@ int socket_network_client(const char *host, int port, int type)
 }
 
 
+int socket_network_client_timeout(const char *host, int port, int type, int timeout)
+{
+    // TODO: implement timeouts for Windows.
+    return socket_network_client(host, port, type);
+}
+
+
 int socket_inaddr_any_server(int port, int type)
 {
     FH  f = _fh_alloc( &_fh_socket_class );
@@ -956,7 +963,7 @@ bip_buffer_write( BipBuffer  bip, const void* src, int  len )
             avail = len;
 
         memcpy( bip->buff + bip->a_end, src, avail );
-        src   += avail;
+        src   = (const char *)src + avail;
         count += avail;
         len   -= avail;
 
@@ -1049,7 +1056,7 @@ bip_buffer_read( BipBuffer  bip, void*  dst, int  len )
         avail = len;
 
     memcpy( dst, bip->buff + bip->a_start, avail );
-    dst   += avail;
+    dst   = (char *)dst + avail;
     count += avail;
     len   -= avail;
 
@@ -1542,7 +1549,7 @@ _wait_for_all(HANDLE* handles, int handles_count)
      * reset" event that will remain set once it was set. */
     main_event = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (main_event == NULL) {
-        D("Unable to create main event. Error: %d", GetLastError());
+        D("Unable to create main event. Error: %d", (int)GetLastError());
         free(threads);
         return (int)WAIT_FAILED;
     }

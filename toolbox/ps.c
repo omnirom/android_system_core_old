@@ -28,8 +28,12 @@ static char *nexttok(char **strp)
 #define SHOW_POLICY 4
 #define SHOW_CPU  8
 #define SHOW_MACLABEL 16
+#define SHOW_NUMERIC_UID 32
+#define SHOW_ABI 64
 
 static int display_flags = 0;
+
+static void print_exe_abi(int pid);
 
 static int ps_line(int pid, int tid, char *namefilter)
 {
@@ -40,12 +44,12 @@ static int ps_line(int pid, int tid, char *namefilter)
     struct stat stats;
     int fd, r;
     char *ptr, *name, *state;
-    int ppid, tty;
+    int ppid;
     unsigned wchan, rss, vss, eip;
     unsigned utime, stime;
     int prio, nice, rtprio, sched, psr;
     struct passwd *pw;
-    
+
     sprintf(statline, "/proc/%d", pid);
     stat(statline, &stats);
 
@@ -67,7 +71,7 @@ static int ps_line(int pid, int tid, char *namefilter)
         }
         cmdline[r] = 0;
     }
-    
+
     fd = open(statline, O_RDONLY);
     if(fd == 0) return -1;
     r = read(fd, statline, 1023);
@@ -88,8 +92,7 @@ static int ps_line(int pid, int tid, char *namefilter)
     ppid = atoi(nexttok(&ptr));
     nexttok(&ptr); // pgrp
     nexttok(&ptr); // sid
-    tty = atoi(nexttok(&ptr));
-    
+    nexttok(&ptr); // tty
     nexttok(&ptr); // tpgid
     nexttok(&ptr); // flags
     nexttok(&ptr); // minflt
@@ -129,21 +132,21 @@ static int ps_line(int pid, int tid, char *namefilter)
     psr = atoi(nexttok(&ptr)); // processor
     rtprio = atoi(nexttok(&ptr)); // rt_priority
     sched = atoi(nexttok(&ptr)); // scheduling policy
-    
-    tty = atoi(nexttok(&ptr));
-    
+
+    nexttok(&ptr); // tty
+
     if(tid != 0) {
         ppid = pid;
         pid = tid;
     }
 
     pw = getpwuid(stats.st_uid);
-    if(pw == 0) {
+    if(pw == 0 || (display_flags & SHOW_NUMERIC_UID)) {
         sprintf(user,"%d",(int)stats.st_uid);
     } else {
         strcpy(user,pw->pw_name);
     }
-    
+
     if(!namefilter || !strncmp(name, namefilter, strlen(namefilter))) {
         if (display_flags & SHOW_MACLABEL) {
             fd = open(macline, O_RDONLY);
@@ -170,7 +173,11 @@ static int ps_line(int pid, int tid, char *namefilter)
             else
                 printf(" %.2s ", get_sched_policy_name(p));
         }
-        printf(" %08x %08x %s %s", wchan, eip, state, cmdline[0] ? cmdline : name);
+        printf(" %08x %08x %s ", wchan, eip, state);
+        if (display_flags & SHOW_ABI) {
+            print_exe_abi(pid);
+        }
+        printf("%s", cmdline[0] ? cmdline : name);
         if(display_flags&SHOW_TIME)
             printf(" (u:%d, s:%d)", utime, stime);
 
@@ -179,6 +186,39 @@ static int ps_line(int pid, int tid, char *namefilter)
     return 0;
 }
 
+static void print_exe_abi(int pid)
+{
+    int fd, r;
+    char exeline[1024];
+
+    sprintf(exeline, "/proc/%d/exe", pid);
+    fd = open(exeline, O_RDONLY);
+    if(fd == 0) {
+        printf("    ");
+        return;
+    }
+    r = read(fd, exeline, 5 /* 4 byte ELFMAG + 1 byte EI_CLASS */);
+    close(fd);
+    if(r < 0) {
+        printf("    ");
+        return;
+    }
+    if (memcmp("\177ELF", exeline, 4) != 0) {
+        printf("??  ");
+        return;
+    }
+    switch (exeline[4]) {
+        case 1:
+            printf("32  ");
+            return;
+        case 2:
+            printf("64  ");
+            return;
+        default:
+            printf("??  ");
+            return;
+    }
+}
 
 void ps_threads(int pid, char *namefilter)
 {
@@ -189,7 +229,7 @@ void ps_threads(int pid, char *namefilter)
     sprintf(tmp,"/proc/%d/task",pid);
     d = opendir(tmp);
     if(d == 0) return;
-    
+
     while((de = readdir(d)) != 0){
         if(isdigit(de->d_name[0])){
             int tid = atoi(de->d_name);
@@ -197,7 +237,7 @@ void ps_threads(int pid, char *namefilter)
             ps_line(pid, tid, namefilter);
         }
     }
-    closedir(d);    
+    closedir(d);
 }
 
 int ps_main(int argc, char **argv)
@@ -207,13 +247,15 @@ int ps_main(int argc, char **argv)
     char *namefilter = 0;
     int pidfilter = 0;
     int threads = 0;
-    
+
     d = opendir("/proc");
     if(d == 0) return -1;
 
     while(argc > 1){
         if(!strcmp(argv[1],"-t")) {
             threads = 1;
+        } else if(!strcmp(argv[1],"-n")) {
+            display_flags |= SHOW_NUMERIC_UID;
         } else if(!strcmp(argv[1],"-x")) {
             display_flags |= SHOW_TIME;
         } else if(!strcmp(argv[1], "-Z")) {
@@ -224,7 +266,9 @@ int ps_main(int argc, char **argv)
             display_flags |= SHOW_PRIO;
         } else if(!strcmp(argv[1],"-c")) {
             display_flags |= SHOW_CPU;
-        }  else if(isdigit(argv[1][0])){
+        } else if(!strcmp(argv[1],"--abi")) {
+            display_flags |= SHOW_ABI;
+        } else if(isdigit(argv[1][0])){
             pidfilter = atoi(argv[1]);
         } else {
             namefilter = argv[1];
@@ -236,10 +280,11 @@ int ps_main(int argc, char **argv)
     if (display_flags & SHOW_MACLABEL) {
         printf("LABEL                          USER     PID   PPID  NAME\n");
     } else {
-        printf("USER     PID   PPID  VSIZE  RSS   %s%s %s WCHAN    PC         NAME\n",
+        printf("USER     PID   PPID  VSIZE  RSS   %s%s %s WCHAN    PC        %sNAME\n",
                (display_flags&SHOW_CPU)?"CPU ":"",
                (display_flags&SHOW_PRIO)?"PRIO  NICE  RTPRI SCHED ":"",
-               (display_flags&SHOW_POLICY)?"PCY " : "");
+               (display_flags&SHOW_POLICY)?"PCY " : "",
+               (display_flags&SHOW_ABI)?"ABI " : "");
     }
     while((de = readdir(d)) != 0){
         if(isdigit(de->d_name[0])){

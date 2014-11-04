@@ -1,5 +1,4 @@
-/* system/bin/netcfg/netcfg.c
-**
+/*
 ** Copyright 2006, The Android Open Source Project
 **
 ** Licensed under the Apache License, Version 2.0 (the "License"); 
@@ -15,18 +14,14 @@
 ** limitations under the License.
 */
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <errno.h>
 #include <dirent.h>
 #include <netinet/ether.h>
 #include <netinet/if_ether.h>
-
-#include <netutils/ifc.h>
 #include <netutils/dhcp.h>
-
-static int verbose = 0;
-
+#include <netutils/ifc.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 void die(const char *reason)
 {
@@ -107,7 +102,6 @@ struct
     { "dhcp",   1, do_dhcp },
     { "up",     1, ifc_up },
     { "down",   1, ifc_down },
-    { "flhosts",  1, ifc_remove_host_routes },
     { "deldefault", 1, ifc_remove_default_route },
     { "hwaddr", 2, set_hwaddr },
     { 0, 0, 0 },

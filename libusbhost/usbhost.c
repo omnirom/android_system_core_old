@@ -263,11 +263,12 @@ int usb_host_read_event(struct usb_host_context *context)
                 D("%s subdirectory %s: index: %d\n", (event->mask & IN_CREATE) ?
                         "new" : "gone", path, i);
                 if (i > 0 && i < MAX_USBFS_WD_COUNT) {
+                    int local_ret = 0;
                     if (event->mask & IN_CREATE) {
-                        ret = inotify_add_watch(context->fd, path,
+                        local_ret = inotify_add_watch(context->fd, path,
                                 IN_CREATE | IN_DELETE);
-                        if (ret >= 0)
-                            context->wds[i] = ret;
+                        if (local_ret >= 0)
+                            context->wds[i] = local_ret;
                         done = find_existing_devices_bus(path, context->cb_added,
                                 context->data);
                     } else if (event->mask & IN_DELETE) {
@@ -453,6 +454,8 @@ char* usb_device_get_string(struct usb_device *device, int id)
     int i, result;
     int languageCount = 0;
 
+    if (id == 0) return NULL;
+
     string[0] = 0;
     memset(languages, 0, sizeof(languages));
 
@@ -486,31 +489,19 @@ char* usb_device_get_string(struct usb_device *device, int id)
 char* usb_device_get_manufacturer_name(struct usb_device *device)
 {
     struct usb_device_descriptor *desc = (struct usb_device_descriptor *)device->desc;
-
-    if (desc->iManufacturer)
-        return usb_device_get_string(device, desc->iManufacturer);
-    else
-        return NULL;
+    return usb_device_get_string(device, desc->iManufacturer);
 }
 
 char* usb_device_get_product_name(struct usb_device *device)
 {
     struct usb_device_descriptor *desc = (struct usb_device_descriptor *)device->desc;
-
-    if (desc->iProduct)
-        return usb_device_get_string(device, desc->iProduct);
-    else
-        return NULL;
+    return usb_device_get_string(device, desc->iProduct);
 }
 
 char* usb_device_get_serial(struct usb_device *device)
 {
     struct usb_device_descriptor *desc = (struct usb_device_descriptor *)device->desc;
-
-    if (desc->iSerialNumber)
-        return usb_device_get_string(device, desc->iSerialNumber);
-    else
-        return NULL;
+    return usb_device_get_string(device, desc->iSerialNumber);
 }
 
 int usb_device_is_writeable(struct usb_device *device)
@@ -554,6 +545,21 @@ int usb_device_connect_kernel_driver(struct usb_device *device,
     ctl.ioctl_code = (connect ? USBDEVFS_CONNECT : USBDEVFS_DISCONNECT);
     ctl.data = NULL;
     return ioctl(device->fd, USBDEVFS_IOCTL, &ctl);
+}
+
+int usb_device_set_configuration(struct usb_device *device, int configuration)
+{
+    return ioctl(device->fd, USBDEVFS_SETCONFIGURATION, &configuration);
+}
+
+int usb_device_set_interface(struct usb_device *device, unsigned int interface,
+                            unsigned int alt_setting)
+{
+    struct usbdevfs_setinterface ctl;
+
+    ctl.interface = interface;
+    ctl.altsetting = alt_setting;
+    return ioctl(device->fd, USBDEVFS_SETINTERFACE, &ctl);
 }
 
 int usb_device_control_transfer(struct usb_device *device,
@@ -689,6 +695,6 @@ struct usb_request *usb_request_wait(struct usb_device *dev)
 int usb_request_cancel(struct usb_request *req)
 {
     struct usbdevfs_urb *urb = ((struct usbdevfs_urb*)req->private_data);
-    return ioctl(req->dev->fd, USBDEVFS_DISCARDURB, &urb);
+    return ioctl(req->dev->fd, USBDEVFS_DISCARDURB, urb);
 }
 

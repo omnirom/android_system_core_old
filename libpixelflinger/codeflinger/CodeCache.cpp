@@ -34,7 +34,7 @@ namespace android {
 
 // ----------------------------------------------------------------------------
 
-#if defined(__arm__)
+#if defined(__arm__) || defined(__aarch64__)
 #include <unistd.h>
 #include <errno.h>
 #endif
@@ -89,7 +89,7 @@ static mspace getMspace()
         gExecutableStore = mmap(NULL, kMaxCodeCacheCapacity,
                                 PROT_READ | PROT_WRITE | PROT_EXEC,
                                 MAP_PRIVATE, fd, 0);
-        LOG_ALWAYS_FATAL_IF(gExecutableStore == NULL,
+        LOG_ALWAYS_FATAL_IF(gExecutableStore == MAP_FAILED,
                             "Creating code cache, mmap failed with error "
                             "'%s'", strerror(errno));
         close(fd);
@@ -201,13 +201,9 @@ int CodeCache::cache(  const AssemblyKeyBase& keyBase,
         mCacheInUse += assemblySize;
         mWhen++;
         // synchronize caches...
-#if defined(__arm__) || defined(__mips__)
-        const long base = long(assembly->base());
-        const long curr = base + long(assembly->size());
-        err = cacheflush(base, curr, 0);
-        ALOGE_IF(err, "cacheflush error %s\n",
-                 strerror(errno));
-#endif
+        void* base = assembly->base();
+        void* curr = (uint8_t*)base + assembly->size();
+        __builtin___clear_cache(base, curr);
     }
 
     pthread_mutex_unlock(&mLock);

@@ -35,7 +35,6 @@
 #include <linux/loop.h>
 #include <cutils/partition_utils.h>
 #include <cutils/android_reboot.h>
-#include <sys/system_properties.h>
 #include <fs_mgr.h>
 #include <fts.h>
 
@@ -52,7 +51,7 @@
 
 #include <private/android_filesystem_config.h>
 
-void add_environment(const char *name, const char *value);
+int add_environment(const char *name, const char *value);
 
 extern int init_module(void *, unsigned long, const char *);
 extern int init_export_rc_file(const char *);
@@ -186,6 +185,8 @@ static void service_start_if_not_disabled(struct service *svc)
 {
     if (!(svc->flags & SVC_DISABLED)) {
         service_start(svc, NULL);
+    } else {
+        svc->flags |= SVC_DISABLED_START;
     }
 }
 
@@ -245,6 +246,21 @@ int do_domainname(int nargs, char **args)
     return write_file("/proc/sys/kernel/domainname", args[1]);
 }
 
+int do_enable(int nargs, char **args)
+{
+    struct service *svc;
+    svc = service_find_by_name(args[1]);
+    if (svc) {
+        svc->flags &= ~(SVC_DISABLED | SVC_RC_DISABLED);
+        if (svc->flags & SVC_DISABLED_START) {
+            service_start(svc, NULL);
+        }
+    } else {
+        return -1;
+    }
+    return 0;
+}
+
 /*exec <path> <arg1> <arg2> ... */
 #define MAX_PARAMETERS 64
 int do_exec(int nargs, char **args)
@@ -285,8 +301,7 @@ int do_exec(int nargs, char **args)
 
 int do_export(int nargs, char **args)
 {
-    add_environment(args[1], args[2]);
-    return 0;
+    return add_environment(args[1], args[2]);
 }
 
 int do_hostname(int nargs, char **args)
@@ -546,6 +561,27 @@ exit_success:
 
 }
 
+static int wipe_data_via_recovery()
+{
+    mkdir("/cache/recovery", 0700);
+    int fd = open("/cache/recovery/command", O_RDWR|O_CREAT|O_TRUNC, 0600);
+    if (fd >= 0) {
+        write(fd, "--wipe_data\n", strlen("--wipe_data\n") + 1);
+        write(fd, "--reason=wipe_data_via_recovery\n", strlen("--reason=wipe_data_via_recovery\n") + 1);
+        close(fd);
+    } else {
+        ERROR("could not open /cache/recovery/command\n");
+        return -1;
+    }
+    android_reboot(ANDROID_RB_RESTART2, 0, "recovery");
+    while (1) { pause(); }  // never reached
+}
+
+
+/*
+ * This function might request a reboot, in which case it will
+ * not return.
+ */
 int do_mount_all(int nargs, char **args)
 {
     pid_t pid;
@@ -568,7 +604,12 @@ int do_mount_all(int nargs, char **args)
     pid = fork();
     if (pid > 0) {
         /* Parent.  Wait for the child to return */
-        waitpid(pid, &status, 0);
+        int wp_ret = TEMP_FAILURE_RETRY(waitpid(pid, &status, 0));
+        if (wp_ret < 0) {
+            /* Unexpected error code. We will continue anyway. */
+            NOTICE("waitpid failed rc=%d, errno=%d\n", wp_ret, errno);
+        }
+
         if (WIFEXITED(status)) {
             ret = WEXITSTATUS(status);
         } else {
@@ -583,23 +624,32 @@ int do_mount_all(int nargs, char **args)
         if (child_ret == -1) {
             ERROR("fs_mgr_mount_all returned an error\n");
         }
-        exit(child_ret);
+        _exit(child_ret);
     } else {
         /* fork failed, return an error */
         return -1;
     }
 
-    /* ret is 1 if the device is encrypted, 0 if not, and -1 on error */
-    if (ret == 1) {
+    if (ret == FS_MGR_MNTALL_DEV_NEEDS_ENCRYPTION) {
+        property_set("vold.decrypt", "trigger_encryption");
+    } else if (ret == FS_MGR_MNTALL_DEV_MIGHT_BE_ENCRYPTED) {
         property_set("ro.crypto.state", "encrypted");
-        property_set("vold.decrypt", "1");
-    } else if (ret == 0) {
+        property_set("vold.decrypt", "trigger_default_encryption");
+    } else if (ret == FS_MGR_MNTALL_DEV_NOT_ENCRYPTED) {
         property_set("ro.crypto.state", "unencrypted");
         /* If fs_mgr determined this is an unencrypted device, then trigger
          * that action.
          */
         action_for_each_trigger("nonencrypted", action_add_queue_tail);
+    } else if (ret == FS_MGR_MNTALL_DEV_NEEDS_RECOVERY) {
+        /* Setup a wipe via recovery, and reboot into recovery */
+        ERROR("fs_mgr_mount_all suggested recovery, so wiping data via recovery.\n");
+        ret = wipe_data_via_recovery();
+        /* If reboot worked, there is no return. */
+    } else if (ret > 0) {
+        ERROR("fs_mgr_mount_all returned unexpected error %d\n", ret);
     }
+    /* else ... < 0: error */
 
     return ret;
 }
@@ -975,16 +1025,37 @@ int do_setsebool(int nargs, char **args) {
 }
 
 int do_loglevel(int nargs, char **args) {
-    if (nargs == 2) {
-        klog_set_level(atoi(args[1]));
-        return 0;
+    int log_level;
+    char log_level_str[PROP_VALUE_MAX] = "";
+    if (nargs != 2) {
+        ERROR("loglevel: missing argument\n");
+        return -EINVAL;
     }
-    return -1;
+
+    if (expand_props(log_level_str, args[1], sizeof(log_level_str))) {
+        ERROR("loglevel: cannot expand '%s'\n", args[1]);
+        return -EINVAL;
+    }
+    log_level = atoi(log_level_str);
+    if (log_level < KLOG_ERROR_LEVEL || log_level > KLOG_DEBUG_LEVEL) {
+        ERROR("loglevel: invalid log level'%d'\n", log_level);
+        return -EINVAL;
+    }
+    klog_set_level(log_level);
+    return 0;
 }
 
 int do_load_persist_props(int nargs, char **args) {
     if (nargs == 1) {
         load_persist_props();
+        return 0;
+    }
+    return -1;
+}
+
+int do_load_all_props(int nargs, char **args) {
+    if (nargs == 1) {
+        load_all_props();
         return 0;
     }
     return -1;

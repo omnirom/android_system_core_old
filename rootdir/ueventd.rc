@@ -1,3 +1,6 @@
+subsystem adf
+	devname uevent_devname
+
 /dev/null                 0666   root       root
 /dev/zero                 0666   root       root
 /dev/full                 0666   root       root
@@ -5,6 +8,8 @@
 /dev/tty                  0666   root       root
 /dev/random               0666   root       root
 /dev/urandom              0666   root       root
+# Make HW RNG readable by group system to let EntropyMixer read it.
+/dev/hw_random            0440   root       system
 /dev/ashmem               0666   root       root
 /dev/binder               0666   root       root
 
@@ -32,6 +37,7 @@
 /dev/uhid                 0660   system     net_bt_stack
 /dev/uinput               0660   system     net_bt_stack
 /dev/alarm                0664   system     radio
+/dev/rtc0                 0640   system     system
 /dev/tty0                 0660   root       system
 /dev/graphics/*           0660   system     graphics
 /dev/msm_hw3dm            0660   system     graphics
@@ -124,6 +130,6 @@
 /sys/devices/system/cpu/cpufreq interactive/up_threshold_any_cpu_freq      0664    system  system
 /sys/devices/system/cpu/cpufreq interactive/up_threshold_any_cpu_load      0664    system  system
 
-/sys/devices/system/cpu/cpu* cpufreq/scaling_max_freq   0664    system  system
-/sys/devices/system/cpu/cpu* cpufreq/scaling_min_freq   0664    system  system
+/sys/devices/system/cpu/cpu*   cpufreq/scaling_max_freq   0664  system system
+/sys/devices/system/cpu/cpu*   cpufreq/scaling_min_freq   0664  system system
 /sys/devices/system/cpu/cpu* cpufreq/scaling_governor   0664    system  system

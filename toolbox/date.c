@@ -1,20 +1,95 @@
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <string.h>
-#include <errno.h>
 #include <time.h>
+#include <unistd.h>
+
 #include <linux/android_alarm.h>
+#include <linux/rtc.h>
 #include <sys/ioctl.h>
+
+static int settime_alarm(struct timespec *ts) {
+    int fd, ret;
+
+    fd = open("/dev/alarm", O_RDWR);
+    if (fd < 0)
+        return fd;
+
+    ret = ioctl(fd, ANDROID_ALARM_SET_RTC, ts);
+    close(fd);
+    return ret;
+}
+
+static int settime_alarm_tm(struct tm *tm) {
+    time_t t;
+    struct timespec ts;
+
+    t = mktime(tm);
+    ts.tv_sec = t;
+    ts.tv_nsec = 0;
+    return settime_alarm(&ts);
+}
+
+static int settime_alarm_timeval(struct timeval *tv) {
+    struct timespec ts;
+
+    ts.tv_sec = tv->tv_sec;
+    ts.tv_nsec = tv->tv_usec * 1000;
+    return settime_alarm(&ts);
+}
+
+static int settime_rtc_tm(struct tm *tm) {
+    int fd, ret;
+    struct timeval tv;
+    struct rtc_time rtc;
+
+    fd = open("/dev/rtc0", O_RDWR);
+    if (fd < 0)
+        return fd;
+
+    tv.tv_sec = mktime(tm);
+    tv.tv_usec = 0;
+
+    ret = settimeofday(&tv, NULL);
+    if (ret < 0)
+        goto done;
+
+    memset(&rtc, 0, sizeof(rtc));
+    rtc.tm_sec = tm->tm_sec;
+    rtc.tm_min = tm->tm_min;
+    rtc.tm_hour = tm->tm_hour;
+    rtc.tm_mday = tm->tm_mday;
+    rtc.tm_mon = tm->tm_mon;
+    rtc.tm_year = tm->tm_year;
+    rtc.tm_wday = tm->tm_wday;
+    rtc.tm_yday = tm->tm_yday;
+    rtc.tm_isdst = tm->tm_isdst;
+
+    ret = ioctl(fd, RTC_SET_TIME, rtc);
+done:
+    close(fd);
+    return ret;
+}
+
+static int settime_rtc_timeval(struct timeval *tv) {
+    struct tm tm, *err;
+    time_t t = tv->tv_sec;
+
+    err = gmtime_r(&t, &tm);
+    if (!err)
+        return -1;
+
+    return settime_rtc_tm(&tm);
+}
 
 static void settime(char *s) {
     struct tm tm;
     int day = atoi(s);
     int hour;
-    time_t t;
-    int fd;
-    struct timespec ts;
 
     while (*s && *s != '.')
         s++;
@@ -32,24 +107,45 @@ static void settime(char *s) {
     tm.tm_sec = (hour % 100);
     tm.tm_isdst = -1;
 
-    t = mktime(&tm);
-    
-    fd = open("/dev/alarm", O_RDWR);
-    ts.tv_sec = t;
-    ts.tv_nsec = 0;
-    ioctl(fd, ANDROID_ALARM_SET_RTC, &ts);
+    if (settime_alarm_tm(&tm) < 0)
+        settime_rtc_tm(&tm);
+}
+
+static char *parse_time(const char *str, struct timeval *ts) {
+  char *s;
+  long fs = 0; /* fractional seconds */
+
+  ts->tv_sec = strtoumax(str, &s, 10);
+
+  if (*s == '.') {
+    s++;
+    int count = 0;
+
+    /* read up to 6 digits (microseconds) */
+    while (*s && isdigit(*s)) {
+      if (++count < 7) {
+        fs = fs*10 + (*s - '0');
+      }
+      s++;
+    }
+
+    for (; count < 6; count++) {
+      fs *= 10;
+    }
+  }
+
+  ts->tv_usec = fs;
+  return s;
 }
 
 int date_main(int argc, char *argv[])
 {
-	int c;
+    int c;
     int res;
-	struct tm tm;
-	time_t t;
-	struct timeval tv;
-    struct timespec ts;
-	char strbuf[260];
-    int fd;
+    struct tm tm;
+    time_t t;
+    struct timeval tv;
+    char strbuf[260];
 
     int useutc = 0;
 
@@ -79,7 +175,6 @@ int date_main(int argc, char *argv[])
 
     int hasfmt = argc == optind + 1 && argv[optind][0] == '+';
     if(optind == argc || hasfmt) {
-        char buf[2000];
         time(&t);
         if (useutc) {
             gmtime_r(&t, &tm);
@@ -113,13 +208,11 @@ int date_main(int argc, char *argv[])
         //strptime(argv[optind], NULL, &tm);
         //tv.tv_sec = mktime(&tm);
         //tv.tv_usec = 0;
-        strtotimeval(argv[optind], &tv);
-        printf("time %s -> %d.%d\n", argv[optind], tv.tv_sec, tv.tv_usec);
-        fd = open("/dev/alarm", O_RDWR);
-        ts.tv_sec = tv.tv_sec;
-        ts.tv_nsec = tv.tv_usec * 1000;
-        res = ioctl(fd, ANDROID_ALARM_SET_RTC, &ts);
-        //res = settimeofday(&tv, NULL);
+        parse_time(argv[optind], &tv);
+        printf("time %s -> %lu.%lu\n", argv[optind], tv.tv_sec, tv.tv_usec);
+        res = settime_alarm_timeval(&tv);
+        if (res < 0)
+            res = settime_rtc_timeval(&tv);
         if(res < 0) {
             fprintf(stderr,"settimeofday failed %s\n", strerror(errno));
             return 1;

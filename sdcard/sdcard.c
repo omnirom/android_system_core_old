@@ -14,39 +14,42 @@
  * limitations under the License.
  */
 
+#define LOG_TAG "sdcard"
+
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <linux/fuse.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <errno.h>
-#include <fcntl.h>
+#include <sys/inotify.h>
 #include <sys/mount.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
-#include <sys/uio.h>
-#include <dirent.h>
-#include <limits.h>
-#include <ctype.h>
-#include <pthread.h>
 #include <sys/time.h>
-#include <sys/resource.h>
-#include <sys/inotify.h>
+#include <sys/uio.h>
+#include <unistd.h>
 
 #include <cutils/fs.h>
 #include <cutils/hashmap.h>
+#include <cutils/log.h>
 #include <cutils/multiuser.h>
 
 #include <private/android_filesystem_config.h>
 
-#include "fuse.h"
-
 /* README
  *
  * What is this?
- * 
+ *
  * sdcard is a program that uses FUSE to emulate FAT-on-sdcard style
- * directory permissions (all files are given fixed owner, group, and 
- * permissions at creation, owner, group, and permissions are not 
+ * directory permissions (all files are given fixed owner, group, and
+ * permissions at creation, owner, group, and permissions are not
  * changeable, symlinks and hardlinks are not createable, etc.
  *
  * See usage() for command line options.
@@ -91,12 +94,12 @@
 #define FUSE_TRACE 0
 
 #if FUSE_TRACE
-#define TRACE(x...) fprintf(stderr,x)
+#define TRACE(x...) ALOGD(x)
 #else
 #define TRACE(x...) do {} while (0)
 #endif
 
-#define ERROR(x...) fprintf(stderr,x)
+#define ERROR(x...) ALOGE(x)
 
 #define FUSE_UNKNOWN_INO 0xffffffff
 
@@ -140,6 +143,8 @@ typedef enum {
     PERM_ANDROID_DATA,
     /* This node is "/Android/obb" */
     PERM_ANDROID_OBB,
+    /* This node is "/Android/media" */
+    PERM_ANDROID_MEDIA,
     /* This node is "/Android/user" */
     PERM_ANDROID_USER,
 } perm_t;
@@ -200,7 +205,7 @@ static bool str_icase_equals(void *keyA, void *keyB) {
 }
 
 static int int_hash(void *key) {
-    return (int) key;
+    return (int) (uintptr_t) key;
 }
 
 static bool int_equals(void *keyA, void *keyB) {
@@ -232,7 +237,7 @@ struct fuse_handler {
      * buffer at the same time.  This allows us to share the underlying storage. */
     union {
         __u8 request_buffer[MAX_REQUEST_SIZE];
-        __u8 read_buffer[MAX_READ];
+        __u8 read_buffer[MAX_READ + PAGESIZE];
     };
 };
 
@@ -476,6 +481,10 @@ static void derive_permissions_locked(struct fuse* fuse, struct node *parent,
             /* Single OBB directory is always shared */
             node->graft_path = fuse->obbpath;
             node->graft_pathlen = strlen(fuse->obbpath);
+        } else if (!strcasecmp(node->name, "media")) {
+            /* App-specific directories inside; let anyone traverse */
+            node->perm = PERM_ANDROID_MEDIA;
+            node->mode = 0771;
         } else if (!strcasecmp(node->name, "user")) {
             /* User directories must only be accessible to system, protected
              * by sdcard_all. Zygote will bind mount the appropriate user-
@@ -487,7 +496,8 @@ static void derive_permissions_locked(struct fuse* fuse, struct node *parent,
         break;
     case PERM_ANDROID_DATA:
     case PERM_ANDROID_OBB:
-        appid = (appid_t) hashmapGet(fuse->package_to_appid, node->name);
+    case PERM_ANDROID_MEDIA:
+        appid = (appid_t) (uintptr_t) hashmapGet(fuse->package_to_appid, node->name);
         if (appid != 0) {
             node->uid = multiuser_get_uid(parent->userid, appid);
         }
@@ -511,7 +521,7 @@ static bool get_caller_has_rw_locked(struct fuse* fuse, const struct fuse_in_hea
     }
 
     appid_t appid = multiuser_get_app_id(hdr->uid);
-    return hashmapContainsKey(fuse->appid_with_rw, (void*) appid);
+    return hashmapContainsKey(fuse->appid_with_rw, (void*) (uintptr_t) appid);
 }
 
 /* Kernel has already enforced everything we returned through
@@ -819,7 +829,7 @@ static int handle_lookup(struct fuse* fuse, struct fuse_handler* handler,
     pthread_mutex_lock(&fuse->lock);
     parent_node = lookup_node_and_path_by_id_locked(fuse, hdr->nodeid,
             parent_path, sizeof(parent_path));
-    TRACE("[%d] LOOKUP %s @ %llx (%s)\n", handler->token, name, hdr->nodeid,
+    TRACE("[%d] LOOKUP %s @ %"PRIx64" (%s)\n", handler->token, name, hdr->nodeid,
         parent_node ? parent_node->name : "?");
     pthread_mutex_unlock(&fuse->lock);
 
@@ -841,7 +851,7 @@ static int handle_forget(struct fuse* fuse, struct fuse_handler* handler,
 
     pthread_mutex_lock(&fuse->lock);
     node = lookup_node_by_id_locked(fuse, hdr->nodeid);
-    TRACE("[%d] FORGET #%lld @ %llx (%s)\n", handler->token, req->nlookup,
+    TRACE("[%d] FORGET #%"PRIu64" @ %"PRIx64" (%s)\n", handler->token, req->nlookup,
             hdr->nodeid, node ? node->name : "?");
     if (node) {
         __u64 n = req->nlookup;
@@ -861,7 +871,7 @@ static int handle_getattr(struct fuse* fuse, struct fuse_handler* handler,
 
     pthread_mutex_lock(&fuse->lock);
     node = lookup_node_and_path_by_id_locked(fuse, hdr->nodeid, path, sizeof(path));
-    TRACE("[%d] GETATTR flags=%x fh=%llx @ %llx (%s)\n", handler->token,
+    TRACE("[%d] GETATTR flags=%x fh=%"PRIx64" @ %"PRIx64" (%s)\n", handler->token,
             req->getattr_flags, req->fh, hdr->nodeid, node ? node->name : "?");
     pthread_mutex_unlock(&fuse->lock);
 
@@ -886,7 +896,7 @@ static int handle_setattr(struct fuse* fuse, struct fuse_handler* handler,
     pthread_mutex_lock(&fuse->lock);
     has_rw = get_caller_has_rw_locked(fuse, hdr);
     node = lookup_node_and_path_by_id_locked(fuse, hdr->nodeid, path, sizeof(path));
-    TRACE("[%d] SETATTR fh=%llx valid=%x @ %llx (%s)\n", handler->token,
+    TRACE("[%d] SETATTR fh=%"PRIx64" valid=%x @ %"PRIx64" (%s)\n", handler->token,
             req->fh, req->valid, hdr->nodeid, node ? node->name : "?");
     pthread_mutex_unlock(&fuse->lock);
 
@@ -900,7 +910,7 @@ static int handle_setattr(struct fuse* fuse, struct fuse_handler* handler,
     /* XXX: incomplete implementation on purpose.
      * chmod/chown should NEVER be implemented.*/
 
-    if ((req->valid & FATTR_SIZE) && truncate(path, req->size) < 0) {
+    if ((req->valid & FATTR_SIZE) && truncate64(path, req->size) < 0) {
         return -errno;
     }
 
@@ -951,7 +961,7 @@ static int handle_mknod(struct fuse* fuse, struct fuse_handler* handler,
     has_rw = get_caller_has_rw_locked(fuse, hdr);
     parent_node = lookup_node_and_path_by_id_locked(fuse, hdr->nodeid,
             parent_path, sizeof(parent_path));
-    TRACE("[%d] MKNOD %s 0%o @ %llx (%s)\n", handler->token,
+    TRACE("[%d] MKNOD %s 0%o @ %"PRIx64" (%s)\n", handler->token,
             name, req->mode, hdr->nodeid, parent_node ? parent_node->name : "?");
     pthread_mutex_unlock(&fuse->lock);
 
@@ -982,7 +992,7 @@ static int handle_mkdir(struct fuse* fuse, struct fuse_handler* handler,
     has_rw = get_caller_has_rw_locked(fuse, hdr);
     parent_node = lookup_node_and_path_by_id_locked(fuse, hdr->nodeid,
             parent_path, sizeof(parent_path));
-    TRACE("[%d] MKDIR %s 0%o @ %llx (%s)\n", handler->token,
+    TRACE("[%d] MKDIR %s 0%o @ %"PRIx64" (%s)\n", handler->token,
             name, req->mode, hdr->nodeid, parent_node ? parent_node->name : "?");
     pthread_mutex_unlock(&fuse->lock);
 
@@ -1031,7 +1041,7 @@ static int handle_unlink(struct fuse* fuse, struct fuse_handler* handler,
     has_rw = get_caller_has_rw_locked(fuse, hdr);
     parent_node = lookup_node_and_path_by_id_locked(fuse, hdr->nodeid,
             parent_path, sizeof(parent_path));
-    TRACE("[%d] UNLINK %s @ %llx (%s)\n", handler->token,
+    TRACE("[%d] UNLINK %s @ %"PRIx64" (%s)\n", handler->token,
             name, hdr->nodeid, parent_node ? parent_node->name : "?");
     pthread_mutex_unlock(&fuse->lock);
 
@@ -1060,7 +1070,7 @@ static int handle_rmdir(struct fuse* fuse, struct fuse_handler* handler,
     has_rw = get_caller_has_rw_locked(fuse, hdr);
     parent_node = lookup_node_and_path_by_id_locked(fuse, hdr->nodeid,
             parent_path, sizeof(parent_path));
-    TRACE("[%d] RMDIR %s @ %llx (%s)\n", handler->token,
+    TRACE("[%d] RMDIR %s @ %"PRIx64" (%s)\n", handler->token,
             name, hdr->nodeid, parent_node ? parent_node->name : "?");
     pthread_mutex_unlock(&fuse->lock);
 
@@ -1098,7 +1108,7 @@ static int handle_rename(struct fuse* fuse, struct fuse_handler* handler,
             old_parent_path, sizeof(old_parent_path));
     new_parent_node = lookup_node_and_path_by_id_locked(fuse, req->newdir,
             new_parent_path, sizeof(new_parent_path));
-    TRACE("[%d] RENAME %s->%s @ %llx (%s) -> %llx (%s)\n", handler->token,
+    TRACE("[%d] RENAME %s->%s @ %"PRIx64" (%s) -> %"PRIx64" (%s)\n", handler->token,
             old_name, new_name,
             hdr->nodeid, old_parent_node ? old_parent_node->name : "?",
             req->newdir, new_parent_node ? new_parent_node->name : "?");
@@ -1182,7 +1192,7 @@ static int handle_open(struct fuse* fuse, struct fuse_handler* handler,
     pthread_mutex_lock(&fuse->lock);
     has_rw = get_caller_has_rw_locked(fuse, hdr);
     node = lookup_node_and_path_by_id_locked(fuse, hdr->nodeid, path, sizeof(path));
-    TRACE("[%d] OPEN 0%o @ %llx (%s)\n", handler->token,
+    TRACE("[%d] OPEN 0%o @ %"PRIx64" (%s)\n", handler->token,
             req->flags, hdr->nodeid, node ? node->name : "?");
     pthread_mutex_unlock(&fuse->lock);
 
@@ -1218,21 +1228,22 @@ static int handle_read(struct fuse* fuse, struct fuse_handler* handler,
     __u32 size = req->size;
     __u64 offset = req->offset;
     int res;
+    __u8 *read_buffer = (__u8 *) ((uintptr_t)(handler->read_buffer + PAGESIZE) & ~((uintptr_t)PAGESIZE-1));
 
     /* Don't access any other fields of hdr or req beyond this point, the read buffer
      * overlaps the request buffer and will clobber data in the request.  This
      * saves us 128KB per request handler thread at the cost of this scary comment. */
 
-    TRACE("[%d] READ %p(%d) %u@%llu\n", handler->token,
-            h, h->fd, size, offset);
-    if (size > sizeof(handler->read_buffer)) {
+    TRACE("[%d] READ %p(%d) %u@%"PRIu64"\n", handler->token,
+            h, h->fd, size, (uint64_t) offset);
+    if (size > MAX_READ) {
         return -EINVAL;
     }
-    res = pread64(h->fd, handler->read_buffer, size, offset);
+    res = pread64(h->fd, read_buffer, size, offset);
     if (res < 0) {
         return -errno;
     }
-    fuse_reply(fuse, unique, handler->read_buffer, res);
+    fuse_reply(fuse, unique, read_buffer, res);
     return NO_STATUS;
 }
 
@@ -1243,8 +1254,14 @@ static int handle_write(struct fuse* fuse, struct fuse_handler* handler,
     struct fuse_write_out out;
     struct handle *h = id_to_ptr(req->fh);
     int res;
+    __u8 aligned_buffer[req->size] __attribute__((__aligned__(PAGESIZE)));
 
-    TRACE("[%d] WRITE %p(%d) %u@%llu\n", handler->token,
+    if (req->flags & O_DIRECT) {
+        memcpy(aligned_buffer, buffer, req->size);
+        buffer = (const __u8*) aligned_buffer;
+    }
+
+    TRACE("[%d] WRITE %p(%d) %u@%"PRIu64"\n", handler->token,
             h, h->fd, req->size, req->offset);
     res = pwrite64(h->fd, buffer, req->size, req->offset);
     if (res < 0) {
@@ -1300,14 +1317,23 @@ static int handle_release(struct fuse* fuse, struct fuse_handler* handler,
 static int handle_fsync(struct fuse* fuse, struct fuse_handler* handler,
         const struct fuse_in_header* hdr, const struct fuse_fsync_in* req)
 {
-    int is_data_sync = req->fsync_flags & 1;
-    struct handle *h = id_to_ptr(req->fh);
-    int res;
+    bool is_dir = (hdr->opcode == FUSE_FSYNCDIR);
+    bool is_data_sync = req->fsync_flags & 1;
 
-    TRACE("[%d] FSYNC %p(%d) is_data_sync=%d\n", handler->token,
-            h, h->fd, is_data_sync);
-    res = is_data_sync ? fdatasync(h->fd) : fsync(h->fd);
-    if (res < 0) {
+    int fd = -1;
+    if (is_dir) {
+      struct dirhandle *dh = id_to_ptr(req->fh);
+      fd = dirfd(dh->d);
+    } else {
+      struct handle *h = id_to_ptr(req->fh);
+      fd = h->fd;
+    }
+
+    TRACE("[%d] %s %p(%d) is_data_sync=%d\n", handler->token,
+            is_dir ? "FSYNCDIR" : "FSYNC",
+            id_to_ptr(req->fh), fd, is_data_sync);
+    int res = is_data_sync ? fdatasync(fd) : fsync(fd);
+    if (res == -1) {
         return -errno;
     }
     return 0;
@@ -1330,7 +1356,7 @@ static int handle_opendir(struct fuse* fuse, struct fuse_handler* handler,
 
     pthread_mutex_lock(&fuse->lock);
     node = lookup_node_and_path_by_id_locked(fuse, hdr->nodeid, path, sizeof(path));
-    TRACE("[%d] OPENDIR @ %llx (%s)\n", handler->token,
+    TRACE("[%d] OPENDIR @ %"PRIx64" (%s)\n", handler->token,
             hdr->nodeid, node ? node->name : "?");
     pthread_mutex_unlock(&fuse->lock);
 
@@ -1496,7 +1522,8 @@ static int handle_fuse_request(struct fuse *fuse, struct fuse_handler* handler,
         return handle_release(fuse, handler, hdr, req);
     }
 
-    case FUSE_FSYNC: {
+    case FUSE_FSYNC:
+    case FUSE_FSYNCDIR: {
         const struct fuse_fsync_in *req = data;
         return handle_fsync(fuse, handler, hdr, req);
     }
@@ -1524,14 +1551,13 @@ static int handle_fuse_request(struct fuse *fuse, struct fuse_handler* handler,
         return handle_releasedir(fuse, handler, hdr, req);
     }
 
-//    case FUSE_FSYNCDIR:
     case FUSE_INIT: { /* init_in -> init_out */
         const struct fuse_init_in *req = data;
         return handle_init(fuse, handler, hdr, req);
     }
 
     default: {
-        TRACE("[%d] NOTIMPL op=%d uniq=%llx nid=%llx\n",
+        TRACE("[%d] NOTIMPL op=%d uniq=%"PRIx64" nid=%"PRIx64"\n",
                 handler->token, hdr->opcode, hdr->unique, hdr->nodeid);
         return -ENOSYS;
     }
@@ -1621,12 +1647,12 @@ static int read_package_list(struct fuse *fuse) {
 
         if (sscanf(buf, "%s %d %*d %*s %*s %s", package_name, &appid, gids) == 3) {
             char* package_name_dup = strdup(package_name);
-            hashmapPut(fuse->package_to_appid, package_name_dup, (void*) appid);
+            hashmapPut(fuse->package_to_appid, package_name_dup, (void*) (uintptr_t) appid);
 
             char* token = strtok(gids, ",");
             while (token != NULL) {
                 if (strtoul(token, NULL, 10) == fuse->write_gid) {
-                    hashmapPut(fuse->appid_with_rw, (void*) appid, (void*) 1);
+                    hashmapPut(fuse->appid_with_rw, (void*) (uintptr_t) appid, (void*) (uintptr_t) 1);
                     break;
                 }
                 token = strtok(NULL, ",");
@@ -1634,7 +1660,7 @@ static int read_package_list(struct fuse *fuse) {
         }
     }
 
-    TRACE("read_package_list: found %d packages, %d with write_gid\n",
+    TRACE("read_package_list: found %zu packages, %zu with write_gid\n",
             hashmapSize(fuse->package_to_appid),
             hashmapSize(fuse->appid_with_rw));
     fclose(file);
@@ -1831,6 +1857,7 @@ int main(int argc, char **argv)
     bool split_perms = false;
     int i;
     struct rlimit rlim;
+    int fs_version;
 
     int opt;
     while ((opt = getopt(argc, argv, "u:g:w:t:dls")) != -1) {
@@ -1903,6 +1930,11 @@ int main(int argc, char **argv)
     rlim.rlim_max = 8192;
     if (setrlimit(RLIMIT_NOFILE, &rlim)) {
         ERROR("Error setting RLIMIT_NOFILE, errno = %d\n", errno);
+    }
+
+    while ((fs_read_atomic_int("/data/.layout_version", &fs_version) == -1) || (fs_version < 3)) {
+        ERROR("installd fs upgrade not yet complete. Waiting...\n");
+        sleep(1);
     }
 
     res = run(source_path, dest_path, uid, gid, write_gid, num_threads, derive, split_perms);

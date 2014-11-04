@@ -18,13 +18,15 @@ LOCAL_SRC_FILES:= \
 	watchdogd.c \
 	vendor_init.c
 
+LOCAL_CFLAGS    += -Wno-unused-parameter
+
 ifeq ($(strip $(INIT_BOOTCHART)),true)
 LOCAL_SRC_FILES += bootchart.c
 LOCAL_CFLAGS    += -DBOOTCHART=1
 endif
 
 ifneq (,$(filter userdebug eng,$(TARGET_BUILD_VARIANT)))
-LOCAL_CFLAGS += -DALLOW_LOCAL_PROP_OVERRIDE=1
+LOCAL_CFLAGS += -DALLOW_LOCAL_PROP_OVERRIDE=1 -DALLOW_DISABLE_SELINUX=1
 endif
 
 ifeq ($(BOARD_WANTS_EMMC_BOOT),true)
@@ -54,6 +56,9 @@ $(foreach system_core_init_define,$(SYSTEM_CORE_INIT_DEFINES), \
   ) \
   )
 
+# Enable ueventd logging
+#LOCAL_CFLAGS += -DLOG_UEVENTS=1
+
 LOCAL_MODULE:= init
 
 LOCAL_FORCE_STATIC_EXECUTABLE := true
@@ -73,6 +78,8 @@ LOCAL_STATIC_LIBRARIES := \
 ifneq ($(strip $(TARGET_INIT_VENDOR_LIB)),)
 LOCAL_WHOLE_STATIC_LIBRARIES += $(TARGET_INIT_VENDOR_LIB)
 endif
+
+LOCAL_ADDITIONAL_DEPENDENCIES += $(LOCAL_PATH)/Android.mk
 
 include $(BUILD_EXECUTABLE)
 

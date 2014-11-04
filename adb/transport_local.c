@@ -48,7 +48,7 @@ static inline void fix_endians(apacket *p)
  * local transport it is connected. The list is used to detect when we're
  * trying to connect twice to a given local transport.
  */
-#define  ADB_LOCAL_TRANSPORT_MAX  16
+#define  ADB_LOCAL_TRANSPORT_MAX  64
 
 ADB_MUTEX_DEFINE( local_transports_lock );
 
@@ -159,7 +159,7 @@ static void *server_socket_thread(void * arg)
     int serverfd, fd;
     struct sockaddr addr;
     socklen_t alen;
-    int port = (int)arg;
+    int port = (int) (uintptr_t) arg;
 
     D("transport: server_socket_thread() starting\n");
     serverfd = -1;
@@ -241,7 +241,7 @@ static const char _start_req[]  = "start";
 /* 'ok' reply from the adb QEMUD service. */
 static const char _ok_resp[]    = "ok";
 
-    const int port = (int)arg;
+    const int port = (int) (uintptr_t) arg;
     int res, fd;
     char tmp[256];
     char con_name[32];
@@ -326,7 +326,7 @@ void local_init(int port)
 
     D("transport: local %s init\n", HOST ? "client" : "server");
 
-    if(adb_thread_create(&thr, func, (void *)port)) {
+    if(adb_thread_create(&thr, func, (void *) (uintptr_t) port)) {
         fatal_errno("cannot create local socket %s thread",
                     HOST ? "client" : "server");
     }

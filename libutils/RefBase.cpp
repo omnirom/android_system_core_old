@@ -17,6 +17,14 @@
 #define LOG_TAG "RefBase"
 // #define LOG_NDEBUG 0
 
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <typeinfo>
+#include <unistd.h>
+
 #include <utils/RefBase.h>
 
 #include <utils/Atomic.h>
@@ -24,13 +32,9 @@
 #include <utils/Log.h>
 #include <utils/threads.h>
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <typeinfo>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
+#ifndef __unused
+#define __unused __attribute__((__unused__))
+#endif
 
 // compile with refcounting debugging enabled
 #define DEBUG_REFS                      0
@@ -109,7 +113,7 @@ public:
                 char inc = refs->ref >= 0 ? '+' : '-';
                 ALOGD("\t%c ID %p (ref %d):", inc, refs->id, refs->ref);
 #if DEBUG_REFS_CALLSTACK_ENABLED
-                refs->stack.dump(LOG_TAG);
+                refs->stack.log(LOG_TAG);
 #endif
                 refs = refs->next;
             }
@@ -123,7 +127,7 @@ public:
                 char inc = refs->ref >= 0 ? '+' : '-';
                 ALOGD("\t%c ID %p (ref %d):", inc, refs->id, refs->ref);
 #if DEBUG_REFS_CALLSTACK_ENABLED
-                refs->stack.dump(LOG_TAG);
+                refs->stack.log(LOG_TAG);
 #endif
                 refs = refs->next;
             }
@@ -388,7 +392,7 @@ void RefBase::weakref_type::incWeak(const void* id)
 {
     weakref_impl* const impl = static_cast<weakref_impl*>(this);
     impl->addWeakRef(id);
-    const int32_t c = android_atomic_inc(&impl->mWeak);
+    const int32_t c __unused = android_atomic_inc(&impl->mWeak);
     ALOG_ASSERT(c >= 0, "incWeak called on %p after last weak ref", this);
 }
 
@@ -615,7 +619,7 @@ void RefBase::onLastStrongRef(const void* /*id*/)
 {
 }
 
-bool RefBase::onIncStrongAttempted(uint32_t flags, const void* id)
+bool RefBase::onIncStrongAttempted(uint32_t flags, const void* /*id*/)
 {
     return (flags&FIRST_INC_STRONG) ? true : false;
 }
@@ -633,13 +637,15 @@ extern "C" void _ZN7android7RefBase14moveReferencesEPvPKvjRKNS_22ReferenceConver
 }
 /* END JB MR1 COMPAT */
 
-void RefBase::renameRefs(size_t n, const ReferenceRenamer& renamer) {
 #if DEBUG_REFS
+void RefBase::renameRefs(size_t n, const ReferenceRenamer& renamer) {
     for (size_t i=0 ; i<n ; i++) {
         renamer(i);
     }
-#endif
 }
+#else
+void RefBase::renameRefs(size_t /*n*/, const ReferenceRenamer& /*renamer*/) { }
+#endif
 
 void RefBase::renameRefId(weakref_type* ref,
         const void* old_id, const void* new_id) {

@@ -356,7 +356,7 @@ void GGLAssembler::init_textures(
             // merge base & offset
             CONTEXT_LOAD(txPtr.reg, generated_vars.texture[i].stride);
             SMLABB(AL, Rx, Ry, txPtr.reg, Rx);               // x+y*stride
-            CONTEXT_LOAD(txPtr.reg, generated_vars.texture[i].data);
+            CONTEXT_ADDR_LOAD(txPtr.reg, generated_vars.texture[i].data);
             base_offset(txPtr, txPtr, Rx);
         } else {
             Scratch scratches(registerFile());
@@ -629,7 +629,7 @@ void GGLAssembler::build_textures(  fragment_parts_t& parts,
                 return;
 
             CONTEXT_LOAD(stride,    generated_vars.texture[i].stride);
-            CONTEXT_LOAD(txPtr.reg, generated_vars.texture[i].data);
+            CONTEXT_ADDR_LOAD(txPtr.reg, generated_vars.texture[i].data);
             SMLABB(AL, u, v, stride, u);    // u+v*stride 
             base_offset(txPtr, txPtr, u);
 
@@ -694,7 +694,7 @@ void GGLAssembler::build_iterate_texture_coordinates(
 }
 
 void GGLAssembler::filter8(
-        const fragment_parts_t& parts,
+        const fragment_parts_t& /*parts*/,
         pixel_t& texel, const texture_unit_t& tmu,
         int U, int V, pointer_t& txPtr,
         int FRAC_BITS)
@@ -761,7 +761,7 @@ void GGLAssembler::filter8(
 }
 
 void GGLAssembler::filter16(
-        const fragment_parts_t& parts,
+        const fragment_parts_t& /*parts*/,
         pixel_t& texel, const texture_unit_t& tmu,
         int U, int V, pointer_t& txPtr,
         int FRAC_BITS)
@@ -879,10 +879,10 @@ void GGLAssembler::filter16(
 }
 
 void GGLAssembler::filter24(
-        const fragment_parts_t& parts,
-        pixel_t& texel, const texture_unit_t& tmu,
-        int U, int V, pointer_t& txPtr,
-        int FRAC_BITS)
+        const fragment_parts_t& /*parts*/,
+        pixel_t& texel, const texture_unit_t& /*tmu*/,
+        int /*U*/, int /*V*/, pointer_t& txPtr,
+        int /*FRAC_BITS*/)
 {
     // not supported yet (currently disabled)
     load(txPtr, texel, 0);
@@ -989,8 +989,8 @@ void GGLAssembler::filter32(
 }
 #else
 void GGLAssembler::filter32(
-        const fragment_parts_t& parts,
-        pixel_t& texel, const texture_unit_t& tmu,
+        const fragment_parts_t& /*parts*/,
+        pixel_t& texel, const texture_unit_t& /*tmu*/,
         int U, int V, pointer_t& txPtr,
         int FRAC_BITS)
 {

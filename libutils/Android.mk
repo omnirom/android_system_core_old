@@ -26,6 +26,7 @@ commonSources:= \
 	LinearAllocator.cpp \
 	LinearTransform.cpp \
 	Log.cpp \
+	NativeHandle.cpp \
 	Printer.cpp \
 	ProcessCallStack.cpp \
 	PropertyMap.cpp \
@@ -43,7 +44,7 @@ commonSources:= \
 	VectorImpl.cpp \
 	misc.cpp
 
-host_commonCflags := -DLIBUTILS_NATIVE=1 $(TOOL_CFLAGS)
+host_commonCflags := -DLIBUTILS_NATIVE=1 $(TOOL_CFLAGS) -Werror
 
 ifeq ($(HOST_OS),windows)
 ifeq ($(strip $(USE_CYGWIN),),)
@@ -69,21 +70,7 @@ endif
 LOCAL_MODULE:= libutils
 LOCAL_STATIC_LIBRARIES := liblog
 LOCAL_CFLAGS += $(host_commonCflags)
-LOCAL_LDLIBS += $(host_commonLdlibs)
-include $(BUILD_HOST_STATIC_LIBRARY)
-
-
-# For the host, 64-bit
-# =====================================================
-include $(CLEAR_VARS)
-LOCAL_SRC_FILES:= $(commonSources)
-ifeq ($(HOST_OS), linux)
-LOCAL_SRC_FILES += Looper.cpp
-endif
-LOCAL_MODULE:= lib64utils
-LOCAL_STATIC_LIBRARIES := liblog
-LOCAL_CFLAGS += $(host_commonCflags) -m64
-LOCAL_LDLIBS += $(host_commonLdlibs)
+LOCAL_MULTILIB := both
 include $(BUILD_HOST_STATIC_LIBRARY)
 
 
@@ -98,27 +85,24 @@ LOCAL_SRC_FILES:= \
 	Looper.cpp \
 	Trace.cpp
 
-ifeq ($(TARGET_OS),linux)
-LOCAL_LDLIBS += -lrt -ldl
-endif
-
 ifeq ($(TARGET_ARCH),mips)
 LOCAL_CFLAGS += -DALIGN_DOUBLE
 endif
+LOCAL_CFLAGS += -Werror
 
 LOCAL_C_INCLUDES += \
-		bionic/libc/private \
+		bionic/libc \
 		external/zlib
-
-LOCAL_LDLIBS += -lpthread
 
 LOCAL_STATIC_LIBRARIES := \
 	libcutils
 
 LOCAL_SHARED_LIBRARIES := \
-        libcorkscrew \
+        libbacktrace \
         liblog \
         libdl
+
+include external/stlport/libstlport.mk
 
 LOCAL_MODULE:= libutils
 include $(BUILD_STATIC_LIBRARY)
@@ -129,10 +113,13 @@ include $(CLEAR_VARS)
 LOCAL_MODULE:= libutils
 LOCAL_WHOLE_STATIC_LIBRARIES := libutils
 LOCAL_SHARED_LIBRARIES := \
-        liblog \
+        libbacktrace \
         libcutils \
         libdl \
-        libcorkscrew
+        liblog
+LOCAL_CFLAGS := -Werror
+
+include external/stlport/libstlport.mk
 
 include $(BUILD_SHARED_LIBRARY)
 

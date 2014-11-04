@@ -33,7 +33,7 @@
 // fwd
 static int listpath(const char *name, int flags);
 
-static char mode2kind(unsigned mode)
+static char mode2kind(mode_t mode)
 {
     switch(mode & S_IFMT){
     case S_IFSOCK: return 's';
@@ -47,7 +47,7 @@ static char mode2kind(unsigned mode)
     }
 }
 
-static void mode2str(unsigned mode, char *out)
+void strmode(mode_t mode, char *out)
 {
     *out++ = mode2kind(mode);
 
@@ -75,23 +75,23 @@ static void mode2str(unsigned mode, char *out)
     *out = 0;
 }
 
-static void user2str(unsigned uid, char *out)
+static void user2str(uid_t uid, char *out, size_t out_size)
 {
     struct passwd *pw = getpwuid(uid);
     if(pw) {
-        strcpy(out, pw->pw_name);
+        strlcpy(out, pw->pw_name, out_size);
     } else {
-        sprintf(out, "%d", uid);
+        snprintf(out, out_size, "%d", uid);
     }
 }
 
-static void group2str(unsigned gid, char *out)
+static void group2str(gid_t gid, char *out, size_t out_size)
 {
     struct group *gr = getgrgid(gid);
     if(gr) {
-        strcpy(out, gr->gr_name);
+        strlcpy(out, gr->gr_name, out_size);
     } else {
-        sprintf(out, "%d", gid);
+        snprintf(out, out_size, "%d", gid);
     }
 }
 
@@ -137,7 +137,7 @@ static int listfile_size(const char *path, const char *filename, struct stat *s,
 
     /* blocks are 512 bytes, we want output to be KB */
     if ((flags & LIST_SIZE) != 0) {
-        printf("%lld ", s->st_blocks / 2);
+        printf("%lld ", (long long)s->st_blocks / 2);
     }
 
     if ((flags & LIST_CLASSIFY) != 0) {
@@ -164,8 +164,8 @@ static int listfile_long(const char *path, struct stat *s, int flags)
 {
     char date[32];
     char mode[16];
-    char user[16];
-    char group[16];
+    char user[32];
+    char group[32];
     const char *name;
 
     if(!s || !path) {
@@ -180,13 +180,13 @@ static int listfile_long(const char *path, struct stat *s, int flags)
         name++;
     }
 
-    mode2str(s->st_mode, mode);
+    strmode(s->st_mode, mode);
     if (flags & LIST_LONG_NUMERIC) {
-        sprintf(user, "%ld", s->st_uid);
-        sprintf(group, "%ld", s->st_gid);
+        snprintf(user, sizeof(user), "%u", s->st_uid);
+        snprintf(group, sizeof(group), "%u", s->st_gid);
     } else {
-        user2str(s->st_uid, user);
-        group2str(s->st_gid, group);
+        user2str(s->st_uid, user, sizeof(user));
+        group2str(s->st_gid, group, sizeof(group));
     }
 
     strftime(date, 32, "%Y-%m-%d %H:%M", localtime((const time_t*)&s->st_mtime));
@@ -205,11 +205,11 @@ static int listfile_long(const char *path, struct stat *s, int flags)
         break;
     case S_IFREG:
         printf("%s %-8s %-8s %8lld %s %s\n",
-               mode, user, group, s->st_size, date, name);
+               mode, user, group, (long long)s->st_size, date, name);
         break;
     case S_IFLNK: {
         char linkto[256];
-        int len;
+        ssize_t len;
 
         len = readlink(path, linkto, 256);
         if(len < 0) return -1;
@@ -235,11 +235,11 @@ static int listfile_long(const char *path, struct stat *s, int flags)
     return 0;
 }
 
-static int listfile_maclabel(const char *path, struct stat *s, int flags)
+static int listfile_maclabel(const char *path, struct stat *s)
 {
     char mode[16];
-    char user[16];
-    char group[16];
+    char user[32];
+    char group[32];
     char *maclabel = NULL;
     const char *name;
 
@@ -260,9 +260,9 @@ static int listfile_maclabel(const char *path, struct stat *s, int flags)
         return -1;
     }
 
-    mode2str(s->st_mode, mode);
-    user2str(s->st_uid, user);
-    group2str(s->st_gid, group);
+    strmode(s->st_mode, mode);
+    user2str(s->st_uid, user, sizeof(user));
+    group2str(s->st_gid, group, sizeof(group));
 
     switch(s->st_mode & S_IFMT) {
     case S_IFLNK: {
@@ -316,15 +316,16 @@ static int listfile(const char *dirname, const char *filename, int flags)
     }
 
     if(lstat(pathname, &s) < 0) {
+        fprintf(stderr, "lstat '%s' failed: %s\n", pathname, strerror(errno));
         return -1;
     }
 
     if(flags & LIST_INODE) {
-        printf("%8llu ", s.st_ino);
+        printf("%8llu ", (unsigned long long)s.st_ino);
     }
 
     if ((flags & LIST_MACLABEL) != 0) {
-        return listfile_maclabel(pathname, &s, flags);
+        return listfile_maclabel(pathname, &s);
     } else if ((flags & LIST_LONG) != 0) {
         return listfile_long(pathname, &s, flags);
     } else /*((flags & LIST_SIZE) != 0)*/ {
@@ -442,7 +443,6 @@ static int listpath(const char *name, int flags)
 int ls_main(int argc, char **argv)
 {
     int flags = 0;
-    int listed = 0;
 
     if(argc > 1) {
         int i;

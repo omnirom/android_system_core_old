@@ -278,7 +278,9 @@ int adb_connect(const char *service)
         return 0;
 
     fd = _adb_connect(service);
-    if(fd == -2) {
+    if(fd == -1) {
+        D("_adb_connect error: %s\n", __adb_error);
+    } else if(fd == -2) {
         fprintf(stderr,"** daemon still not running\n");
     }
     D("adb_connect: return fd %d\n", fd);
@@ -294,6 +296,7 @@ int adb_command(const char *service)
 {
     int fd = adb_connect(service);
     if(fd < 0) {
+        fprintf(stderr, "error: %s\n", adb_error());
         return -1;
     }
 
@@ -322,7 +325,10 @@ char *adb_query(const char *service)
 
     buf[4] = 0;
     n = strtoul(buf, 0, 16);
-    if(n > 1024) goto oops;
+    if(n >= 0xffff) {
+        strcpy(__adb_error, "reply is too long (>= 64kB)");
+        goto oops;
+    }
 
     tmp = malloc(n + 1);
     if(tmp == 0) goto oops;

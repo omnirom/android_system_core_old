@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <string.h>
-#include <fcntl.h>
-#include <sys/mount.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mount.h>
+#include <unistd.h>
 
 #include "sysdeps.h"
 
@@ -29,23 +29,23 @@
 
 
 static int system_ro = 1;
+static int vendor_ro = 1;
 
 /* Returns the device used to mount a directory in /proc/mounts */
 static char *find_mount(const char *dir)
 {
     int fd;
     int res;
-    int size;
     char *token = NULL;
     const char delims[] = "\n";
     char buf[4096];
 
-    fd = unix_open("/proc/mounts", O_RDONLY);
+    fd = unix_open("/proc/mounts", O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         return NULL;
 
     buf[sizeof(buf) - 1] = '\0';
-    size = adb_read(fd, buf, sizeof(buf) - 1);
+    adb_read(fd, buf, sizeof(buf) - 1);
     adb_close(fd);
 
     token = strtok(buf, delims);
@@ -68,34 +68,43 @@ static char *find_mount(const char *dir)
     return NULL;
 }
 
+static int hasVendorPartition()
+{
+    struct stat info;
+    if (!lstat("/vendor", &info))
+        if ((info.st_mode & S_IFMT) == S_IFDIR)
+          return true;
+    return false;
+}
+
 /* Init mounts /system as read only, remount to enable writes. */
-static int remount_system()
+static int remount(const char* dir, int* dir_ro)
 {
     char *dev;
     int fd;
     int OFF = 0;
 
-    if (system_ro == 0) {
+    if (dir_ro == 0) {
         return 0;
     }
 
-    dev = find_mount("/system");
+    dev = find_mount(dir);
 
     if (!dev)
         return -1;
 
-    fd = unix_open(dev, O_RDONLY);
+    fd = unix_open(dev, O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         return -1;
 
     ioctl(fd, BLKROSET, &OFF);
     adb_close(fd);
 
-    system_ro = mount(dev, "/system", "none", MS_REMOUNT, NULL);
+    *dir_ro = mount(dev, dir, "none", MS_REMOUNT, NULL);
 
     free(dev);
 
-    return system_ro;
+    return *dir_ro;
 }
 
 static void write_string(int fd, const char* str)
@@ -105,14 +114,23 @@ static void write_string(int fd, const char* str)
 
 void remount_service(int fd, void *cookie)
 {
-    int ret = remount_system();
-
-    if (!ret)
-       write_string(fd, "remount succeeded\n");
-    else {
-        char    buffer[200];
-        snprintf(buffer, sizeof(buffer), "remount failed: %s\n", strerror(errno));
+    char buffer[200];
+    if (remount("/system", &system_ro)) {
+        snprintf(buffer, sizeof(buffer), "remount of system failed: %s\n",strerror(errno));
         write_string(fd, buffer);
+    }
+
+    if (hasVendorPartition()) {
+        if (remount("/vendor", &vendor_ro)) {
+            snprintf(buffer, sizeof(buffer), "remount of vendor failed: %s\n",strerror(errno));
+            write_string(fd, buffer);
+        }
+    }
+
+    if (!system_ro && (!vendor_ro || !hasVendorPartition()))
+        write_string(fd, "remount succeeded\n");
+    else {
+        write_string(fd, "remount failed\n");
     }
 
     adb_close(fd);

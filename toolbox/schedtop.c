@@ -1,26 +1,23 @@
-#include <stdio.h>
-#include <stdlib.h>
 #include <ctype.h>
+#include <dirent.h>
 #include <fcntl.h>
-#include <unistd.h>
-
+#include <pwd.h>
+#include <signal.h>
+#include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
-
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <dirent.h>
-#include <signal.h>
-
-#include <pwd.h>
+#include <unistd.h>
 
 struct thread_info {
     int pid;
     int tid;
     char name[64];
-    uint64_t exec_time;
-    uint64_t delay_time;
-    uint32_t run_count;
+    unsigned long long exec_time;
+    unsigned long long delay_time;
+    unsigned long long run_count;
 };
 
 struct thread_table {
@@ -110,7 +107,8 @@ static void add_thread(int pid, int tid, struct thread_info *proc_info)
         sprintf(line, "/proc/%d/schedstat", pid);
     if (read_line(line, sizeof(line)))
         return;
-    if(sscanf(line, "%llu %llu %u", &info->exec_time, &info->delay_time, &info->run_count) != 3)
+    if(sscanf(line, "%llu %llu %llu",
+              &info->exec_time, &info->delay_time, &info->run_count) != 3)
         return;
     if (proc_info) {
         proc_info->exec_time += info->exec_time;
@@ -183,7 +181,7 @@ static void print_threads(int pid, uint32_t flags)
         if (j == threads.active)
             printf(" %5u died\n", tid);
         else if (!(flags & FLAG_HIDE_IDLE) || threads.data[j].run_count - last_threads.data[i].run_count)
-            printf(" %5u %2u.%0*u %2u.%0*u %5u %5u.%0*u %5u.%0*u %7u  %s\n", tid,
+            printf(" %5u %2u.%0*u %2u.%0*u %5llu %5u.%0*u %5u.%0*u %7llu  %s\n", tid,
                 NS_TO_S_D(threads.data[j].exec_time - last_threads.data[i].exec_time),
                 NS_TO_S_D(threads.data[j].delay_time - last_threads.data[i].delay_time),
                 threads.data[j].run_count - last_threads.data[i].run_count,
@@ -212,7 +210,7 @@ static void update_table(DIR *d, uint32_t flags)
     }
     if (!(flags & FLAG_BATCH))
         printf("\e[H\e[0J");
-    printf("Processes: %d, Threads %d\n", processes.active, threads.active);
+    printf("Processes: %zu, Threads %zu\n", processes.active, threads.active);
     switch (time_dp) {
     case 3:
         printf("   TID --- SINCE LAST ---- ---------- TOTAL ----------\n");
@@ -229,14 +227,13 @@ static void update_table(DIR *d, uint32_t flags)
     }
     for (i = 0; i < last_processes.active; i++) {
         int pid = last_processes.data[i].pid;
-        int tid = last_processes.data[i].tid;
         for (j = 0; j < processes.active; j++)
             if (pid == processes.data[j].pid)
                 break;
         if (j == processes.active)
             printf("%5u died\n", pid);
         else if (!(flags & FLAG_HIDE_IDLE) || processes.data[j].run_count - last_processes.data[i].run_count) {
-            printf("%5u  %2u.%0*u %2u.%0*u %5u %5u.%0*u %5u.%0*u %7u %s\n", pid,
+            printf("%5u  %2u.%0*u %2u.%0*u %5llu %5u.%0*u %5u.%0*u %7llu %s\n", pid,
                 NS_TO_S_D(processes.data[j].exec_time - last_processes.data[i].exec_time),
                 NS_TO_S_D(processes.data[j].delay_time - last_processes.data[i].delay_time),
                 processes.data[j].run_count - last_processes.data[i].run_count,
@@ -272,9 +269,6 @@ int schedtop_main(int argc, char **argv)
 {
     int c;
     DIR *d;
-    struct dirent *de;
-    char *namefilter = 0;
-    int pidfilter = 0;
     uint32_t flags = 0;    
     int delay = 3000000;
     float delay_f;

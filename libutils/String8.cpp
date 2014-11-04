@@ -323,8 +323,17 @@ status_t String8::appendFormat(const char* fmt, ...)
 
 status_t String8::appendFormatV(const char* fmt, va_list args)
 {
-    int result = NO_ERROR;
-    int n = vsnprintf(NULL, 0, fmt, args);
+    int n, result = NO_ERROR;
+    va_list tmp_args;
+
+    /* args is undefined after vsnprintf.
+     * So we need a copy here to avoid the
+     * second vsnprintf access undefined args.
+     */
+    va_copy(tmp_args, args);
+    n = vsnprintf(NULL, 0, fmt, tmp_args);
+    va_end(tmp_args);
+
     if (n != 0) {
         size_t oldLength = length();
         char* buf = lockBuffer(oldLength + n);
@@ -397,6 +406,30 @@ ssize_t String8::find(const char* other, size_t start) const
     const char* s = mString+start;
     const char* p = strstr(s, other);
     return p ? p-mString : -1;
+}
+
+bool String8::removeAll(const char* other) {
+    ssize_t index = find(other);
+    if (index < 0) return false;
+
+    char* buf = lockBuffer(size());
+    if (!buf) return false; // out of memory
+
+    size_t skip = strlen(other);
+    size_t len = size();
+    size_t tail = index;
+    while (size_t(index) < len) {
+        ssize_t next = find(other, index + skip);
+        if (next < 0) {
+            next = len;
+        }
+
+        memcpy(buf + tail, buf + index + skip, next - index - skip);
+        tail += next - index - skip;
+        index = next;
+    }
+    unlockBuffer(tail);
+    return true;
 }
 
 void String8::toLower()
@@ -542,7 +575,6 @@ char* String8::find_extension(void) const
 {
     const char* lastSlash;
     const char* lastDot;
-    int extLen;
     const char* const str = mString;
 
     // only look at the filename

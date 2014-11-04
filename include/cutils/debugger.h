@@ -23,7 +23,14 @@
 extern "C" {
 #endif
 
-#define DEBUGGER_SOCKET_NAME "android:debuggerd"
+#define DEBUGGER32_SOCKET_NAME "android:debuggerd"
+#define DEBUGGER64_SOCKET_NAME "android:debuggerd64"
+
+#if defined(__LP64__)
+#define DEBUGGER_SOCKET_NAME DEBUGGER64_SOCKET_NAME
+#else
+#define DEBUGGER_SOCKET_NAME DEBUGGER32_SOCKET_NAME
+#endif
 
 typedef enum {
     // dump a crash
@@ -38,7 +45,18 @@ typedef struct {
     debugger_action_t action;
     pid_t tid;
     uintptr_t abort_msg_address;
+    int32_t original_si_code;
 } debugger_msg_t;
+
+#if defined(__LP64__)
+// For a 64 bit process to contact the 32 bit debuggerd.
+typedef struct {
+    debugger_action_t action;
+    pid_t tid;
+    uint32_t abort_msg_address;
+    int32_t original_si_code;
+} debugger32_msg_t;
+#endif
 
 /* Dumps a process backtrace, registers, and stack to a tombstone file (requires root).
  * Stores the tombstone path in the provided buffer.

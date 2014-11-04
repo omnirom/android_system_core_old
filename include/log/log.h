@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005 The Android Open Source Project
+ * Copyright (C) 2005-2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,17 +28,16 @@
 #ifndef _LIBS_LOG_LOG_H
 #define _LIBS_LOG_LOG_H
 
-#include <stdio.h>
-#include <time.h>
 #include <sys/types.h>
-#include <unistd.h>
 #ifdef HAVE_PTHREADS
 #include <pthread.h>
 #endif
 #include <stdarg.h>
-
-#include <log/uio.h>
+#include <stdio.h>
+#include <time.h>
+#include <unistd.h>
 #include <log/logd.h>
+#include <log/uio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -74,10 +73,11 @@ extern "C" {
  * Simplified macro to send a verbose log message using the current LOG_TAG.
  */
 #ifndef ALOGV
+#define __ALOGV(...) ((void)ALOG(LOG_VERBOSE, LOG_TAG, __VA_ARGS__))
 #if LOG_NDEBUG
-#define ALOGV(...)   ((void)0)
+#define ALOGV(...) do { if (0) { __ALOGV(__VA_ARGS__); } } while (0)
 #else
-#define ALOGV(...) ((void)ALOG(LOG_VERBOSE, LOG_TAG, __VA_ARGS__))
+#define ALOGV(...) __ALOGV(__VA_ARGS__)
 #endif
 #endif
 
@@ -203,10 +203,11 @@ extern "C" {
  * Simplified macro to send a verbose system log message using the current LOG_TAG.
  */
 #ifndef SLOGV
+#define __SLOGV(...) ((void)__android_log_buf_print(LOG_ID_SYSTEM, ANDROID_LOG_VERBOSE, LOG_TAG, __VA_ARGS__))
 #if LOG_NDEBUG
-#define SLOGV(...)   ((void)0)
+#define SLOGV(...) do { if (0) { __SLOGV(__VA_ARGS__); } } while (0)
 #else
-#define SLOGV(...) ((void)__android_log_buf_print(LOG_ID_SYSTEM, ANDROID_LOG_VERBOSE, LOG_TAG, __VA_ARGS__))
+#define SLOGV(...) __SLOGV(__VA_ARGS__)
 #endif
 #endif
 
@@ -285,10 +286,11 @@ extern "C" {
  * Simplified macro to send a verbose radio log message using the current LOG_TAG.
  */
 #ifndef RLOGV
+#define __RLOGV(...) ((void)__android_log_buf_print(LOG_ID_RADIO, ANDROID_LOG_VERBOSE, LOG_TAG, __VA_ARGS__))
 #if LOG_NDEBUG
-#define RLOGV(...)   ((void)0)
+#define RLOGV(...) do { if (0) { __RLOGV(__VA_ARGS__); } } while (0)
 #else
-#define RLOGV(...) ((void)__android_log_buf_print(LOG_ID_RADIO, ANDROID_LOG_VERBOSE, LOG_TAG, __VA_ARGS__))
+#define RLOGV(...) __RLOGV(__VA_ARGS__)
 #endif
 #endif
 
@@ -470,7 +472,8 @@ typedef enum {
     EVENT_TYPE_STRING   = 2,
     EVENT_TYPE_LIST     = 3,
 } AndroidEventLogType;
-
+#define sizeof_AndroidEventLogType sizeof(typeof_AndroidEventLogType)
+#define typeof_AndroidEventLogType unsigned char
 
 #ifndef LOG_EVENT_INT
 #define LOG_EVENT_INT(_tag, _value) {                                       \
@@ -488,7 +491,7 @@ typedef enum {
 #endif
 #ifndef LOG_EVENT_STRING
 #define LOG_EVENT_STRING(_tag, _value)                                      \
-    ((void) 0)  /* not implemented -- must combine len with string */
+        (void) __android_log_bswrite(_tag, _value);
 #endif
 /* TODO: something for LIST */
 
@@ -540,24 +543,32 @@ typedef enum {
 #define android_logToFile(tag, file) (0)
 #define android_logToFd(tag, fd) (0)
 
-typedef enum {
+typedef enum log_id {
+    LOG_ID_MIN = 0,
+
     LOG_ID_MAIN = 0,
     LOG_ID_RADIO = 1,
     LOG_ID_EVENTS = 2,
     LOG_ID_SYSTEM = 3,
+    LOG_ID_CRASH = 4,
 
     LOG_ID_MAX
 } log_id_t;
+#define sizeof_log_id_t sizeof(typeof_log_id_t)
+#define typeof_log_id_t unsigned char
 
 /*
  * Send a simple string to the log.
  */
 int __android_log_buf_write(int bufID, int prio, const char *tag, const char *text);
-int __android_log_buf_print(int bufID, int prio, const char *tag, const char *fmt, ...);
-
+int __android_log_buf_print(int bufID, int prio, const char *tag, const char *fmt, ...)
+#if defined(__GNUC__)
+    __attribute__((__format__(printf, 4, 5)))
+#endif
+    ;
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // _LIBS_CUTILS_LOG_H
+#endif /* _LIBS_LOG_LOG_H */

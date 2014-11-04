@@ -19,6 +19,7 @@
 
 #include <sparse/sparse.h>
 
+#include "defs.h"
 #include "sparse_file.h"
 
 #include "output_file.h"
@@ -189,7 +190,7 @@ int sparse_file_callback(struct sparse_file *s, bool sparse, bool crc,
 	return ret;
 }
 
-static int out_counter_write(void *priv, const void *data, int len)
+static int out_counter_write(void *priv, const void *data __unused, int len)
 {
 	int64_t *count = priv;
 	*count += len;
@@ -278,7 +279,6 @@ int sparse_file_resparse(struct sparse_file *in_s, unsigned int max_len,
 		struct sparse_file **out_s, int out_s_count)
 {
 	struct backed_block *bb;
-	unsigned int overhead;
 	struct sparse_file *s;
 	struct sparse_file *tmp;
 	int c = 0;

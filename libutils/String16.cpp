@@ -16,7 +16,6 @@
 
 #include <utils/String16.h>
 
-#include <utils/Debug.h>
 #include <utils/Log.h>
 #include <utils/Unicode.h>
 #include <utils/String8.h>
@@ -66,8 +65,6 @@ static char16_t* allocFromUTF8(const char* u8str, size_t u8len)
     if (u16len < 0) {
         return getEmptyString();
     }
-
-    const uint8_t* const u8end = u8cur + u8len;
 
     SharedBuffer* buf = SharedBuffer::alloc(sizeof(char16_t)*(u16len+1));
     if (buf) {

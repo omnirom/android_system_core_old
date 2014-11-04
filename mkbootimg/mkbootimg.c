@@ -79,7 +79,7 @@ static unsigned char padding[131072] = { 0, };
 int write_padding(int fd, unsigned pagesize, unsigned itemsize)
 {
     unsigned pagemask = pagesize - 1;
-    unsigned count;
+    ssize_t count;
 
     if((itemsize & pagemask) == 0) {
         return 0;
@@ -112,12 +112,13 @@ int main(int argc, char **argv)
     unsigned pagesize = 2048;
     int fd;
     SHA_CTX ctx;
-    uint8_t* sha;
+    const uint8_t* sha;
     unsigned base           = 0x10000000;
     unsigned kernel_offset  = 0x00008000;
     unsigned ramdisk_offset = 0x01000000;
     unsigned second_offset  = 0x00f00000;
     unsigned tags_offset    = 0x00000100;
+    size_t cmdlen;
 
     argc--;
     argv++;
@@ -195,15 +196,23 @@ int main(int argc, char **argv)
         return usage();
     }
 
-    strcpy(hdr.name, board);
+    strcpy((char *) hdr.name, board);
 
     memcpy(hdr.magic, BOOT_MAGIC, BOOT_MAGIC_SIZE);
 
-    if(strlen(cmdline) > (BOOT_ARGS_SIZE - 1)) {
+    cmdlen = strlen(cmdline);
+    if(cmdlen > (BOOT_ARGS_SIZE + BOOT_EXTRA_ARGS_SIZE - 2)) {
         fprintf(stderr,"error: kernel commandline too large\n");
         return 1;
     }
-    strcpy((char*)hdr.cmdline, cmdline);
+    /* Even if we need to use the supplemental field, ensure we
+     * are still NULL-terminated */
+    strncpy((char *)hdr.cmdline, cmdline, BOOT_ARGS_SIZE - 1);
+    hdr.cmdline[BOOT_ARGS_SIZE - 1] = '\0';
+    if (cmdlen >= (BOOT_ARGS_SIZE - 1)) {
+        cmdline += (BOOT_ARGS_SIZE - 1);
+        strncpy((char *)hdr.extra_cmdline, cmdline, BOOT_EXTRA_ARGS_SIZE);
+    }
 
     kernel_data = load_file(kernel_fn, &hdr.kernel_size);
     if(kernel_data == 0) {
@@ -265,15 +274,15 @@ int main(int argc, char **argv)
     if(write(fd, &hdr, sizeof(hdr)) != sizeof(hdr)) goto fail;
     if(write_padding(fd, pagesize, sizeof(hdr))) goto fail;
 
-    if(write(fd, kernel_data, hdr.kernel_size) != hdr.kernel_size) goto fail;
+    if(write(fd, kernel_data, hdr.kernel_size) != (ssize_t) hdr.kernel_size) goto fail;
     if(write_padding(fd, pagesize, hdr.kernel_size)) goto fail;
 
-    if(write(fd, ramdisk_data, hdr.ramdisk_size) != hdr.ramdisk_size) goto fail;
+    if(write(fd, ramdisk_data, hdr.ramdisk_size) != (ssize_t) hdr.ramdisk_size) goto fail;
     if(write_padding(fd, pagesize, hdr.ramdisk_size)) goto fail;
 
     if(second_data) {
-        if(write(fd, second_data, hdr.second_size) != hdr.second_size) goto fail;
-        if(write_padding(fd, pagesize, hdr.ramdisk_size)) goto fail;
+        if(write(fd, second_data, hdr.second_size) != (ssize_t) hdr.second_size) goto fail;
+        if(write_padding(fd, pagesize, hdr.second_size)) goto fail;
     }
 
     if(dt_data) {

@@ -104,8 +104,6 @@ static void add_line_to_abbr_buf(struct abbr_buf *a_buf, char *linebuf, int line
 static int add_line_to_linear_buf(struct beginning_buf *b_buf,
                                    char *line, ssize_t line_len)
 {
-    size_t new_len;
-    char *new_buf;
     int full = 0;
 
     if ((line_len + b_buf->used_len) > b_buf->buf_size) {
@@ -124,7 +122,6 @@ static void add_line_to_circular_buf(struct ending_buf *e_buf,
 {
     ssize_t free_len;
     ssize_t needed_space;
-    char *new_buf;
     int cnt;
 
     if (e_buf->buf == NULL) {
@@ -192,7 +189,6 @@ static void print_buf_lines(struct log_info *log_info, char *buf, int buf_size)
 {
     char *line_start;
     char c;
-    int line_len;
     int i;
 
     line_start = buf;
@@ -481,7 +477,6 @@ int android_fork_execvp_ext(int argc, char* argv[], int *status, bool ignore_int
     pid_t pid;
     int parent_ptty;
     int child_ptty;
-    char *child_devname = NULL;
     struct sigaction intact;
     struct sigaction quitact;
     sigset_t blockset;
@@ -502,8 +497,9 @@ int android_fork_execvp_ext(int argc, char* argv[], int *status, bool ignore_int
         goto err_open;
     }
 
+    char child_devname[64];
     if (grantpt(parent_ptty) || unlockpt(parent_ptty) ||
-            ((child_devname = (char*)ptsname(parent_ptty)) == 0)) {
+            ptsname_r(parent_ptty, child_devname, sizeof(child_devname)) != 0) {
         ERROR("Problem with /dev/ptmx\n");
         rc = -1;
         goto err_ptty;

@@ -70,7 +70,7 @@ disabled
 setenv <name> <value>
    Set the environment variable <name> to <value> in the launched process.
 
-socket <name> <type> <perm> [ <user> [ <group> <context> ] ]
+socket <name> <type> <perm> [ <user> [ <group> [ <context> ] ] ]
    Create a unix domain socket named /dev/socket/<name> and pass
    its fd to the launched process.  <type> must be "dgram", "stream" or "seqpacket".
    User and group default to 0.
@@ -178,6 +178,16 @@ class_stop <serviceclass>
 domainname <name>
    Set the domain name.
 
+enable <servicename>
+   Turns a disabled service into an enabled one as if the service did not
+   specify disabled.
+   If the service is supposed to be running, it will be started now.
+   Typically used when the bootloader sets a variable that indicates a specific
+   service should be started when needed. E.g.
+     on property:ro.boot.myfancyhardware=1
+        enable my_fancy_service_for_my_fancy_hardware
+
+
 insmod <path>
    Install the module at <path>
 
@@ -247,9 +257,9 @@ wait <path> [ <timeout> ]
   or the timeout has been reached. If timeout is not specified it
   currently defaults to five seconds.
 
-write <path> <string> [ <string> ]*
-   Open the file at <path> and write one or more strings
-   to it with write(2)
+write <path> <string>
+   Open the file at <path> and write a string to it with write(2)
+   without appending.
 
 
 Properties

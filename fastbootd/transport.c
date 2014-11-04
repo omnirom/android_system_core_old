@@ -55,15 +55,15 @@ int transport_handle_download(struct transport_handle *thandle, size_t len)
     ftruncate(fd, len);
 
     buffer = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (buffer == NULL) {
-        D(ERR, "mmap(%u) failed: %d %s", len, errno, strerror(errno));
+    if (buffer == MAP_FAILED) {
+        D(ERR, "mmap(%zu) failed: %d %s", len, errno, strerror(errno));
         goto err;
     }
 
     while (n < len) {
         ret = thandle->transport->read(thandle, buffer + n, len - n);
         if (ret <= 0) {
-            D(WARN, "transport read failed, ret=%d %s", ret, strerror(-ret));
+            D(WARN, "transport read failed, ret=%zd %s", ret, strerror(-ret));
             break;
         }
         n += ret;
@@ -99,6 +99,7 @@ static void *transport_data_thread(void *arg)
         }
         if (ret > 0) {
             buffer[ret] = 0;
+            //TODO: multiple threads
             protocol_handle_command(phandle, buffer);
         }
     }

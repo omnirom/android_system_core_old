@@ -342,7 +342,8 @@ void utf16_to_utf8(const char16_t* src, size_t src_len, char* dst)
     while (cur_utf16 < end_utf16) {
         char32_t utf32;
         // surrogate pairs
-        if ((*cur_utf16 & 0xFC00) == 0xD800) {
+        if((*cur_utf16 & 0xFC00) == 0xD800 && (cur_utf16 + 1) < end_utf16
+                && (*(cur_utf16 + 1) & 0xFC00) == 0xDC00) {
             utf32 = (*cur_utf16++ - 0xD800) << 10;
             utf32 |= *cur_utf16++ - 0xDC00;
             utf32 += 0x10000;
@@ -576,7 +577,7 @@ void utf8_to_utf16(const uint8_t* u8str, size_t u8len, char16_t* u16str) {
 char16_t* utf8_to_utf16_n(const uint8_t* src, size_t srcLen, char16_t* dst, size_t dstLen) {
     const uint8_t* const u8end = src + srcLen;
     const uint8_t* u8cur = src;
-    const uint16_t* const u16end = dst + dstLen;
+    const char16_t* const u16end = dst + dstLen;
     char16_t* u16cur = dst;
 
     while (u8cur < u8end && u16cur < u16end) {

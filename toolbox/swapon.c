@@ -2,22 +2,15 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <getopt.h>
-#include <asm/page.h>
 #include <sys/swap.h>
 
-/* XXX These need to be obtained from kernel headers. See b/9336527 */
-#define SWAP_FLAG_PREFER        0x8000
-#define SWAP_FLAG_PRIO_MASK     0x7fff
-#define SWAP_FLAG_PRIO_SHIFT    0
-#define SWAP_FLAG_DISCARD       0x10000
-
-void usage(char *name)
+static void usage(char *name)
 {
     fprintf(stderr, "Usage: %s [-p prio] <filename>\n"
         "        prio must be between 0 and %d\n", name, SWAP_FLAG_PRIO_MASK);
 }
 
-int parse_prio(char *prio_str)
+static int parse_prio(char *prio_str)
 {
     unsigned long p = strtoul(prio_str, NULL, 10);
 

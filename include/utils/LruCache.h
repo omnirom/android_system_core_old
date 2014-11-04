@@ -17,8 +17,8 @@
 #ifndef ANDROID_UTILS_LRU_CACHE_H
 #define ANDROID_UTILS_LRU_CACHE_H
 
+#include <UniquePtr.h>
 #include <utils/BasicHashtable.h>
-#include <utils/UniquePtr.h>
 
 namespace android {
 
@@ -48,6 +48,7 @@ public:
     bool remove(const TKey& key);
     bool removeOldest();
     void clear();
+    const TValue& peekOldestValue();
 
     class Iterator {
     public:
@@ -56,7 +57,7 @@ public:
 
         bool next() {
             mIndex = mCache.mTable->next(mIndex);
-            return mIndex != -1;
+            return (ssize_t)mIndex != -1;
         }
 
         size_t index() const {
@@ -103,9 +104,13 @@ private:
 
 // Implementation is here, because it's fully templated
 template <typename TKey, typename TValue>
-LruCache<TKey, TValue>::LruCache(uint32_t maxCapacity): mMaxCapacity(maxCapacity),
-    mNullValue(NULL), mTable(new BasicHashtable<TKey, Entry>), mYoungest(NULL), mOldest(NULL),
-    mListener(NULL) {
+LruCache<TKey, TValue>::LruCache(uint32_t maxCapacity)
+    : mTable(new BasicHashtable<TKey, Entry>)
+    , mListener(NULL)
+    , mOldest(NULL)
+    , mYoungest(NULL)
+    , mMaxCapacity(maxCapacity)
+    , mNullValue(NULL) {
 };
 
 template<typename K, typename V>
@@ -177,6 +182,14 @@ bool LruCache<TKey, TValue>::removeOldest() {
         // TODO: should probably abort if false
     }
     return false;
+}
+
+template <typename TKey, typename TValue>
+const TValue& LruCache<TKey, TValue>::peekOldestValue() {
+    if (mOldest) {
+        return mOldest->value;
+    }
+    return mNullValue;
 }
 
 template <typename TKey, typename TValue>

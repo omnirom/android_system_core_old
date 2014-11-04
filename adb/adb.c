@@ -37,8 +37,10 @@
 #include <cutils/properties.h>
 #include <private/android_filesystem_config.h>
 #include <sys/capability.h>
-#include <linux/prctl.h>
 #include <sys/mount.h>
+#include <sys/prctl.h>
+#include <getopt.h>
+#include <selinux/selinux.h>
 #else
 #include "usb_vendors.h"
 #endif
@@ -54,6 +56,7 @@ static int auth_enabled = 0;
 
 #if !ADB_HOST
 static const char *adb_device_banner = "device";
+static const char *root_seclabel = NULL;
 #endif
 
 void fatal(const char *fmt, ...)
@@ -315,6 +318,26 @@ static size_t fill_connect_data(char *buf, size_t bufsize)
 #endif
 }
 
+#if !ADB_HOST
+static void send_msg_with_header(int fd, const char* msg, size_t msglen) {
+    char header[5];
+    if (msglen > 0xffff)
+        msglen = 0xffff;
+    snprintf(header, sizeof(header), "%04x", (unsigned)msglen);
+    writex(fd, header, 4);
+    writex(fd, msg, msglen);
+}
+#endif
+
+static void send_msg_with_okay(int fd, const char* msg, size_t msglen) {
+    char header[9];
+    if (msglen > 0xffff)
+        msglen = 0xffff;
+    snprintf(header, sizeof(header), "OKAY%04x", (unsigned)msglen);
+    writex(fd, header, 8);
+    writex(fd, msg, msglen);
+}
+
 static void send_connect(atransport *t)
 {
     D("Calling send_connect \n");
@@ -562,7 +585,7 @@ void handle_packet(apacket *p, atransport *t)
         break;
 
     case A_OPEN: /* OPEN(local-id, 0, "destination") */
-        if (t->online) {
+        if (t->online && p->msg.arg0 != 0 && p->msg.arg1 == 0) {
             char *name = (char*) p->data;
             name[p->msg.data_length > 0 ? p->msg.data_length - 1 : 0] = 0;
             s = create_local_service_socket(name);
@@ -578,28 +601,50 @@ void handle_packet(apacket *p, atransport *t)
         break;
 
     case A_OKAY: /* READY(local-id, remote-id, "") */
-        if (t->online) {
-            if((s = find_local_socket(p->msg.arg1))) {
+        if (t->online && p->msg.arg0 != 0 && p->msg.arg1 != 0) {
+            if((s = find_local_socket(p->msg.arg1, 0))) {
                 if(s->peer == 0) {
+                    /* On first READY message, create the connection. */
                     s->peer = create_remote_socket(p->msg.arg0, t);
                     s->peer->peer = s;
+                    s->ready(s);
+                } else if (s->peer->id == p->msg.arg0) {
+                    /* Other READY messages must use the same local-id */
+                    s->ready(s);
+                } else {
+                    D("Invalid A_OKAY(%d,%d), expected A_OKAY(%d,%d) on transport %s\n",
+                      p->msg.arg0, p->msg.arg1, s->peer->id, p->msg.arg1, t->serial);
                 }
-                s->ready(s);
             }
         }
         break;
 
-    case A_CLSE: /* CLOSE(local-id, remote-id, "") */
-        if (t->online) {
-            if((s = find_local_socket(p->msg.arg1))) {
-                s->close(s);
+    case A_CLSE: /* CLOSE(local-id, remote-id, "") or CLOSE(0, remote-id, "") */
+        if (t->online && p->msg.arg1 != 0) {
+            if((s = find_local_socket(p->msg.arg1, p->msg.arg0))) {
+                /* According to protocol.txt, p->msg.arg0 might be 0 to indicate
+                 * a failed OPEN only. However, due to a bug in previous ADB
+                 * versions, CLOSE(0, remote-id, "") was also used for normal
+                 * CLOSE() operations.
+                 *
+                 * This is bad because it means a compromised adbd could
+                 * send packets to close connections between the host and
+                 * other devices. To avoid this, only allow this if the local
+                 * socket has a peer on the same transport.
+                 */
+                if (p->msg.arg0 == 0 && s->peer && s->peer->transport != t) {
+                    D("Invalid A_CLSE(0, %u) from transport %s, expected transport %s\n",
+                      p->msg.arg1, t->serial, s->peer->transport->serial);
+                } else {
+                    s->close(s);
+                }
             }
         }
         break;
 
-    case A_WRTE:
-        if (t->online) {
-            if((s = find_local_socket(p->msg.arg1))) {
+    case A_WRTE: /* WRITE(local-id, remote-id, <data>) */
+        if (t->online && p->msg.arg0 != 0 && p->msg.arg1 != 0) {
+            if((s = find_local_socket(p->msg.arg1, p->msg.arg0))) {
                 unsigned rid = p->msg.arg0;
                 p->len = p->msg.data_length;
 
@@ -1299,28 +1344,28 @@ int adb_main(int is_daemon, int server_port)
           " unchanged.\n");
     }
 
+    /* add extra groups:
+    ** AID_ADB to access the USB driver
+    ** AID_LOG to read system logs (adb logcat)
+    ** AID_INPUT to diagnose input issues (getevent)
+    ** AID_INET to diagnose network issues (netcfg, ping)
+    ** AID_GRAPHICS to access the frame buffer
+    ** AID_NET_BT and AID_NET_BT_ADMIN to diagnose bluetooth (hcidump)
+    ** AID_SDCARD_R to allow reading from the SD card
+    ** AID_SDCARD_RW to allow writing to the SD card
+    ** AID_NET_BW_STATS to read out qtaguid statistics
+    */
+    gid_t groups[] = { AID_ADB, AID_LOG, AID_INPUT, AID_INET, AID_GRAPHICS,
+                       AID_NET_BT, AID_NET_BT_ADMIN, AID_SDCARD_R, AID_SDCARD_RW,
+                       AID_NET_BW_STATS };
+    if (setgroups(sizeof(groups)/sizeof(groups[0]), groups) != 0) {
+        exit(1);
+    }
+
     /* don't listen on a port (default 5037) if running in secure mode */
     /* don't run as root if we are running in secure mode */
     if (should_drop_privileges()) {
         drop_capabilities_bounding_set_if_needed();
-
-        /* add extra groups:
-        ** AID_ADB to access the USB driver
-        ** AID_LOG to read system logs (adb logcat)
-        ** AID_INPUT to diagnose input issues (getevent)
-        ** AID_INET to diagnose network issues (netcfg, ping)
-        ** AID_GRAPHICS to access the frame buffer
-        ** AID_NET_BT and AID_NET_BT_ADMIN to diagnose bluetooth (hcidump)
-        ** AID_SDCARD_R to allow reading from the SD card
-        ** AID_SDCARD_RW to allow writing to the SD card
-        ** AID_NET_BW_STATS to read out qtaguid statistics
-        */
-        gid_t groups[] = { AID_ADB, AID_LOG, AID_INPUT, AID_INET, AID_GRAPHICS,
-                           AID_NET_BT, AID_NET_BT_ADMIN, AID_SDCARD_R, AID_SDCARD_RW,
-                           AID_NET_BW_STATS };
-        if (setgroups(sizeof(groups)/sizeof(groups[0]), groups) != 0) {
-            exit(1);
-        }
 
         /* then switch user and group to "shell" */
         if (setgid(AID_SHELL) != 0) {
@@ -1333,6 +1378,12 @@ int adb_main(int is_daemon, int server_port)
         D("Local port disabled\n");
     } else {
         char local_name[30];
+        if ((root_seclabel != NULL) && (is_selinux_enabled() > 0)) {
+            // b/12587913: fix setcon to allow const pointers
+            if (setcon((char *)root_seclabel) < 0) {
+                exit(1);
+            }
+        }
         build_local_name(local_name, sizeof(local_name), server_port);
         if(install_listener(local_name, "*smartsocket*", NULL, 0)) {
             exit(1);
@@ -1387,10 +1438,123 @@ int adb_main(int is_daemon, int server_port)
     return 0;
 }
 
+// Try to handle a network forwarding request.
+// This returns 1 on success, 0 on failure, and -1 to indicate this is not
+// a forwarding-related request.
+int handle_forward_request(const char* service, transport_type ttype, char* serial, int reply_fd)
+{
+    if (!strcmp(service, "list-forward")) {
+        // Create the list of forward redirections.
+        int buffer_size = format_listeners(NULL, 0);
+        // Add one byte for the trailing zero.
+        char* buffer = malloc(buffer_size + 1);
+        if (buffer == NULL) {
+            sendfailmsg(reply_fd, "not enough memory");
+            return 1;
+        }
+        (void) format_listeners(buffer, buffer_size + 1);
+#if ADB_HOST
+        send_msg_with_okay(reply_fd, buffer, buffer_size);
+#else
+        send_msg_with_header(reply_fd, buffer, buffer_size);
+#endif
+        free(buffer);
+        return 1;
+    }
+
+    if (!strcmp(service, "killforward-all")) {
+        remove_all_listeners();
+#if ADB_HOST
+        /* On the host: 1st OKAY is connect, 2nd OKAY is status */
+        adb_write(reply_fd, "OKAY", 4);
+#endif
+        adb_write(reply_fd, "OKAY", 4);
+        return 1;
+    }
+
+    if (!strncmp(service, "forward:",8) ||
+        !strncmp(service, "killforward:",12)) {
+        char *local, *remote, *err;
+        int r;
+        atransport *transport;
+
+        int createForward = strncmp(service, "kill", 4);
+        int no_rebind = 0;
+
+        local = strchr(service, ':') + 1;
+
+        // Handle forward:norebind:<local>... here
+        if (createForward && !strncmp(local, "norebind:", 9)) {
+            no_rebind = 1;
+            local = strchr(local, ':') + 1;
+        }
+
+        remote = strchr(local,';');
+
+        if (createForward) {
+            // Check forward: parameter format: '<local>;<remote>'
+            if(remote == 0) {
+                sendfailmsg(reply_fd, "malformed forward spec");
+                return 1;
+            }
+
+            *remote++ = 0;
+            if((local[0] == 0) || (remote[0] == 0) || (remote[0] == '*')) {
+                sendfailmsg(reply_fd, "malformed forward spec");
+                return 1;
+            }
+        } else {
+            // Check killforward: parameter format: '<local>'
+            if (local[0] == 0) {
+                sendfailmsg(reply_fd, "malformed forward spec");
+                return 1;
+            }
+        }
+
+        transport = acquire_one_transport(CS_ANY, ttype, serial, &err);
+        if (!transport) {
+            sendfailmsg(reply_fd, err);
+            return 1;
+        }
+
+        if (createForward) {
+            r = install_listener(local, remote, transport, no_rebind);
+        } else {
+            r = remove_listener(local, transport);
+        }
+        if(r == 0) {
+#if ADB_HOST
+            /* On the host: 1st OKAY is connect, 2nd OKAY is status */
+            writex(reply_fd, "OKAY", 4);
+#endif
+            writex(reply_fd, "OKAY", 4);
+            return 1;
+        }
+
+        if (createForward) {
+            const char* message;
+            switch (r) {
+              case INSTALL_STATUS_CANNOT_BIND:
+                message = "cannot bind to socket";
+                break;
+              case INSTALL_STATUS_CANNOT_REBIND:
+                message = "cannot rebind existing socket";
+                break;
+              default:
+                message = "internal error";
+            }
+            sendfailmsg(reply_fd, message);
+        } else {
+            sendfailmsg(reply_fd, "cannot remove listener");
+        }
+        return 1;
+    }
+    return 0;
+}
+
 int handle_host_request(char *service, transport_type ttype, char* serial, int reply_fd, asocket *s)
 {
     atransport *transport = NULL;
-    char buf[4096];
 
     if(!strcmp(service, "kill")) {
         fprintf(stderr,"adb server killed by remote request\n");
@@ -1436,13 +1600,11 @@ int handle_host_request(char *service, transport_type ttype, char* serial, int r
         char buffer[4096];
         int use_long = !strcmp(service+7, "-l");
         if (use_long || service[7] == 0) {
-            memset(buf, 0, sizeof(buf));
             memset(buffer, 0, sizeof(buffer));
             D("Getting device list \n");
             list_transports(buffer, sizeof(buffer), use_long);
-            snprintf(buf, sizeof(buf), "OKAY%04x%s",(unsigned)strlen(buffer),buffer);
             D("Wrote device list \n");
-            writex(reply_fd, buf, strlen(buf));
+            send_msg_with_okay(reply_fd, buffer, strlen(buffer));
             return 0;
         }
     }
@@ -1471,8 +1633,7 @@ int handle_host_request(char *service, transport_type ttype, char* serial, int r
             }
         }
 
-        snprintf(buf, sizeof(buf), "OKAY%04x%s",(unsigned)strlen(buffer), buffer);
-        writex(reply_fd, buf, strlen(buf));
+        send_msg_with_okay(reply_fd, buffer, strlen(buffer));
         return 0;
     }
 
@@ -1480,8 +1641,7 @@ int handle_host_request(char *service, transport_type ttype, char* serial, int r
     if (!strcmp(service, "version")) {
         char version[12];
         snprintf(version, sizeof version, "%04x", ADB_SERVER_VERSION);
-        snprintf(buf, sizeof buf, "OKAY%04x%s", (unsigned)strlen(version), version);
-        writex(reply_fd, buf, strlen(buf));
+        send_msg_with_okay(reply_fd, version, strlen(version));
         return 0;
     }
 
@@ -1491,8 +1651,7 @@ int handle_host_request(char *service, transport_type ttype, char* serial, int r
        if (transport && transport->serial) {
             out = transport->serial;
         }
-        snprintf(buf, sizeof buf, "OKAY%04x%s",(unsigned)strlen(out),out);
-        writex(reply_fd, buf, strlen(buf));
+        send_msg_with_okay(reply_fd, out, strlen(out));
         return 0;
     }
     if(!strncmp(service,"get-devpath",strlen("get-devpath"))) {
@@ -1501,8 +1660,7 @@ int handle_host_request(char *service, transport_type ttype, char* serial, int r
        if (transport && transport->devpath) {
             out = transport->devpath;
         }
-        snprintf(buf, sizeof buf, "OKAY%04x%s",(unsigned)strlen(out),out);
-        writex(reply_fd, buf, strlen(buf));
+        send_msg_with_okay(reply_fd, out, strlen(out));
         return 0;
     }
     // indicates a new emulator instance has started
@@ -1512,116 +1670,20 @@ int handle_host_request(char *service, transport_type ttype, char* serial, int r
         /* we don't even need to send a reply */
         return 0;
     }
-#endif // ADB_HOST
-
-    if(!strcmp(service,"list-forward")) {
-        // Create the list of forward redirections.
-        char header[9];
-        int buffer_size = format_listeners(NULL, 0);
-        // Add one byte for the trailing zero.
-        char* buffer = malloc(buffer_size+1);
-        (void) format_listeners(buffer, buffer_size+1);
-        snprintf(header, sizeof header, "OKAY%04x", buffer_size);
-        writex(reply_fd, header, 8);
-        writex(reply_fd, buffer, buffer_size);
-        free(buffer);
-        return 0;
-    }
-
-    if (!strcmp(service,"killforward-all")) {
-        remove_all_listeners();
-        adb_write(reply_fd, "OKAYOKAY", 8);
-        return 0;
-    }
-
-    if(!strncmp(service,"forward:",8) ||
-       !strncmp(service,"killforward:",12)) {
-        char *local, *remote, *err;
-        int r;
-        atransport *transport;
-
-        int createForward = strncmp(service,"kill",4);
-        int no_rebind = 0;
-
-        local = strchr(service, ':') + 1;
-
-        // Handle forward:norebind:<local>... here
-        if (createForward && !strncmp(local, "norebind:", 9)) {
-            no_rebind = 1;
-            local = strchr(local, ':') + 1;
-        }
-
-        remote = strchr(local,';');
-
-        if (createForward) {
-            // Check forward: parameter format: '<local>;<remote>'
-            if(remote == 0) {
-                sendfailmsg(reply_fd, "malformed forward spec");
-                return 0;
-            }
-
-            *remote++ = 0;
-            if((local[0] == 0) || (remote[0] == 0) || (remote[0] == '*')){
-                sendfailmsg(reply_fd, "malformed forward spec");
-                return 0;
-            }
-        } else {
-            // Check killforward: parameter format: '<local>'
-            if (local[0] == 0) {
-                sendfailmsg(reply_fd, "malformed forward spec");
-                return 0;
-            }
-        }
-
-        transport = acquire_one_transport(CS_ANY, ttype, serial, &err);
-        if (!transport) {
-            sendfailmsg(reply_fd, err);
-            return 0;
-        }
-
-        if (createForward) {
-            r = install_listener(local, remote, transport, no_rebind);
-        } else {
-            r = remove_listener(local, transport);
-        }
-        if(r == 0) {
-                /* 1st OKAY is connect, 2nd OKAY is status */
-            writex(reply_fd, "OKAYOKAY", 8);
-            return 0;
-        }
-
-        if (createForward) {
-            const char* message;
-            switch (r) {
-              case INSTALL_STATUS_CANNOT_BIND:
-                message = "cannot bind to socket";
-                break;
-              case INSTALL_STATUS_CANNOT_REBIND:
-                message = "cannot rebind existing socket";
-                break;
-              default:
-                message = "internal error";
-            }
-            sendfailmsg(reply_fd, message);
-        } else {
-            sendfailmsg(reply_fd, "cannot remove listener");
-        }
-        return 0;
-    }
 
     if(!strncmp(service,"get-state",strlen("get-state"))) {
         transport = acquire_one_transport(CS_ANY, ttype, serial, NULL);
         char *state = connection_state_name(transport);
-        snprintf(buf, sizeof buf, "OKAY%04x%s",(unsigned)strlen(state),state);
-        writex(reply_fd, buf, strlen(buf));
+        send_msg_with_okay(reply_fd, state, strlen(state));
         return 0;
     }
+#endif // ADB_HOST
+
+    int ret = handle_forward_request(service, ttype, serial, reply_fd);
+    if (ret >= 0)
+      return ret - 1;
     return -1;
 }
-
-#if !ADB_HOST
-int recovery_mode = 0;
-#endif
 
 int main(int argc, char **argv)
 {
@@ -1634,9 +1696,26 @@ int main(int argc, char **argv)
     /* If adbd runs inside the emulator this will enable adb tracing via
      * adb-debug qemud service in the emulator. */
     adb_qemu_trace_init();
-    if((argc > 1) && (!strcmp(argv[1],"recovery"))) {
-        adb_device_banner = "recovery";
-        recovery_mode = 1;
+    while(1) {
+        int c;
+        int option_index = 0;
+        static struct option opts[] = {
+            {"root_seclabel", required_argument, 0, 's' },
+            {"device_banner", required_argument, 0, 'b' }
+        };
+        c = getopt_long(argc, argv, "", opts, &option_index);
+        if (c == -1)
+            break;
+        switch (c) {
+        case 's':
+            root_seclabel = optarg;
+            break;
+        case 'b':
+            adb_device_banner = optarg;
+            break;
+        default:
+            break;
+        }
     }
 
     start_device_log();

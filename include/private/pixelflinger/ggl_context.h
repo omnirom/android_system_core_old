@@ -121,7 +121,7 @@ template<bool> struct CTA;
 template<> struct CTA<true> { };
 
 #define GGL_CONTEXT(con, c)         context_t *con = static_cast<context_t *>(c)
-#define GGL_OFFSETOF(field)         int(&(((context_t*)0)->field))
+#define GGL_OFFSETOF(field)         uintptr_t(&(((context_t*)0)->field))
 #define GGL_INIT_PROC(p, f)         p.f = ggl_ ## f;
 #define GGL_BETWEEN(x, L, H)        (uint32_t((x)-(L)) <= ((H)-(L)))
 
@@ -340,16 +340,18 @@ struct pixel_t {
 
 struct surface_t {
     union {
-        GGLSurface      s;
+        GGLSurface          s;
+        // Keep the following struct field types in line with the corresponding
+        // GGLSurface fields to avoid mismatches leading to errors.
         struct {
-        uint32_t            reserved;
-        uint32_t			width;
-        uint32_t			height;
-        int32_t             stride;
-        uint8_t*			data;	
-        uint8_t				format;
-        uint8_t				dirty;
-        uint8_t				pad[2];
+            GGLsizei        reserved;
+            GGLuint         width;
+            GGLuint         height;
+            GGLint          stride;
+            GGLubyte*       data;
+            GGLubyte        format;
+            GGLubyte        dirty;
+            GGLubyte        pad[2];
         };
     };
     void                (*read) (const surface_t* s, context_t* c,
@@ -480,7 +482,7 @@ struct generated_tex_vars_t {
     uint32_t    width;
     uint32_t    height;
     uint32_t    stride;
-    int32_t     data;
+    uintptr_t   data;
     int32_t     dsdx;
     int32_t     dtdx;
     int32_t     spill[2];

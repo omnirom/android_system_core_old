@@ -39,6 +39,11 @@ static bool is_on_system(const char *name) {
     return (strncmp(SYSTEM, name, strlen(SYSTEM)) == 0);
 }
 
+static bool is_on_vendor(const char *name) {
+    const char *VENDOR = "/vendor/";
+    return (strncmp(VENDOR, name, strlen(VENDOR)) == 0);
+}
+
 static int mkdirs(char *name)
 {
     int ret;
@@ -54,7 +59,7 @@ static int mkdirs(char *name)
         x = adb_dirstart(x);
         if(x == 0) return 0;
         *x = 0;
-        if (is_on_system(name)) {
+        if (is_on_system(name) || is_on_vendor(name)) {
             fs_config(name, 1, &uid, &gid, &mode, &cap);
         }
         ret = adb_mkdir(name, mode);
@@ -68,7 +73,7 @@ static int mkdirs(char *name)
                 *x = '/';
                 return ret;
             }
-            selinux_android_restorecon(name);
+            selinux_android_restorecon(name, 0);
         }
         *x++ = '/';
     }
@@ -132,6 +137,7 @@ static int do_list(int s, const char *path)
 
             if(writex(s, &msg.dent, sizeof(msg.dent)) ||
                writex(s, de->d_name, len)) {
+                closedir(d);
                 return -1;
             }
         }
@@ -171,24 +177,24 @@ static int fail_errno(int s)
 }
 
 static int handle_send_file(int s, char *path, uid_t uid,
-        gid_t gid, mode_t mode, char *buffer)
+        gid_t gid, mode_t mode, char *buffer, bool do_unlink)
 {
     syncmsg msg;
     unsigned int timestamp = 0;
     int fd;
 
-    fd = adb_open_mode(path, O_WRONLY | O_CREAT | O_EXCL, mode);
+    fd = adb_open_mode(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, mode);
     if(fd < 0 && errno == ENOENT) {
         if(mkdirs(path) != 0) {
             if(fail_errno(s))
                 return -1;
             fd = -1;
         } else {
-            fd = adb_open_mode(path, O_WRONLY | O_CREAT | O_EXCL, mode);
+            fd = adb_open_mode(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, mode);
         }
     }
     if(fd < 0 && errno == EEXIST) {
-        fd = adb_open_mode(path, O_WRONLY, mode);
+        fd = adb_open_mode(path, O_WRONLY | O_CLOEXEC, mode);
     }
     if(fd < 0) {
         if(fail_errno(s))
@@ -235,7 +241,7 @@ static int handle_send_file(int s, char *path, uid_t uid,
         if(writex(fd, buffer, len)) {
             int saved_errno = errno;
             adb_close(fd);
-            adb_unlink(path);
+            if (do_unlink) adb_unlink(path);
             fd = -1;
             errno = saved_errno;
             if(fail_errno(s)) return -1;
@@ -245,7 +251,7 @@ static int handle_send_file(int s, char *path, uid_t uid,
     if(fd >= 0) {
         struct utimbuf u;
         adb_close(fd);
-        selinux_android_restorecon(path);
+        selinux_android_restorecon(path, 0);
         u.actime = timestamp;
         u.modtime = timestamp;
         utime(path, &u);
@@ -260,7 +266,7 @@ static int handle_send_file(int s, char *path, uid_t uid,
 fail:
     if(fd >= 0)
         adb_close(fd);
-    adb_unlink(path);
+    if (do_unlink) adb_unlink(path);
     return -1;
 }
 
@@ -322,6 +328,7 @@ static int do_send(int s, char *path, char *buffer)
     char *tmp;
     unsigned int mode;
     int is_link, ret;
+    bool do_unlink;
 
     tmp = strrchr(path,',');
     if(tmp) {
@@ -338,10 +345,15 @@ static int do_send(int s, char *path, char *buffer)
     if(!tmp || errno) {
         mode = 0644;
         is_link = 0;
+        do_unlink = true;
+    } else {
+        struct stat st;
+        /* Don't delete files before copying if they are not "regular" */
+        do_unlink = lstat(path, &st) || S_ISREG(st.st_mode) || S_ISLNK(st.st_mode);
+        if (do_unlink) {
+            adb_unlink(path);
+        }
     }
-
-    adb_unlink(path);
-
 
 #ifdef HAVE_SYMLINKS
     if(is_link)
@@ -362,10 +374,10 @@ static int do_send(int s, char *path, char *buffer)
         if(*tmp == '/') {
             tmp++;
         }
-        if (is_on_system(path)) {
+        if (is_on_system(path) || is_on_vendor(path)) {
             fs_config(tmp, 0, &uid, &gid, &mode, &cap);
         }
-        ret = handle_send_file(s, path, uid, gid, mode, buffer);
+        ret = handle_send_file(s, path, uid, gid, mode, buffer, do_unlink);
     }
 
     return ret;
@@ -376,7 +388,7 @@ static int do_recv(int s, const char *path, char *buffer)
     syncmsg msg;
     int fd, r;
 
-    fd = adb_open(path, O_RDONLY);
+    fd = adb_open(path, O_RDONLY | O_CLOEXEC);
     if(fd < 0) {
         if(fail_errno(s)) return -1;
         return 0;

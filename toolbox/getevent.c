@@ -166,7 +166,7 @@ static int print_possible_events(int fd, int print_flags)
                     if(bit_labels && (print_flags & PRINT_LABELS)) {
                         bit_label = get_label(bit_labels, j * 8 + k);
                         if(bit_label)
-                            printf(" %.20s%c%*s", bit_label, down, 20 - strlen(bit_label), "");
+                            printf(" %.20s%c%*s", bit_label, down, (int) (20 - strlen(bit_label)), "");
                         else
                             printf(" %04x%c                ", j * 8 + k, down);
                     } else {
@@ -295,6 +295,7 @@ static int open_device(const char *device, int print_flags)
 {
     int version;
     int fd;
+    int clkid = CLOCK_MONOTONIC;
     struct pollfd *new_ufds;
     char **new_device_names;
     char name[80];
@@ -333,6 +334,11 @@ static int open_device(const char *device, int print_flags)
     if(ioctl(fd, EVIOCGUNIQ(sizeof(idstr) - 1), &idstr) < 1) {
         //fprintf(stderr, "could not get idstring for %s, %s\n", device, strerror(errno));
         idstr[0] = '\0';
+    }
+
+    if (ioctl(fd, EVIOCSCLOCKID, &clkid) != 0) {
+        fprintf(stderr, "Can't enable monotonic clock reporting: %s\n", strerror(errno));
+        // a non-fatal error
     }
 
     new_ufds = realloc(ufds, sizeof(ufds[0]) * (nfds + 1));
@@ -470,9 +476,9 @@ static int scan_dir(const char *dirname, int print_flags)
     return 0;
 }
 
-static void usage(int argc, char *argv[])
+static void usage(char *name)
 {
-    fprintf(stderr, "Usage: %s [-t] [-n] [-s switchmask] [-S] [-v [mask]] [-d] [-p] [-i] [-l] [-q] [-c count] [-r] [device]\n", argv[0]);
+    fprintf(stderr, "Usage: %s [-t] [-n] [-s switchmask] [-S] [-v [mask]] [-d] [-p] [-i] [-l] [-q] [-c count] [-r] [device]\n", name);
     fprintf(stderr, "    -t: show time stamps\n");
     fprintf(stderr, "    -n: don't print newlines\n");
     fprintf(stderr, "    -s: print switch states for given bits\n");
@@ -492,13 +498,11 @@ int getevent_main(int argc, char *argv[])
     int c;
     int i;
     int res;
-    int pollres;
     int get_time = 0;
     int print_device = 0;
     char *newline = "\n";
     uint16_t get_switch = 0;
     struct input_event event;
-    int version;
     int print_flags = 0;
     int print_flags_set = 0;
     int dont_block = -1;
@@ -570,7 +574,7 @@ int getevent_main(int argc, char *argv[])
             fprintf(stderr, "%s: invalid option -%c\n",
                 argv[0], optopt);
         case 'h':
-            usage(argc, argv);
+            usage(argv[0]);
             exit(1);
         }
     } while (1);
@@ -582,7 +586,7 @@ int getevent_main(int argc, char *argv[])
         optind++;
     }
     if (optind != argc) {
-        usage(argc, argv);
+        usage(argv[0]);
         exit(1);
     }
     nfds = 1;
@@ -629,7 +633,8 @@ int getevent_main(int argc, char *argv[])
         return 0;
 
     while(1) {
-        pollres = poll(ufds, nfds, -1);
+        //int pollres =
+        poll(ufds, nfds, -1);
         //printf("poll %d, returned %d\n", nfds, pollres);
         if(ufds[0].revents & POLLIN) {
             read_notify(device_path, ufds[0].fd, print_flags);
