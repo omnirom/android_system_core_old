@@ -53,6 +53,7 @@
 static const char *firmware_dirs[] = { "/etc/firmware",
                                        "/vendor/firmware",
                                        "/firmware/image" };
+#define DEVICES_BASE    "/devices/soc.0"
 
 extern struct selabel_handle *sehandle;
 
@@ -169,7 +170,14 @@ void fixup_sys_perms(const char *upath)
     }
     if (access(buf, F_OK) == 0) {
         INFO("restorecon_recursive: %s\n", buf);
+#ifdef _PLATFORM_BASE
+        if(!strcmp(upath, DEVICES_BASE))
+            restorecon(buf);
+        else
+            restorecon_recursive(buf);
+#else
         restorecon_recursive(buf);
+#endif
     }
 }
 
