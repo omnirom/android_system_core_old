@@ -54,6 +54,10 @@ static const char *firmware_dirs[] = { "/etc/firmware",
                                        "/vendor/firmware",
                                        "/firmware/image" };
 
+#ifdef _PLATFORM_BASE
+#define DEVICES_BASE    _PLATFORM_BASE
+#endif
+
 extern struct selabel_handle *sehandle;
 
 extern char boot_device[PROP_VALUE_MAX];
@@ -169,7 +173,14 @@ void fixup_sys_perms(const char *upath)
     }
     if (access(buf, F_OK) == 0) {
         INFO("restorecon_recursive: %s\n", buf);
+#ifdef _PLATFORM_BASE
+        if(!strcmp(upath, DEVICES_BASE))
+            restorecon(buf);
+        else
+            restorecon_recursive(buf);
+#else
         restorecon_recursive(buf);
+#endif
     }
 }
 
