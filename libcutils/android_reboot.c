@@ -149,7 +149,7 @@ int android_reboot(int cmd, int flags UNUSED, char *arg)
     if (reason != -1)
         ret = reboot(reason);
     else
-        ret = __reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
+        ret = syscall(__NR_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
                            LINUX_REBOOT_CMD_RESTART2, arg);
 
     return ret;
