@@ -90,6 +90,8 @@ int __android_log_dev_available(void)
 }
 
 #ifdef HTCLOG
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-security"
 signed int __htclog_read_masks(char *buf, signed int len)
 {
     return 0;
@@ -102,8 +104,9 @@ int __htclog_init_mask(const char *a1, unsigned int a2, int a3)
 
 int __htclog_print_private(int a1, const char *a2, const char *fmt, ...)
 {
-    return 0;
+    return __android_log_print(a1, a2, fmt);
 }
+#pragma GCC diagnostic pop
 #endif
 
 #ifdef MOTOROLA_LOG
@@ -145,47 +148,47 @@ int __android_log_loggable(int prio, const char *tag)
     n = 0;
     results[0] = '\0';
     if (tag) {
-	memcpy (keybuf, LOGGING_PREFIX, strlen (LOGGING_PREFIX) + 1);
-	/* watch out for buffer overflow */
-	strncpy (keybuf + strlen (LOGGING_PREFIX), tag,
-		 sizeof (keybuf) - strlen (LOGGING_PREFIX));
-	keybuf[sizeof (keybuf) - 1] = '\0';
-	n = __system_property_get (keybuf, results);
+  memcpy (keybuf, LOGGING_PREFIX, strlen (LOGGING_PREFIX) + 1);
+  /* watch out for buffer overflow */
+  strncpy (keybuf + strlen (LOGGING_PREFIX), tag,
+     sizeof (keybuf) - strlen (LOGGING_PREFIX));
+  keybuf[sizeof (keybuf) - 1] = '\0';
+  n = __system_property_get (keybuf, results);
     }
     if (n == 0) {
-	/* nothing yet, look for the global */
-	memcpy (keybuf, LOGGING_DEFAULT, sizeof (LOGGING_DEFAULT));
-	n = __system_property_get (keybuf, results);
+  /* nothing yet, look for the global */
+  memcpy (keybuf, LOGGING_DEFAULT, sizeof (LOGGING_DEFAULT));
+  n = __system_property_get (keybuf, results);
     }
 
     if (n == 0) {
-	nprio = prio_fallback;
+  nprio = prio_fallback;
     } else {
-	switch (results[0])
-	{
-	case 'E':
-	    nprio = ANDROID_LOG_ERROR;
-	    break;
-	case 'W':
-	    nprio = ANDROID_LOG_WARN;
-	    break;
-	case 'I':
-	    nprio = ANDROID_LOG_INFO;
-	    break;
-	case 'D':
-	    nprio = ANDROID_LOG_DEBUG;
-	    break;
-	case 'V':
-	    nprio = ANDROID_LOG_VERBOSE;
-	    break;
-	case 'S':
-	    nprio = ANDROID_LOG_SILENT;
-	    break;
-	default:
-	    /* unspecified or invalid */
-	    nprio = prio_fallback;
-	    break;
-	}
+  switch (results[0])
+  {
+  case 'E':
+      nprio = ANDROID_LOG_ERROR;
+      break;
+  case 'W':
+      nprio = ANDROID_LOG_WARN;
+      break;
+  case 'I':
+      nprio = ANDROID_LOG_INFO;
+      break;
+  case 'D':
+      nprio = ANDROID_LOG_DEBUG;
+      break;
+  case 'V':
+      nprio = ANDROID_LOG_VERBOSE;
+      break;
+  case 'S':
+      nprio = ANDROID_LOG_SILENT;
+      break;
+  default:
+      /* unspecified or invalid */
+      nprio = prio_fallback;
+      break;
+  }
     }
 #else
     /* no system property routines, fallback to a default */
