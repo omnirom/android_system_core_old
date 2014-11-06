@@ -5,7 +5,7 @@ common_cflags := \
     -std=gnu99 \
     -Werror -Wno-unused-parameter \
     -I$(LOCAL_PATH)/upstream-netbsd/include/ \
-    -include bsd-compatibility.h \
+#    -include bsd-compatibility.h \
 
 
 include $(CLEAR_VARS)
