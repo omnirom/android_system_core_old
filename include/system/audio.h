@@ -268,22 +268,21 @@ typedef enum {
     AUDIO_FORMAT_AC3                 = 0x09000000UL,
     AUDIO_FORMAT_E_AC3               = 0x0A000000UL,
 #ifdef QCOM_HARDWARE
-    AUDIO_FORMAT_EVRC                = 0x0B000000UL,
-    AUDIO_FORMAT_QCELP               = 0x0C000000UL,
-    AUDIO_FORMAT_AC3                 = 0x0D000000UL,
-    AUDIO_FORMAT_AC3_PLUS            = 0x0E000000UL,
-    AUDIO_FORMAT_DTS                 = 0x0F000000UL,
-    AUDIO_FORMAT_WMA                 = 0x10000000UL,
-    AUDIO_FORMAT_WMA_PRO             = 0x11000000UL,
-    AUDIO_FORMAT_AAC_ADIF            = 0x12000000UL,
-    AUDIO_FORMAT_EVRCB               = 0x13000000UL,
-    AUDIO_FORMAT_EVRCWB              = 0x14000000UL,
-    AUDIO_FORMAT_EAC3                = 0x15000000UL,
-    AUDIO_FORMAT_DTS_LBR             = 0x16000000UL,
-    AUDIO_FORMAT_AMR_WB_PLUS         = 0x17000000UL,
-    AUDIO_FORMAT_MP2                 = 0x18000000UL,
-    AUDIO_FORMAT_EVRCNW              = 0x1900000UL,
-    AUDIO_FORMAT_PCM_OFFLOAD         = 0x1A000000UL,
+    AUDIO_FORMAT_EVRC                = 0x10000000UL,
+    AUDIO_FORMAT_QCELP               = 0x11000000UL,
+    AUDIO_FORMAT_DTS                 = 0x12000000UL,
+    AUDIO_FORMAT_WMA                 = 0x13000000UL,
+    AUDIO_FORMAT_WMA_PRO             = 0x14000000UL,
+    AUDIO_FORMAT_AAC_ADIF            = 0x15000000UL,
+    AUDIO_FORMAT_EVRCB               = 0x16000000UL,
+    AUDIO_FORMAT_EVRCWB              = 0x17000000UL,
+    AUDIO_FORMAT_DTS_LBR             = 0x18000000UL,
+    AUDIO_FORMAT_AMR_WB_PLUS         = 0x19000000UL,
+    AUDIO_FORMAT_MP2                 = 0x1A000000UL,
+    AUDIO_FORMAT_EVRCNW              = 0x1B000000UL,
+    AUDIO_FORMAT_PCM_OFFLOAD         = 0x1C000000UL,
+    AUDIO_FORMAT_FLAC                = 0x1D000000UL,
+    AUDIO_FORMAT_E_AC3_JOC           = 0x1E000000UL,
 #endif
     AUDIO_FORMAT_MAIN_MASK           = 0xFF000000UL,
     AUDIO_FORMAT_SUB_MASK            = 0x00FFFFFFUL,
@@ -670,11 +669,8 @@ enum {
     /* limited-output speaker device for acoustic safety */
     AUDIO_DEVICE_OUT_SPEAKER_SAFE              = 0x400000,
 #ifdef QCOM_HARDWARE
-    AUDIO_DEVICE_OUT_ANC_HEADSET               = 0x800000,
-    AUDIO_DEVICE_OUT_ANC_HEADPHONE             = 0x1000000,
+    AUDIO_DEVICE_OUT_FM_TX                     = 0x1000000,
     AUDIO_DEVICE_OUT_PROXY                     = 0x2000000,
-    AUDIO_DEVICE_OUT_FM                        = 0x4000000,
-    AUDIO_DEVICE_OUT_FM_TX                     = 0x8000000,
 #endif
     AUDIO_DEVICE_OUT_DEFAULT                   = AUDIO_DEVICE_BIT_DEFAULT,
     AUDIO_DEVICE_OUT_ALL      = (AUDIO_DEVICE_OUT_EARPIECE |
@@ -809,15 +805,14 @@ typedef enum {
     AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD = 0x10,  // offload playback of compressed
                                                 // streams to hardware codec
     AUDIO_OUTPUT_FLAG_NON_BLOCKING = 0x20, // use non-blocking write
-    AUDIO_OUTPUT_FLAG_HW_AV_SYNC = 0x40 // output uses a hardware A/V synchronization source
+    AUDIO_OUTPUT_FLAG_HW_AV_SYNC = 0x40, // output uses a hardware A/V synchronization source
 #ifdef QCOM_HARDWARE
-    //Qualcomm Flags
-    AUDIO_OUTPUT_FLAG_LPA = 0x1000,      // use LPA
-    AUDIO_OUTPUT_FLAG_TUNNEL = 0x2000,   // use Tunnel
-    AUDIO_OUTPUT_FLAG_VOIP_RX = 0x4000,  // use this flag in combination with DIRECT to
+    AUDIO_OUTPUT_FLAG_VOIP_RX = 0x1000,  // use this flag in combination with DIRECT to
                                          // indicate HAL to activate EC & NS
                                          // path for VOIP calls
-    AUDIO_OUTPUT_FLAG_INCALL_MUSIC = 0x8000 //use this flag for incall music delivery
+    AUDIO_OUTPUT_FLAG_INCALL_MUSIC = 0x2000, //use this flag for incall music delivery
+    // flag for HDMI compressed passthrough
+    AUDIO_OUTPUT_FLAG_COMPRESS_PASSTHROUGH = 0x4000
 #endif
 } audio_output_flags_t;
 
@@ -1433,8 +1428,6 @@ static inline bool audio_is_valid_format(audio_format_t format)
     case AUDIO_FORMAT_EVRC:
     case AUDIO_FORMAT_EVRCB:
     case AUDIO_FORMAT_EVRCWB:
-    case AUDIO_FORMAT_AC3:
-    case AUDIO_FORMAT_EAC3:
     case AUDIO_FORMAT_AAC_ADIF:
     case AUDIO_FORMAT_WMA:
     case AUDIO_FORMAT_WMA_PRO:
@@ -1443,6 +1436,8 @@ static inline bool audio_is_valid_format(audio_format_t format)
     case AUDIO_FORMAT_AMR_WB_PLUS:
     case AUDIO_FORMAT_MP2:
     case AUDIO_FORMAT_EVRCNW:
+    case AUDIO_FORMAT_FLAC:
+    case AUDIO_FORMAT_E_AC3_JOC:
 #endif
         return true;
 #ifdef QCOM_HARDWARE
