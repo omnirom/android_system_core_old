@@ -104,6 +104,17 @@ static unsigned emmc_boot = 0;
 
 static unsigned lpm_bootmode = 0;
 
+static char *index(const char *p, int ch)
+{
+	for (;; ++p) {
+		if (*p == (char) ch)
+			return((char *)p);
+		if (!*p)
+			return((char *)NULL);
+	}
+	/* NOTREACHED */
+}
+
 static const char *expand_environment(const char *val)
 {
     int n;
@@ -163,7 +174,12 @@ int add_environment(const char *key, const char *val)
 {
     size_t n;
     size_t key_len = strlen(key);
+    const char *expanded;
 
+    expanded = expand_environment(val);
+    if (!expanded) {
+        goto failed;
+    }
     /* The last environment entry is reserved to terminate the list */
     for (n = 0; n < (ARRAY_SIZE(ENV) - 1); n++) {
 
@@ -178,7 +194,7 @@ int add_environment(const char *key, const char *val)
 
         /* Add entry if a free slot is available */
         if (ENV[n] == NULL) {
-            size_t len = key_len + strlen(val) + 2;
+            size_t len = key_len + strlen(expanded) + 2;
             char *entry = malloc(len);
             if (!entry) {
                 goto failed_cleanup;
@@ -206,8 +222,10 @@ int add_environment(const char *key, const char *val)
         }
     }
 
-    ERROR("No env. room to store: '%s':'%s'\n", key, val);
-
+failed_cleanup:
+    free((char *)expanded);
+failed:
+    ERROR("No env. room to store: '%s':'%s'\n", key, expanded);
     return -1;
 }
 
