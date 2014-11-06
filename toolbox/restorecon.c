@@ -4,7 +4,6 @@
 #include <errno.h>
 #include <selinux/selinux.h>
 #include <selinux/android.h>
-#include <private/android_filesystem_config.h>
 
 static const char *progname;
 
