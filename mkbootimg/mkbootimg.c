@@ -286,7 +286,7 @@ int main(int argc, char **argv)
     }
 
     if(dt_data) {
-        if(write(fd, dt_data, hdr.dt_size) != hdr.dt_size) goto fail;
+        if(write(fd, dt_data, hdr.dt_size) != (ssize_t) hdr.dt_size) goto fail;
         if(write_padding(fd, pagesize, hdr.dt_size)) goto fail;
     }
     return 0;
