@@ -634,6 +634,10 @@ void RefBase::onLastWeakRef(const void* /*id*/)
 extern "C" void _ZN7android7RefBase14moveReferencesEPvPKvjRKNS_22ReferenceConverterBaseE(void* dst, void const* src, size_t n,
         const ReferenceConverterBase& caster)
 {
+    (void)(dst);
+    (void)(src);
+    (void)(n);
+    (void)(caster);
 }
 /* END JB MR1 COMPAT */
 
