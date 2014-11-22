@@ -64,6 +64,8 @@ extern struct selabel_handle *sehandle;
 
 static android::base::unique_fd device_fd;
 
+static std::string boot_device;
+
 struct perms_ {
     char *name;
     char *attr;
@@ -89,6 +91,7 @@ struct platform_node {
 static list_declare(sys_perms);
 static list_declare(dev_perms);
 static list_declare(platform_names);
+static void make_link_init(const char *oldpath, const char *newpath);
 
 int add_dev_perms(const char *name, const char *attr,
                   mode_t perm, unsigned int uid, unsigned int gid,
@@ -535,6 +538,11 @@ char** get_block_device_symlinks(struct uevent* uevent) {
     char link_path[256];
     int link_num = 0;
     char *p;
+    int is_bootdevice = -1;
+    int mtd_fd = -1;
+    int nr;
+    char mtd_name_path[256];
+    char mtd_name[64];
 
     pdev = find_platform_device(uevent->path);
     if (pdev) {
@@ -559,6 +567,36 @@ char** get_block_device_symlinks(struct uevent* uevent) {
 
     snprintf(link_path, sizeof(link_path), "/dev/block/%s/%s", type, device);
 
+    if(!strcmp(type, "mtd")) {
+        snprintf(mtd_name_path, sizeof(mtd_name_path),
+            "/sys/devices/virtual/%s/%s/name", type, device);
+        mtd_fd = open(mtd_name_path, O_RDONLY);
+            if(mtd_fd < 0) {
+                LOG(ERROR) << "Unable to open " << mtd_name_path << " for reading";
+                return NULL;
+            }
+        nr = read(mtd_fd, mtd_name, sizeof(mtd_name) - 1);
+        if (nr <= 0)
+            return NULL;
+        close(mtd_fd);
+        mtd_name[nr - 1] = '\0';
+
+        p = strdup(mtd_name);
+        sanitize(p);
+        if (asprintf(&links[link_num], "/dev/block/%s/by-name/%s", type, p) > 0)
+            link_num++;
+        else
+            links[link_num] = NULL;
+        free(p);
+    }
+
+    if (pdev && boot_device.c_str()[0] != '\0' && strstr(device, boot_device.c_str())) {
+        make_link_init(link_path, "/dev/block/bootdevice");
+        is_bootdevice = 1;
+    } else {
+        is_bootdevice = 0;
+    }
+
     if (uevent->partition_name) {
         p = strdup(uevent->partition_name);
         sanitize(p);
@@ -569,11 +607,13 @@ char** get_block_device_symlinks(struct uevent* uevent) {
             link_num++;
         else
             links[link_num] = NULL;
-        if (asprintf(&links[link_num], "/dev/block/bootdevice/by-name/%s", p) > 0)
-            link_num++;
-        else
-            links[link_num] = NULL;
 
+        if (is_bootdevice > 0) {
+            if (asprintf(&links[link_num], "/dev/block/bootdevice/by-name/%s", p) > 0)
+                link_num++;
+            else
+                links[link_num] = NULL;
+        }
         free(p);
     }
 
@@ -583,10 +623,12 @@ char** get_block_device_symlinks(struct uevent* uevent) {
         else
             links[link_num] = NULL;
 
-        if (asprintf(&links[link_num], "/dev/block/bootdevice/by-num/p%d", uevent->partition_num) > 0)
-            link_num++;
-        else
-            links[link_num] = NULL;
+        if (is_bootdevice > 0) {
+            if (asprintf(&links[link_num], "/dev/block/bootdevice/by-num/p%d", uevent->partition_num) > 0)
+                link_num++;
+            else
+                links[link_num] = NULL;
+        }
     }
 
     slash = strrchr(uevent->path, '/');
