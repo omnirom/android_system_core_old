@@ -199,6 +199,8 @@ int  local_connect_arbitrary_ports(int console_port, int adb_port, std::string* 
 
 ConnectionState connection_state(atransport *t);
 
+extern int recovery_mode;
+
 extern const char* adb_device_banner;
 
 #if !ADB_HOST
