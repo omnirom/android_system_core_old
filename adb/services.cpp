@@ -433,6 +433,13 @@ static int create_subproc_thread(const char *name, const subproc_mode mode)
 }
 #endif
 
+#if !ADB_HOST
+static const char* bu_path()
+{
+    return (recovery_mode ? "/sbin/bu" : "/system/bin/bu");
+}
+#endif
+
 int service_to_fd(const char *name)
 {
     int ret = -1;
@@ -489,10 +496,14 @@ int service_to_fd(const char *name)
     } else if(!strncmp(name, "unroot:", 7)) {
         ret = create_service_thread(restart_unroot_service, NULL);
     } else if(!strncmp(name, "backup:", 7)) {
-        ret = create_subproc_thread(android::base::StringPrintf("/system/bin/bu backup %s",
+        ret = create_subproc_thread(android::base::StringPrintf("%s backup %s", bu_path(),
                                                                 (name + 7)).c_str(), SUBPROC_RAW);
     } else if(!strncmp(name, "restore:", 8)) {
-        ret = create_subproc_thread("/system/bin/bu restore", SUBPROC_RAW);
+        char* cmd;
+        if (asprintf(&cmd, "%s restore", bu_path()) != -1) {
+            ret = create_subproc_thread(cmd, SUBPROC_RAW);
+            free(cmd);
+        }
     } else if(!strncmp(name, "tcpip:", 6)) {
         int port;
         if (sscanf(name + 6, "%d", &port) != 1) {
