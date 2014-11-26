@@ -393,6 +393,11 @@ static int create_subproc_thread(const char *name, const subproc_mode mode)
 }
 #endif
 
+static const char* bu_path()
+{
+    return (recovery_mode ? "/sbin/bu" : "/system/bin/bu");
+}
+
 int service_to_fd(const char *name)
 {
     int ret = -1;
@@ -455,13 +460,17 @@ int service_to_fd(const char *name)
                 *c = ' ';
         }
         char* cmd;
-        if (asprintf(&cmd, "/system/bin/bu backup %s", arg) != -1) {
+        if (asprintf(&cmd, "%s backup %s", bu_path(), arg) != -1) {
             ret = create_subproc_thread(cmd, SUBPROC_RAW);
             free(cmd);
         }
         free(arg);
     } else if(!strncmp(name, "restore:", 8)) {
-        ret = create_subproc_thread("/system/bin/bu restore", SUBPROC_RAW);
+        char* cmd;
+        if (asprintf(&cmd, "%s restore", bu_path()) != -1) {
+            ret = create_subproc_thread(cmd, SUBPROC_RAW);
+            free(cmd);
+        }
     } else if(!strncmp(name, "tcpip:", 6)) {
         int port;
         if (sscanf(name + 6, "%d", &port) == 0) {
