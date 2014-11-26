@@ -359,6 +359,10 @@ void close_stdin() {
 }
 #endif
 
+#if !ADB_HOST
+int recovery_mode = 0;
+#endif
+
 // TODO(danalbert): Split this file up into adb_main.cpp and adbd_main.cpp.
 int main(int argc, char **argv) {
 #if ADB_HOST
@@ -396,6 +400,8 @@ int main(int argc, char **argv) {
             break;
         }
     }
+
+    recovery_mode = (strcmp(adb_device_banner, "recovery") == 0);
 
     close_stdin();
 
