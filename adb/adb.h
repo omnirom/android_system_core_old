@@ -230,6 +230,8 @@ int is_adb_interface(int vid, int pid, int usb_class, int usb_subclass, int usb_
 
 ConnectionState connection_state(atransport *t);
 
+extern int recovery_mode;
+
 extern const char* adb_device_banner;
 
 #if !ADB_HOST
