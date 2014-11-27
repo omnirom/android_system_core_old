@@ -418,9 +418,11 @@ static void update_screen_state(struct charger *charger, int64_t now)
 
     /* unblank the screen  on first cycle */
     if (batt_anim->cur_cycle == 0)
+    
         gr_fb_blank(false);
         set_backlight_on();
-
+   }
+   
     /* draw the new frame (@ cur_frame) */
     redraw_screen(charger);
 
