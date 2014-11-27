@@ -78,6 +78,8 @@ char *locale;
 #define LOGI(x...) do { KLOG_INFO("charger", x); } while (0)
 #define LOGV(x...) do { KLOG_DEBUG("charger", x); } while (0)
 
+extern int mode;
+
 struct key_state {
     bool pending;
     bool down;
@@ -417,6 +419,7 @@ static void update_screen_state(struct charger *charger, int64_t now)
     /* unblank the screen  on first cycle */
     if (batt_anim->cur_cycle == 0)
         gr_fb_blank(false);
+        set_backlight_on();
 
     /* draw the new frame (@ cur_frame) */
     redraw_screen(charger);
@@ -567,7 +570,15 @@ static void handle_power_supply_state(struct charger *charger, int64_t now)
     if (!charger->charger_connected) {
         request_suspend(false);
         if (charger->next_pwr_check == -1) {
-            charger->next_pwr_check = now + UNPLUGGED_SHUTDOWN_TIME;
+            if (mode == QUICKBOOT) {
+                    gr_fb_blank(true);
+                    request_suspend(true);
+                    /* exit here. There is no need to keep running when charger
+	                * unplugged under QuickBoot mode
+	                */
+	                exit(0);
+                }
+	            charger->next_pwr_check = now + UNPLUGGED_SHUTDOWN_TIME;
             LOGI("[%" PRId64 "] device unplugged: shutting down in %" PRId64 " (@ %" PRId64 ")\n",
                  now, (int64_t)UNPLUGGED_SHUTDOWN_TIME, charger->next_pwr_check);
         } else if (now >= charger->next_pwr_check) {
