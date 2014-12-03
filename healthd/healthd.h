@@ -86,6 +86,11 @@ struct healthd_mode_ops {
 
 extern struct healthd_mode_ops *healthd_mode_ops;
 
+enum MODE {
+    NORMAL = 0,
+    QUICKBOOT,
+};
+
 // Charger mode
 
 void healthd_mode_charger_init(struct healthd_config *config);

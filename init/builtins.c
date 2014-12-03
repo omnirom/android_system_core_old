@@ -24,7 +24,6 @@
 #include <linux/kd.h>
 #include <errno.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
 #include <netinet/in.h>
 #include <linux/if.h>
 #include <arpa/inet.h>
@@ -274,21 +273,42 @@ int do_enable(int nargs, char **args)
     return 0;
 }
 
-/*exec <path> <arg1> <arg2> ... */
 #define MAX_PARAMETERS 64
 int do_exec(int nargs, char **args)
 {
     pid_t pid;
     int status, i, j;
     char *par[MAX_PARAMETERS];
+    char prop_val[PROP_VALUE_MAX];
+    int len;
+
     if (nargs > MAX_PARAMETERS)
     {
         return -1;
     }
+
     for(i=0, j=1; i<(nargs-1) ;i++,j++)
     {
+        if ((args[j])
+            &&
+            (!expand_props(prop_val, args[j], sizeof(prop_val))))
+
+        {
+            len = strlen(args[j]);
+            if (strlen(prop_val) <= len) {
+                /* Overwrite arg with expansion.
+                 *
+                 * For now, only allow an expansion length that
+                 * can fit within the original arg length to
+                 * avoid extra allocations.
+                 * On failure, use original argument.
+                 */
+                strncpy(args[j], prop_val, len + 1);
+            }
+        }
         par[i] = args[j];
     }
+
     par[i] = (char*)0;
     pid = fork();
     if (!pid)
@@ -298,17 +318,14 @@ int do_exec(int nargs, char **args)
         get_property_workspace(&fd, &sz);
         sprintf(tmp, "%d,%d", dup(fd), sz);
         setenv("ANDROID_PROPERTY_WORKSPACE", tmp, 1);
-        execve(par[0],par,environ);
+        execve(par[0], par, environ);
         exit(0);
     }
     else
     {
-        waitpid(pid, &status, 0);
-        if (WEXITSTATUS(status) != 0) {
-            ERROR("exec: pid %1d exited with return code %d: %s", (int)pid, WEXITSTATUS(status), strerror(status));
-        }
-
+        while(wait(&status)!=pid);
     }
+
     return 0;
 }
 
@@ -401,38 +418,6 @@ int do_mkdir(int nargs, char **args)
 
     return 0;
 }
-
-int do_mknod(int nargs, char **args)
-{
-    dev_t dev;
-    int major;
-    int minor;
-    int mode;
-
-    /* mknod <path> <type> <major> <minor> */
-
-    if (nargs != 5) {
-        return -1;
-    }
-
-    major = strtoul(args[3], 0, 0);
-    minor = strtoul(args[4], 0, 0);
-    dev = (major << 8) | minor;
-
-    if (strcmp(args[2], "c") == 0) {
-        mode = S_IFCHR;
-    } else {
-        mode = S_IFBLK;
-    }
-    if (mknod(args[1], mode, dev)) {
-        ERROR("init: mknod failed");
-        return -1;
-    }
-
-    return 0;
-}
-
-
 
 static struct {
     const char *name;
@@ -585,6 +570,7 @@ int do_mount_all(int nargs, char **args)
     int ret = -1;
     int child_ret = -1;
     int status;
+    char boot_mode[PROP_VALUE_MAX];
     const char *prop;
     struct fstab *fstab;
 
@@ -634,10 +620,12 @@ int do_mount_all(int nargs, char **args)
         property_set("vold.decrypt", "trigger_default_encryption");
     } else if (ret == FS_MGR_MNTALL_DEV_NOT_ENCRYPTED) {
         property_set("ro.crypto.state", "unencrypted");
-        /* If fs_mgr determined this is an unencrypted device, then trigger
-         * that action.
+        /* If fs_mgr determined this is an unencrypted device and we are
+         * not booting into ffbm then trigger that action.
          */
-        action_for_each_trigger("nonencrypted", action_add_queue_tail);
+        property_get("ro.bootmode", boot_mode);
+        if (strncmp(boot_mode, "ffbm", 4))
+            action_for_each_trigger("nonencrypted", action_add_queue_tail);
     } else if (ret == FS_MGR_MNTALL_DEV_NEEDS_RECOVERY) {
         /* Setup a wipe via recovery, and reboot into recovery */
         ERROR("fs_mgr_mount_all suggested recovery, so wiping data via recovery.\n");

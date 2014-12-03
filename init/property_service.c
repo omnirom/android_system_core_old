@@ -48,6 +48,7 @@
 #include "init.h"
 #include "util.h"
 #include "log.h"
+#include "vendor_init.h"
 
 #define PERSISTENT_PROPERTY_DIR  "/data/property"
 
@@ -55,6 +56,68 @@ static int persistent_properties_loaded = 0;
 static int property_area_inited = 0;
 
 static int property_set_fd = -1;
+
+/* White list of permissions for setting property services. */
+struct {
+    const char *prefix;
+    unsigned int uid;
+    unsigned int gid;
+} property_perms[] = {
+    { "net.rmnet0.",      AID_RADIO,    0 },
+    { "net.gprs.",        AID_RADIO,    0 },
+    { "net.ppp",          AID_RADIO,    0 },
+    { "net.qmi",          AID_RADIO,    0 },
+    { "net.lte",          AID_RADIO,    0 },
+    { "net.cdma",         AID_RADIO,    0 },
+    { "ril.",             AID_RADIO,    0 },
+    { "gsm.",             AID_RADIO,    0 },
+    { "persist.radio",    AID_RADIO,    0 },
+    { "net.dns",          AID_RADIO,    0 },
+    { "sys.usb.config",   AID_RADIO,    0 },
+    { "net.",             AID_SYSTEM,   0 },
+    { "dev.",             AID_SYSTEM,   0 },
+    { "runtime.",         AID_SYSTEM,   0 },
+    { "hw.",              AID_SYSTEM,   0 },
+    { "sys.",             AID_SYSTEM,   0 },
+    { "sys.powerctl",     AID_SHELL,    0 },
+    { "service.",         AID_SYSTEM,   0 },
+    { "wlan.",            AID_SYSTEM,   0 },
+    { "gps.",             AID_GPS,      0 },
+    { "bluetooth.",       AID_BLUETOOTH,   0 },
+    { "dhcp.",            AID_SYSTEM,   0 },
+    { "dhcp.",            AID_DHCP,     0 },
+    { "debug.",           AID_SYSTEM,   0 },
+    { "debug.",           AID_SHELL,    0 },
+    { "log.",             AID_SHELL,    0 },
+    { "service.adb.root", AID_SHELL,    0 },
+    { "service.adb.tcp.port", AID_SHELL,    0 },
+    { "persist.logd.size",AID_SYSTEM,   0 },
+    { "persist.sys.",     AID_SYSTEM,   0 },
+    { "persist.service.", AID_SYSTEM,   0 },
+    { "persist.security.", AID_SYSTEM,   0 },
+    { "persist.gps.",      AID_GPS,      0 },
+    { "persist.service.bdroid.", AID_BLUETOOTH,   0 },
+    { "selinux."         , AID_SYSTEM,   0 },
+    { "wc_transport.",     AID_BLUETOOTH,   AID_SYSTEM },
+    { "build.fingerprint", AID_SYSTEM,   0 },
+    { "partition."        , AID_SYSTEM,   0},
+    { NULL, 0, 0 }
+};
+
+/*
+ * White list of UID that are allowed to start/stop services.
+ * Currently there are no user apps that require.
+ */
+struct {
+    const char *service;
+    unsigned int uid;
+    unsigned int gid;
+} control_perms[] = {
+    { "dumpstate",AID_SHELL, AID_LOG },
+    { "ril-daemon",AID_RADIO, AID_RADIO },
+    { "pre-recovery", AID_SYSTEM, AID_SYSTEM },
+     {NULL, 0, 0 }
+};
 
 typedef struct {
     size_t size;
@@ -541,6 +604,9 @@ void load_all_props(void)
     load_properties_from_file(PROP_PATH_SYSTEM_BUILD, NULL);
     load_properties_from_file(PROP_PATH_SYSTEM_DEFAULT, NULL);
     load_properties_from_file(PROP_PATH_FACTORY, "ro.*");
+
+    /* Read vendor-specific property runtime overrides. */
+    vendor_load_properties();
 
     load_override_properties();
 

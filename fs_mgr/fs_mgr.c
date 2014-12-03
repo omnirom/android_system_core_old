@@ -352,6 +352,7 @@ int fs_mgr_mount_all(struct fstab *fstab)
 
         if ((fstab->recs[i].fs_mgr_flags & MF_VERIFY) &&
             !device_is_debuggable()) {
+            wait_for_file("/dev/device-mapper", WAIT_TIMEOUT);
             if (fs_mgr_setup_verity(&fstab->recs[i]) < 0) {
                 ERROR("Could not set up verified partition, skipping!\n");
                 continue;
