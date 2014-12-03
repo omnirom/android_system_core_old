@@ -458,9 +458,13 @@ int restorecon(const char* pathname)
     return selinux_android_restorecon(pathname, 0);
 }
 
+#define RESTORECON_RECURSIVE_FLAGS \
+        (SELINUX_ANDROID_RESTORECON_FORCE | \
+        SELINUX_ANDROID_RESTORECON_RECURSE)
+
 int restorecon_recursive(const char* pathname)
 {
-    return selinux_android_restorecon(pathname, SELINUX_ANDROID_RESTORECON_RECURSE);
+    return selinux_android_restorecon(pathname, RESTORECON_RECURSIVE_FLAGS);
 }
 
 /*
