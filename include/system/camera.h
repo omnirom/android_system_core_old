@@ -95,6 +95,15 @@ enum {
     CAMERA_MSG_ALL_MSGS = 0xFFFF
 };
 
+#ifdef QCOM_HARDWARE
+/** meta data type in CameraMetaDataCallback */
+enum {
+    CAMERA_META_DATA_ASD = 0x001,    //ASD data
+    CAMERA_META_DATA_FD = 0x002,     //FD/FP data
+    CAMERA_META_DATA_HDR = 0x003,    //Auto HDR data
+};
+#endif
+
 /** cmdType in sendCommand functions */
 enum {
     CAMERA_CMD_START_SMOOTH_ZOOM = 1,
@@ -179,6 +188,13 @@ enum {
      */
     CAMERA_CMD_SET_VIDEO_BUFFER_COUNT = 10,
 #ifdef QCOM_HARDWARE
+    /**
+     * Commands to enable/disable preview histogram
+     *
+     * Based on user's input to enable/disable histogram from the camera
+     * UI, send the appropriate command to the HAL to turn on/off the histogram
+     * stats and start sending the data to the application.
+     */
     CAMERA_CMD_HISTOGRAM_ON     = 11,
     CAMERA_CMD_HISTOGRAM_OFF     = 12,
     CAMERA_CMD_HISTOGRAM_SEND_DATA  = 13,
@@ -282,6 +298,18 @@ typedef struct camera_face {
     int32_t reye_blink;
 #endif
 } camera_face_t;
+
+#ifdef QCOM_HARDWARE
+/**
+ * The information of a data type received in a camera frame.
+ */
+typedef enum {
+    /** Data buffer */
+    CAMERA_FRAME_DATA_BUF = 0x000,
+    /** File descriptor */
+    CAMERA_FRAME_DATA_FD = 0x100
+} camera_frame_data_type_t;
+#endif
 
 /**
  * The metadata of the frame data.
