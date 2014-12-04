@@ -333,6 +333,35 @@ static void remove_platform_device(const char *path)
     }
 }
 
+/* Given a path that may start with an MTD device (/devices/virtual/mtd/mtd8/mtdblock8),
+ * populate the supplied buffer with the MTD partition number and return 0.
+ * If it doesn't start with an MTD device, or there is some error, return -1 */
+static int find_mtd_device_prefix(const char *path, char *buf, ssize_t buf_sz)
+{
+    const char *start, *end;
+
+    if (strncmp(path, "/devices/virtual/mtd", 20))
+        return -1;
+
+    /* Beginning of the prefix is the initial "mtdXX" after "/devices/virtual/mtd/" */
+    start = path + 21;
+
+    /* End of the prefix is one path '/' later, capturing the partition number
+     * Example: mtd8 */
+    end = strchr(start, '/');
+    if (!end) {
+        return -1;
+    }
+
+    /* Make sure we have enough room for the string plus null terminator */
+    if (end - start + 1 > buf_sz)
+        return -1;
+
+    strncpy(buf, start, end - start);
+    buf[end - start] = '\0';
+    return 0;
+}
+
 /* Given a path that may start with a PCI device, populate the supplied buffer
  * with the PCI domain/bus number and the peripheral ID and return 0.
  * If it doesn't start with a PCI device, or there is some error, return -1 */
@@ -517,6 +546,10 @@ static char **get_block_device_symlinks(struct uevent *uevent)
     char link_path[256];
     int link_num = 0;
     char *p;
+    int mtd_fd = -1;
+    int nr;
+    char mtd_name_path[256];
+    char mtd_name[64];
 
     pdev = find_platform_device(uevent->path);
     if (pdev) {
@@ -525,6 +558,9 @@ static char **get_block_device_symlinks(struct uevent *uevent)
     } else if (!find_pci_device_prefix(uevent->path, buf, sizeof(buf))) {
         device = buf;
         type = "pci";
+    } else if (!find_mtd_device_prefix(uevent->path, buf, sizeof(buf))) {
+        device = buf;
+        type = "mtd";
     } else {
         return NULL;
     }
@@ -537,6 +573,29 @@ static char **get_block_device_symlinks(struct uevent *uevent)
     INFO("found %s device %s\n", type, device);
 
     snprintf(link_path, sizeof(link_path), "/dev/block/%s/%s", type, device);
+
+    if(!strcmp(type, "mtd")) {
+        snprintf(mtd_name_path, sizeof(mtd_name_path),
+            "/sys/devices/virtual/%s/%s/name", type, device);
+        mtd_fd = open(mtd_name_path, O_RDONLY);
+            if(mtd_fd < 0) {
+                ERROR("Unable to open %s for reading", mtd_name_path);
+                return NULL;
+            }
+        nr = read(mtd_fd, mtd_name, sizeof(mtd_name) - 1);
+        if (nr <= 0)
+            return NULL;
+        close(mtd_fd);
+        mtd_name[nr - 1] = '\0';
+
+        p = strdup(mtd_name);
+        sanitize(p);
+        if (asprintf(&links[link_num], "/dev/block/%s/by-name/%s", type, p) > 0)
+            link_num++;
+        else
+            links[link_num] = NULL;
+        free(p);
+    }
 
     if (uevent->partition_name) {
         p = strdup(uevent->partition_name);
