@@ -678,6 +678,8 @@ enum {
 #ifdef QCOM_HARDWARE
     AUDIO_DEVICE_OUT_FM_TX                     = 0x1000000,
     AUDIO_DEVICE_OUT_PROXY                     = 0x2000000,
+    AUDIO_DEVICE_OUT_ANC_HEADSET               = 0x4000000,
+    AUDIO_DEVICE_OUT_ANC_HEADPHONE             = 0x8000000,
 #endif
     AUDIO_DEVICE_OUT_DEFAULT                   = AUDIO_DEVICE_BIT_DEFAULT,
     AUDIO_DEVICE_OUT_ALL      = (AUDIO_DEVICE_OUT_EARPIECE |
@@ -706,6 +708,8 @@ enum {
 #ifdef QCOM_HARDWARE
                                  AUDIO_DEVICE_OUT_FM_TX |
                                  AUDIO_DEVICE_OUT_PROXY |
+                                 AUDIO_DEVICE_OUT_ANC_HEADSET |
+                                 AUDIO_DEVICE_OUT_ANC_HEADPHONE |
 #endif
                                  AUDIO_DEVICE_OUT_DEFAULT),
     AUDIO_DEVICE_OUT_ALL_A2DP = (AUDIO_DEVICE_OUT_BLUETOOTH_A2DP |
@@ -748,6 +752,7 @@ enum {
     AUDIO_DEVICE_IN_PROXY                 = AUDIO_DEVICE_BIT_IN | 0x100000,
     AUDIO_DEVICE_IN_FM_RX                 = AUDIO_DEVICE_BIT_IN | 0x200000,
     AUDIO_DEVICE_IN_FM_RX_A2DP            = AUDIO_DEVICE_BIT_IN | 0x400000,
+    AUDIO_DEVICE_IN_ANC_HEADSET           = AUDIO_DEVICE_BIT_IN | 0x800000,
 #endif
     AUDIO_DEVICE_IN_DEFAULT               = AUDIO_DEVICE_BIT_IN | AUDIO_DEVICE_BIT_DEFAULT,
 
