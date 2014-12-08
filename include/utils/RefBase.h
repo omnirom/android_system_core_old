@@ -53,14 +53,14 @@ inline bool operator _op_ (const U* o) const {                  \
 
 // ---------------------------------------------------------------------------
 
-/* START JB MR1 COMPAT */
+#ifdef REFBASE_JB_MR1_COMPAT_SYMBOLS
 class ReferenceConverterBase {
 public:
     virtual size_t getReferenceTypeSize() const = 0;
     virtual void* getReferenceBase(void const*) const = 0;
     inline virtual ~ReferenceConverterBase() { }
 };
-/* END JB MR1 COMPAT */
+#endif
 
 class ReferenceRenamer {
 protected:
