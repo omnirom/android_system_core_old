@@ -99,6 +99,8 @@
 #define AID_OEM_RESERVED_START 2900
 
 #define AID_QCOM_DIAG          2950  /* access to QTI diagnostic resources */
+#define AID_RFS                2951  /* Remote Filesystem for peripheral processors */
+#define AID_RFS_SHARED         2952  /* Shared files for Remote Filesystem for peripheral processors  */
 
 #define AID_OEM_RESERVED_END   2999
 
@@ -114,6 +116,9 @@
 #define AID_NET_BT_STACK  3008  /* bluetooth: access config files */
 #define AID_READPROC      3009  /* Allow /proc read access */
 #define AID_WAKELOCK      3010  /* Allow system wakelock read/write access */
+
+#define AID_RFS_OLD          3012  /* DEPRECATED OLD ID FOR RFS, DO NOT USE */
+#define AID_RFS_SHARED_OLD   3013  /* DEPRECATED OLD ID FOR RFS-SHARED  */
 
 /* The range 5000-5999 is also reserved for OEM, and must never be used here. */
 #define AID_OEM_RESERVED_2_START 5000
@@ -210,6 +215,9 @@ static const struct android_id_info android_ids[] = {
 
     { "qcom_diag",     AID_QCOM_DIAG, },
 
+    { "rfs",           AID_RFS, },
+    { "rfs_shared",    AID_RFS_SHARED, },
+
     { "net_bt_admin",  AID_NET_BT_ADMIN, },
     { "net_bt",        AID_NET_BT, },
     { "inet",          AID_INET, },
@@ -224,6 +232,9 @@ static const struct android_id_info android_ids[] = {
 #ifdef BOARD_HAS_SENSORS_GROUP
     { "sensors",       AID_SENSORS, },
 #endif
+
+    { "rfs_old",           AID_RFS_OLD, },
+    { "rfs_shared_old",    AID_RFS_SHARED_OLD, },
 
     { "everybody",     AID_EVERYBODY, },
     { "misc",          AID_MISC, },
