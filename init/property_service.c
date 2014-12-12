@@ -48,6 +48,7 @@
 #include "init.h"
 #include "util.h"
 #include "log.h"
+#include "vendor_init.h"
 
 #define PERSISTENT_PROPERTY_DIR  "/data/property"
 
@@ -546,6 +547,10 @@ void load_all_props(void)
 
     /* Read persistent properties after all default values have been loaded. */
     load_persistent_properties();
+
+    /* vendor-specific properties
+     */
+    vendor_load_properties();
 }
 
 void start_property_service(void)
