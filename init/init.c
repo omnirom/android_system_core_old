@@ -1065,6 +1065,11 @@ int main(int argc, char **argv)
     cb.func_audit = audit_callback;
     selinux_set_callback(SELINUX_CB_AUDIT, cb);
 
+    is_charger = !strcmp(bootmode, "charger");
+
+    INFO("property init\n");
+    property_load_boot_defaults();
+
     selinux_initialize();
     /* These directories were necessarily created before initial policy load
      * and therefore need their security context restored to the proper value.
@@ -1074,11 +1079,6 @@ int main(int argc, char **argv)
     restorecon("/dev/socket");
     restorecon("/dev/__properties__");
     restorecon_recursive("/sys");
-
-    is_charger = !strcmp(bootmode, "charger");
-
-    INFO("property init\n");
-    property_load_boot_defaults();
 
     INFO("reading config file\n");
     init_parse_config_file("/init.rc");
