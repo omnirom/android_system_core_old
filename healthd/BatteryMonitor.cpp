@@ -232,8 +232,7 @@ bool BatteryMonitor::update(void) {
                     props.chargerWirelessOnline = true;
                     break;
                 default:
-                    KLOG_WARNING(LOG_TAG, "%s: Unknown power supply type\n",
-                                 mChargerNames[i].string());
+                    break;
                 }
             }
         }
