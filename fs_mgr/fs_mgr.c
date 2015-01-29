@@ -39,6 +39,7 @@
 #include <cutils/partition_utils.h>
 #include <cutils/properties.h>
 #include <logwrap/logwrap.h>
+#include <blkid/blkid.h>
 
 #include "mincrypt/rsa.h"
 #include "mincrypt/sha.h"
@@ -309,6 +310,8 @@ static int mount_with_alternatives(struct fstab *fstab, int start_idx, int *end_
     int i;
     int mount_errno = 0;
     int mounted = 0;
+    int cmp_len;
+    char *detected_fs_type;
 
     if (!end_idx || !attempted_idx || start_idx >= fstab->num_entries) {
       errno = EINVAL;
@@ -334,8 +337,16 @@ static int mount_with_alternatives(struct fstab *fstab, int start_idx, int *end_
             }
 
             if (fstab->recs[i].fs_mgr_flags & MF_CHECK) {
-                check_fs(fstab->recs[i].blk_device, fstab->recs[i].fs_type,
-                         fstab->recs[i].mount_point);
+                /* Skip file system check unless we are sure we are the right type */
+                detected_fs_type = blkid_get_tag_value(NULL, "TYPE", fstab->recs[i].blk_device);
+                if (detected_fs_type) {
+                    cmp_len = (!strncmp(detected_fs_type, "ext", 3) &&
+                            strlen(detected_fs_type) == 4) ? 3 : strlen(detected_fs_type);
+                    if (!strncmp(fstab->recs[i].fs_type, detected_fs_type, cmp_len)) {
+                        check_fs(fstab->recs[i].blk_device, fstab->recs[i].fs_type,
+                                 fstab->recs[i].mount_point);
+                    }
+                }
             }
             if (!__mount(fstab->recs[i].blk_device, fstab->recs[i].mount_point, &fstab->recs[i])) {
                 *attempted_idx = i;
