@@ -141,9 +141,10 @@ static void check_fs(char *blk_device, char *fs_type, char *target)
     } else if (!strcmp(fs_type, "f2fs")) {
             char *f2fs_fsck_argv[] = {
                     F2FS_FSCK_BIN,
+                    "-f",
                     blk_device
             };
-        INFO("Running %s on %s\n", F2FS_FSCK_BIN, blk_device);
+        INFO("Running %s -f %s\n", F2FS_FSCK_BIN, blk_device);
 
         ret = android_fork_execvp_ext(ARRAY_SIZE(f2fs_fsck_argv), f2fs_fsck_argv,
                                       &status, true, LOG_KLOG | LOG_FILE,
@@ -242,6 +243,25 @@ static int device_is_debuggable() {
     ret = __system_property_get("ro.debuggable", value);
     if (ret < 0)
         return ret;
+    return strcmp(value, "1") ? 0 : 1;
+}
+
+static int device_is_secure() {
+    int ret = -1;
+    char value[PROP_VALUE_MAX];
+    ret = __system_property_get("ro.secure", value);
+    /* If error, we want to fail secure */
+    if (ret < 0)
+        return 1;
+    return strcmp(value, "0") ? 1 : 0;
+}
+
+static int device_is_force_encrypted() {
+    int ret = -1;
+    char value[PROP_VALUE_MAX];
+    ret = __system_property_get("ro.vold.forceencryption", value);
+    if (ret < 0)
+        return 0;
     return strcmp(value, "1") ? 0 : 1;
 }
 
@@ -350,9 +370,11 @@ int fs_mgr_mount_all(struct fstab *fstab)
             wait_for_file(fstab->recs[i].blk_device, WAIT_TIMEOUT);
         }
 
-        if ((fstab->recs[i].fs_mgr_flags & MF_VERIFY) &&
-            !device_is_debuggable()) {
-            if (fs_mgr_setup_verity(&fstab->recs[i]) < 0) {
+        if ((fstab->recs[i].fs_mgr_flags & MF_VERIFY) && device_is_secure()) {
+            int rc = fs_mgr_setup_verity(&fstab->recs[i]);
+            if (device_is_debuggable() && rc == FS_MGR_SETUP_VERITY_DISABLED) {
+                INFO("Verity disabled");
+            } else if (rc != FS_MGR_SETUP_VERITY_SUCCESS) {
                 ERROR("Could not set up verified partition, skipping!\n");
                 continue;
             }
@@ -365,7 +387,9 @@ int fs_mgr_mount_all(struct fstab *fstab)
         /* Deal with encryptability. */
         if (!mret) {
             /* If this is encryptable, need to trigger encryption */
-            if ((fstab->recs[attempted_idx].fs_mgr_flags & MF_FORCECRYPT)) {
+            if (   (fstab->recs[attempted_idx].fs_mgr_flags & MF_FORCECRYPT)
+                || (device_is_force_encrypted()
+                    && fs_mgr_is_encryptable(&fstab->recs[attempted_idx]))) {
                 if (umount(fstab->recs[attempted_idx].mount_point) == 0) {
                     if (encryptable == FS_MGR_MNTALL_DEV_NOT_ENCRYPTED) {
                         ERROR("Will try to encrypt %s %s\n", fstab->recs[attempted_idx].mount_point,
@@ -467,9 +491,11 @@ int fs_mgr_do_mount(struct fstab *fstab, char *n_name, char *n_blk_device,
                      fstab->recs[i].mount_point);
         }
 
-        if ((fstab->recs[i].fs_mgr_flags & MF_VERIFY) &&
-            !device_is_debuggable()) {
-            if (fs_mgr_setup_verity(&fstab->recs[i]) < 0) {
+        if ((fstab->recs[i].fs_mgr_flags & MF_VERIFY) && device_is_secure()) {
+            int rc = fs_mgr_setup_verity(&fstab->recs[i]);
+            if (device_is_debuggable() && rc == FS_MGR_SETUP_VERITY_DISABLED) {
+                INFO("Verity disabled");
+            } else if (rc != FS_MGR_SETUP_VERITY_SUCCESS) {
                 ERROR("Could not set up verified partition, skipping!\n");
                 continue;
             }

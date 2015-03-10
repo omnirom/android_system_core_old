@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (c) 2014, The Android Open Source Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -11,6 +11,9 @@
  *    notice, this list of conditions and the following disclaimer in
  *    the documentation and/or other materials provided with the
  *    distribution.
+ *  * Neither the name of Google, Inc. nor the names of its contributors
+ *    may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
@@ -26,22 +29,48 @@
  * SUCH DAMAGE.
  */
 
-#import <Carbon/Carbon.h>
+#include <stdio.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
-void get_my_path(char s[PATH_MAX])
+static void
+usage(const char *s)
 {
-    CFBundleRef mainBundle = CFBundleGetMainBundle();
-    CFURLRef executableURL = CFBundleCopyExecutableURL(mainBundle);
-    CFStringRef executablePathString = CFURLCopyFileSystemPath(executableURL, kCFURLPOSIXPathStyle);
-    CFRelease(executableURL);
-
-    CFStringGetFileSystemRepresentation(executablePathString, s, PATH_MAX-1);
-    CFRelease(executablePathString);
-
-	char *x;
-    x = strrchr(s, '/');
-    if(x) x[1] = 0;
+    fprintf(stderr, "usage: %s pid resource cur max\n", s);
+    exit(EXIT_FAILURE);
 }
 
+int prlimit_main(int argc, char *argv[])
+{
+    pid_t pid;
+    struct rlimit64 rl;
+    int resource;
+    int rc;
 
+    if (argc != 5)
+        usage(*argv);
+
+    if (sscanf(argv[1], "%d", &pid) != 1)
+        usage(*argv);
+
+    if (sscanf(argv[2], "%d", &resource) != 1)
+        usage(*argv);
+
+    if (sscanf(argv[3], "%llu", &rl.rlim_cur) != 1)
+        usage(*argv);
+
+    if (sscanf(argv[4], "%llu", &rl.rlim_max) != 1)
+        usage(*argv);
+
+    printf("setting resource %d of pid %d to [%llu,%llu]\n", resource, pid,
+            rl.rlim_cur, rl.rlim_max);
+    rc = prlimit64(pid, resource, &rl, NULL);
+    if (rc < 0) {
+        perror("prlimit");
+        exit(EXIT_FAILURE);
+    }
+
+    return 0;
+}
