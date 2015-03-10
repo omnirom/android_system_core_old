@@ -8,6 +8,7 @@ int do_class_reset(int nargs, char **args);
 int do_domainname(int nargs, char **args);
 int do_enable(int nargs, char **args);
 int do_exec(int nargs, char **args);
+int do_exec_context(int nargs, char **args);
 int do_export(int nargs, char **args);
 int do_export_rc(int nargs, char **args);
 int do_hostname(int nargs, char **args);
@@ -62,6 +63,7 @@ enum {
     KEYWORD(domainname,  COMMAND, 1, do_domainname)
     KEYWORD(enable,      COMMAND, 1, do_enable)
     KEYWORD(exec,        COMMAND, 1, do_exec)
+    KEYWORD(exec_context,    COMMAND, 2, do_exec_context)
     KEYWORD(export,      COMMAND, 2, do_export)
     KEYWORD(export_rc,   COMMAND, 1, do_export_rc)
     KEYWORD(group,       OPTION,  0, 0)
