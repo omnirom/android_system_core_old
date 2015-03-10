@@ -55,6 +55,8 @@ int add_environment(const char *name, const char *value);
 extern int init_module(void *, unsigned long, const char *);
 extern int init_export_rc_file(const char *);
 
+static int do_exec_internal(int nargs, char **args, const char* domain);
+
 static int write_file(const char *path, const char *value)
 {
     int fd, ret, len;
@@ -278,6 +280,16 @@ int do_enable(int nargs, char **args)
 #define MAX_PARAMETERS 64
 int do_exec(int nargs, char **args)
 {
+    return do_exec_internal(nargs, args, NULL);
+}
+
+int do_exec_lvm(int nargs, char **args)
+{
+    return do_exec_internal(nargs, args, "u:r:lvm:s0");
+}
+
+static int do_exec_internal(int nargs, char **args, const char* domain)
+{
     pid_t pid;
     int status, i, j;
     char *par[MAX_PARAMETERS];
@@ -298,6 +310,13 @@ int do_exec(int nargs, char **args)
         get_property_workspace(&fd, &sz);
         sprintf(tmp, "%d,%d", dup(fd), sz);
         setenv("ANDROID_PROPERTY_WORKSPACE", tmp, 1);
+
+        if (domain != NULL) {
+            if (is_selinux_enabled() > 0 && setexeccon(domain) < 0) {
+                ERROR("cannot setexeccon('%s'): %s\n", domain, strerror(errno));
+                _exit(127);
+            }
+        }
         execve(par[0],par,environ);
         exit(0);
     }
