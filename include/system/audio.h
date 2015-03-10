@@ -74,9 +74,11 @@ typedef enum {
     AUDIO_STREAM_PATCH            = 12, /* For internal audio flinger tracks. Fixed volume */
 #ifdef QCOM_HARDWARE
     AUDIO_STREAM_INCALL_MUSIC     = 13,
+    AUDIO_STREAM_CNT              = AUDIO_STREAM_INCALL_MUSIC + 1,
+#else
+    AUDIO_STREAM_CNT              = AUDIO_STREAM_PATCH + 1,
 #endif
     AUDIO_STREAM_PUBLIC_CNT       = AUDIO_STREAM_TTS + 1,
-    AUDIO_STREAM_CNT              = AUDIO_STREAM_INCALL_MUSIC + 1,
     AUDIO_STREAM_MAX              = AUDIO_STREAM_CNT - 1,
 } audio_stream_type_t;
 
