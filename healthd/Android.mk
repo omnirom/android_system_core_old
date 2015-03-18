@@ -1,6 +1,6 @@
 # Copyright 2013 The Android Open Source Project
 
-ifneq ($(BUILD_TINY_ANDROID),true)
+ifneq ($(BOARD_USES_OWN_CHARGER),true)
 
 LOCAL_PATH := $(call my-dir)
 
