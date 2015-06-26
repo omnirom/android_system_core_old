@@ -33,6 +33,24 @@ include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 
+HEALTHD_PATH := \
+    TW_BRIGHTNESS_PATH \
+    TW_SECONDARY_BRIGHTNESS_PATH
+
+$(foreach healthd_charger_define,$(HEALTHD_PATH), \
+  $(if $($(healthd_charger_define)), \
+    $(eval LOCAL_CFLAGS += -D$(healthd_charger_define)=\"$($(healthd_charger_define))\") \
+  ) \
+)
+
+ifeq ($(strip $(HEALTHD_FORCE_BACKLIGHT_CONTROL)),true)
+LOCAL_CFLAGS += -DHEALTHD_FORCE_BACKLIGHT_CONTROL
+endif
+
+ifneq ($(strip $(HEALTHD_BACKLIGHT_ON_LEVEL)),)
+LOCAL_CFLAGS += -DHEALTHD_BACKLIGHT_ON_LEVEL=$(HEALTHD_BACKLIGHT_ON_LEVEL)
+endif
+
 LOCAL_CFLAGS := -Werror
 ifeq ($(strip $(BOARD_CHARGER_DISABLE_INIT_BLANK)),true)
 LOCAL_CFLAGS += -DCHARGER_DISABLE_INIT_BLANK
