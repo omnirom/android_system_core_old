@@ -27,6 +27,20 @@ LOCAL_UNSTRIPPED_PATH := $(TARGET_ROOT_OUT_SBIN_UNSTRIPPED)
 
 LOCAL_CFLAGS := -D__STDC_LIMIT_MACROS -Werror
 
+HEALTHD_PATH := \
+    TW_BRIGHTNESS_PATH \
+    TW_SECONDARY_BRIGHTNESS_PATH
+
+$(foreach healthd_charger_define,$(HEALTHD_PATH), \
+  $(if $($(healthd_charger_define)), \
+    $(eval LOCAL_CFLAGS += -D$(healthd_charger_define)=\"$($(healthd_charger_define))\") \
+  ) \
+)
+
+ifneq ($(strip $(HEALTHD_BACKLIGHT_ON_LEVEL)),)
+LOCAL_CFLAGS += -DHEALTHD_BACKLIGHT_ON_LEVEL=$(HEALTHD_BACKLIGHT_ON_LEVEL)
+endif
+
 ifeq ($(strip $(BOARD_CHARGER_DISABLE_INIT_BLANK)),true)
 LOCAL_CFLAGS += -DCHARGER_DISABLE_INIT_BLANK
 endif
