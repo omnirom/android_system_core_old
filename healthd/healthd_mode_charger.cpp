@@ -73,6 +73,10 @@ char *locale;
 #define LAST_KMSG_PSTORE_PATH   "/sys/fs/pstore/console-ramoops"
 #define LAST_KMSG_MAX_SZ        (32 * 1024)
 
+#ifndef HEALTHD_BACKLIGHT_ON_LEVEL
+#define HEALTHD_BACKLIGHT_ON_LEVEL  150
+#endif
+
 #define LOGE(x...) do { KLOG_ERROR("charger", x); } while (0)
 #define LOGW(x...) do { KLOG_WARNING("charger", x); } while (0)
 #define LOGV(x...) do { KLOG_DEBUG("charger", x); } while (0)
@@ -173,6 +177,49 @@ static struct android::BatteryProperties *batt_prop;
 static int char_width;
 static int char_height;
 static bool minui_inited;
+
+#ifdef HEALTHD_FORCE_BACKLIGHT_CONTROL
+static int set_backlight(bool on)
+{
+    int fd;
+    char buffer[10];
+
+    if (access(TW_BRIGHTNESS_PATH, R_OK | W_OK) != 0) {
+        LOGW("Backlight control not support\n");
+        return 0;
+    }
+
+    memset(buffer, '\0', sizeof(buffer));
+    fd = open(TW_BRIGHTNESS_PATH, O_RDWR);
+    if (fd < 0) {
+        LOGE("Could not open backlight node : %s\n", strerror(errno));
+        return 0;
+    }
+    LOGV("Enabling backlight\n");
+    snprintf(buffer, sizeof(buffer), "%d\n", on ? HEALTHD_BACKLIGHT_ON_LEVEL : 0);
+    if (write(fd, buffer,strlen(buffer)) < 0) {
+        LOGE("Could not write to backlight node : %s\n", strerror(errno));
+    }
+    close(fd);
+
+#ifdef TW_SECONDARY_BRIGHTNESS_PATH
+    if (access(TW_SECONDARY_BRIGHTNESS_PATH, R_OK | W_OK) != 0) {
+        LOGW("Secondary backlight control not support\n");
+    } else {
+        fd = open(TW_SECONDARY_BRIGHTNESS_PATH, O_RDWR);
+        if (fd < 0) {
+            LOGW("Could not open secondary backlight node : %s\n", strerror(errno));
+        } else {
+        LOGV("Enabling secondary backlight\n");
+        if (write(fd, buffer,strlen(buffer)) < 0)
+            LOGE("Could not write to secondary backlight node : %s\n", strerror(errno));
+        }
+        close(fd);
+    }
+#endif // TW_SECONDARY_BRIGHTNESS_PATH
+    return 0;
+}
+#endif // HEALTHD_FORCE_BACKLIGHT_CONTROL
 
 /* current time in milliseconds */
 static int64_t curr_time_ms(void)
@@ -376,6 +423,9 @@ static void update_screen_state(struct charger *charger, int64_t now)
     if (batt_anim->cur_cycle == batt_anim->num_cycles) {
         reset_animation(batt_anim);
         charger->next_screen_transition = -1;
+#ifdef HEALTHD_FORCE_BACKLIGHT_CONTROL
+        set_backlight(false);
+#endif
         gr_fb_blank(true);
         LOGV("[%" PRId64 "] animation done\n", now);
         if (charger->charger_connected)
@@ -407,9 +457,13 @@ static void update_screen_state(struct charger *charger, int64_t now)
             batt_anim->capacity = batt_prop->batteryLevel;
     }
 
-    /* unblank the screen  on first cycle */
-    if (batt_anim->cur_cycle == 0)
+    /* unblank the screen on first cycle */
+    if (batt_anim->cur_cycle == 0) {
         gr_fb_blank(false);
+#ifdef HEALTHD_FORCE_BACKLIGHT_CONTROL
+        set_backlight(true);
+#endif
+    }
 
     /* draw the new frame (@ cur_frame) */
     redraw_screen(charger);
