@@ -199,6 +199,54 @@ static healthd_config* healthd_config;
 static android::BatteryProperties* batt_prop;
 static std::unique_ptr<HealthdDraw> healthd_draw;
 
+#ifdef HEALTHD_FORCE_BACKLIGHT_CONTROL
+
+#ifndef HEALTHD_BACKLIGHT_ON_LEVEL
+#define HEALTHD_BACKLIGHT_ON_LEVEL  150
+#endif
+
+static int set_backlight(bool on)
+{
+    int fd;
+    char buffer[10];
+
+    if (access(TW_BRIGHTNESS_PATH, R_OK | W_OK) != 0) {
+        LOGW("Backlight control not support\n");
+        return 0;
+    }
+
+    memset(buffer, '\0', sizeof(buffer));
+    fd = open(TW_BRIGHTNESS_PATH, O_RDWR);
+    if (fd < 0) {
+        LOGE("Could not open backlight node : %s\n", strerror(errno));
+        return 0;
+    }
+    LOGV("Enabling backlight\n");
+    snprintf(buffer, sizeof(buffer), "%d\n", on ? HEALTHD_BACKLIGHT_ON_LEVEL : 0);
+    if (write(fd, buffer,strlen(buffer)) < 0) {
+        LOGE("Could not write to backlight node : %s\n", strerror(errno));
+    }
+    close(fd);
+
+#ifdef TW_SECONDARY_BRIGHTNESS_PATH
+    if (access(TW_SECONDARY_BRIGHTNESS_PATH, R_OK | W_OK) != 0) {
+        LOGW("Secondary backlight control not support\n");
+    } else {
+        fd = open(TW_SECONDARY_BRIGHTNESS_PATH, O_RDWR);
+        if (fd < 0) {
+            LOGW("Could not open secondary backlight node : %s\n", strerror(errno));
+        } else {
+        LOGV("Enabling secondary backlight\n");
+        if (write(fd, buffer,strlen(buffer)) < 0)
+            LOGE("Could not write to secondary backlight node : %s\n", strerror(errno));
+        }
+        close(fd);
+    }
+#endif // TW_SECONDARY_BRIGHTNESS_PATH
+    return 0;
+}
+#endif // HEALTHD_FORCE_BACKLIGHT_CONTROL
+
 /* current time in milliseconds */
 static int64_t curr_time_ms() {
     timespec tm;
@@ -332,6 +380,9 @@ static void update_screen_state(charger* charger, int64_t now) {
         charger->next_screen_transition = -1;
         healthd_draw->blank_screen(true);
         charger->screen_blanked = true;
+#ifdef HEALTHD_FORCE_BACKLIGHT_CONTROL
+        set_backlight(false);
+#endif
         LOGV("[%" PRId64 "] animation done\n", now);
         if (charger->charger_connected) request_suspend(true);
         return;
@@ -372,6 +423,10 @@ static void update_screen_state(charger* charger, int64_t now) {
             }
         }
     }
+
+#ifdef HEALTHD_FORCE_BACKLIGHT_CONTROL
+    set_backlight(true);
+#endif
 
     /* draw the new frame (@ cur_frame) */
     healthd_draw->redraw_screen(charger->batt_anim, charger->surf_unknown);
