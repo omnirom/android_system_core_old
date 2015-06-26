@@ -92,7 +92,6 @@ $(LOCAL_INSTALLED_MODULE): \
     $(HOST_OUT_EXECUTABLES)/AdbWinUsbApi.dll
 endif
 
-
 # adbd device daemon
 # =========================================================
 
@@ -123,6 +122,10 @@ endif
 
 ifneq (,$(filter userdebug,$(TARGET_BUILD_VARIANT)))
 LOCAL_CFLAGS += -DALLOW_ADBD_DISABLE_VERITY=1
+endif
+
+ifeq ($(strip $(BOARD_FUNCTIONFS_HAS_SS_COUNT)),true)
+LOCAL_CFLAGS += -DFUNCTIONFS_HAS_SS_COUNT=1
 endif
 
 LOCAL_MODULE := adbd

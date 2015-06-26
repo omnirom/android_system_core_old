@@ -55,8 +55,15 @@ struct usb_handle
     int bulk_in;  /* "in" from the host's perspective => sink for adbd */
 };
 
+#if defined(FUNCTIONFS_SS_DESC_MAGIC) || defined(FUNCTIONFS_HAS_SS_COUNT)
+#define HAS_SS_DESCS 1
+#endif
+
 static const struct {
     struct usb_functionfs_descs_head header;
+#ifdef FUNCTIONFS_HAS_SS_COUNT
+    __le32 ss_count;
+#endif
     struct {
         struct usb_interface_descriptor intf;
         struct usb_endpoint_descriptor_no_audio source;
@@ -65,6 +72,8 @@ static const struct {
 #ifdef FUNCTIONFS_SS_DESC_MAGIC
     __le32 ss_magic;
     __le32 ss_count;
+#endif
+#ifdef HAS_SS_DESCS
     struct {
         struct usb_interface_descriptor intf;
         struct usb_endpoint_descriptor_no_audio source;
@@ -80,6 +89,9 @@ static const struct {
         .fs_count = 3,
         .hs_count = 3,
     },
+#ifdef FUNCTIONFS_HAS_SS_COUNT
+    .ss_count = 5,
+#endif
     .fs_descs = {
         .intf = {
             .bLength = sizeof(descriptors.fs_descs.intf),
@@ -135,6 +147,8 @@ static const struct {
 #ifdef FUNCTIONFS_SS_DESC_MAGIC
     .ss_magic = FUNCTIONFS_SS_DESC_MAGIC,
     .ss_count = 5,
+#endif
+#ifdef HAS_SS_DESCS
     .ss_descs = {
         .intf = {
             .bLength = sizeof(descriptors.ss_descs.intf),
