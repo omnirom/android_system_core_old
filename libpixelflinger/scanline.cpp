@@ -34,7 +34,12 @@
 #include "scanline.h"
 
 #include "codeflinger/CodeCache.h"
+#if defined(__i386__) || defined(__x86_64__)
+#include "codeflinger/x86/GGLX86Assembler.h"
+#include "codeflinger/x86/X86Assembler.h"
+#else
 #include "codeflinger/GGLAssembler.h"
+#endif
 #if defined(__arm__)
 #include "codeflinger/ARMAssembler.h"
 #elif defined(__aarch64__)
@@ -61,6 +66,8 @@
 
 #if defined(__arm__) || (defined(__mips__) && !defined(__LP64__) && __mips_isa_rev < 6) || defined(__aarch64__)
 #   define ANDROID_ARM_CODEGEN  1
+#elif defined(__i386__)
+#   define ANDROID_IA32_CODEGEN 1
 #else
 #   define ANDROID_ARM_CODEGEN  0
 #endif
@@ -284,7 +291,7 @@ static  const needs_filter_t fill16noblend = {
 
 // ----------------------------------------------------------------------------
 
-#if ANDROID_ARM_CODEGEN
+#if ANDROID_ARM_CODEGEN || ANDROID_IA32_CODEGEN
 
 #if defined(__mips__) && !defined(__LP64__) && __mips_isa_rev < 6
 static CodeCache gCodeCache(32 * 1024);
@@ -316,7 +323,7 @@ void ggl_uninit_scanline(context_t* c)
 {
     if (c->state.buffers.coverage)
         free(c->state.buffers.coverage);
-#if ANDROID_ARM_CODEGEN
+#if ANDROID_ARM_CODEGEN || ANDROID_IA32_CODEGEN
     if (c->scanline_as)
         c->scanline_as->decStrong(c);
 #endif
@@ -436,6 +443,39 @@ static void pick_scanline(context_t* c)
     c->scanline_as = assembly.get();
     c->scanline_as->incStrong(c); //  hold on to assembly
     c->scanline = (void(*)(context_t* c))assembly->base();
+#elif ANDROID_IA32_CODEGEN
+    const AssemblyKey<needs_t> key(c->state.needs);
+    sp<Assembly> assembly = gCodeCache.lookup(key);
+    if (assembly == 0) {
+        // create a new assembly region
+        sp<ScanlineAssembly> a = new ScanlineAssembly(c->state.needs,
+                ASSEMBLY_SCRATCH_SIZE);
+        // initialize our assembler
+        GGLX86Assembler assembler( a );
+        // generate the scanline code for the given needs
+        int err = assembler.scanline(c->state.needs, c);
+        if (ggl_likely(!err)) {
+            // finally, cache this assembly
+            err = gCodeCache.cache(a->key(), a);
+        }
+        if (ggl_unlikely(err)) {
+            ALOGE("error generating or caching assembly. Reverting to NOP.  cache_err: %d \n", err);
+            c->scanline = scanline_noop;
+            c->init_y = init_y_noop;
+            c->step_y = step_y__nop;
+            return;
+        }
+        assembly = a;
+    }
+
+    // release the previous assembly
+    if (c->scanline_as) {
+        c->scanline_as->decStrong(c);
+    }
+
+    c->scanline_as = assembly.get();
+    c->scanline_as->incStrong(c); //  hold on to assembly
+    c->scanline = (void(*)(context_t* c))assembly->base();
 #else
 //    ALOGW("using generic (slow) pixel-pipeline");
     c->scanline = scanline;
@@ -464,7 +504,7 @@ static void blend_factor(context_t* c, pixel_t* r, uint32_t factor,
         const pixel_t* src, const pixel_t* dst);
 static void rescale(uint32_t& u, uint8_t& su, uint32_t& v, uint8_t& sv);
 
-#if ANDROID_ARM_CODEGEN && (ANDROID_CODEGEN == ANDROID_CODEGEN_GENERATED)
+#if (ANDROID_ARM_CODEGEN || ANDROID_IA32_CODEGEN) && (ANDROID_CODEGEN == ANDROID_CODEGEN_GENERATED)
 
 // no need to compile the generic-pipeline, it can't be reached
 void scanline(context_t*)
@@ -939,7 +979,7 @@ discard:
 	}
 }
 
-#endif // ANDROID_ARM_CODEGEN && (ANDROID_CODEGEN == ANDROID_CODEGEN_GENERATED)
+#endif // (ANDROID_ARM_CODEGEN || ANDROID_IA32_CODEGEN) && (ANDROID_CODEGEN == ANDROID_CODEGEN_GENERATED)
 
 // ----------------------------------------------------------------------------
 #if 0

@@ -7,15 +7,22 @@
 #include "scanline.h"
 
 #include "codeflinger/CodeCache.h"
+#if defined(__i386__) || defined(__x86_64__)
+#include "codeflinger/x86/GGLX86Assembler.h"
+#include "codeflinger/x86/X86Assembler.h"
+#else
 #include "codeflinger/GGLAssembler.h"
 #include "codeflinger/ARMAssembler.h"
 #if defined(__mips__) && !defined(__LP64__) && __mips_isa_rev < 6
 #include "codeflinger/MIPSAssembler.h"
 #endif
 #include "codeflinger/Arm64Assembler.h"
+#endif
 
 #if defined(__arm__) || (defined(__mips__) && !defined(__LP64__) && __mips_isa_rev < 6) || defined(__aarch64__)
 #   define ANDROID_ARM_CODEGEN  1
+#elif defined(__i386__)
+#   define ANDROID_IA32_CODEGEN 1
 #else
 #   define ANDROID_ARM_CODEGEN  0
 #endif
@@ -40,7 +47,6 @@ public:
 
 static void ggl_test_codegen(uint32_t n, uint32_t p, uint32_t t0, uint32_t t1)
 {
-#if ANDROID_ARM_CODEGEN
     GGLContext* c;
     gglInit(&c);
     needs_t needs;
@@ -48,6 +54,7 @@ static void ggl_test_codegen(uint32_t n, uint32_t p, uint32_t t0, uint32_t t1)
     needs.p = p;
     needs.t[0] = t0;
     needs.t[1] = t1;
+#if ANDROID_ARM_CODEGEN
     sp<ScanlineAssembly> a(new ScanlineAssembly(needs, ASSEMBLY_SCRATCH_SIZE));
 
 #if defined(__arm__)
@@ -66,10 +73,15 @@ static void ggl_test_codegen(uint32_t n, uint32_t p, uint32_t t0, uint32_t t1)
     if (err != 0) {
         printf("error %08x (%s)\n", err, strerror(-err));
     }
-    gglUninit(c);
-#else
-    printf("This test runs only on ARM, Arm64 or MIPS\n");
+#elif ANDROID_IA32_CODEGEN
+    sp<ScanlineAssembly> a(new ScanlineAssembly(needs, ASSEMBLY_SCRATCH_SIZE));
+    GGLX86Assembler assembler( a );
+    int err = assembler.scanline(needs, (context_t*)c);
+    if (err != 0) {
+        printf("error %08x (%s)\n", err, strerror(-err));
+    }
 #endif
+    gglUninit(c);
 }
 
 int main(int argc, char** argv)
