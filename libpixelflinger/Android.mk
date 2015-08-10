@@ -7,9 +7,16 @@ include $(CLEAR_VARS)
 
 include $(CLEAR_VARS)
 PIXELFLINGER_SRC_FILES:= \
+	codeflinger/CodeCache.cpp \
+	format.cpp \
+	clear.cpp \
+	raster.cpp \
+	buffer.cpp
+
+ifeq ($(filter x86%,$(TARGET_ARCH)),)
+PIXELFLINGER_SRC_FILES += \
 	codeflinger/ARMAssemblerInterface.cpp \
 	codeflinger/ARMAssemblerProxy.cpp \
-	codeflinger/CodeCache.cpp \
 	codeflinger/GGLAssembler.cpp \
 	codeflinger/load_store.cpp \
 	codeflinger/blending.cpp \
@@ -19,10 +26,8 @@ PIXELFLINGER_SRC_FILES:= \
 	pixelflinger.cpp.arm \
 	trap.cpp.arm \
 	scanline.cpp.arm \
-	format.cpp \
-	clear.cpp \
-	raster.cpp \
-	buffer.cpp
+
+endif
 
 PIXELFLINGER_CFLAGS := -fstrict-aliasing -fomit-frame-pointer
 
@@ -42,6 +47,18 @@ PIXELFLINGER_SRC_FILES_arm64 := \
 	codeflinger/Arm64Disassembler.cpp \
 	arch-arm64/col32cb16blend.S \
 	arch-arm64/t32cb16blend.S \
+
+PIXELFLINGER_SRC_FILES_x86 := \
+	codeflinger/x86/X86Assembler.cpp \
+	codeflinger/x86/GGLX86Assembler.cpp \
+	codeflinger/x86/load_store.cpp \
+	codeflinger/x86/blending.cpp \
+	codeflinger/x86/texturing.cpp \
+	fixed.cpp \
+	picker.cpp \
+	pixelflinger.cpp \
+	trap.cpp \
+	scanline.cpp
 
 ifndef ARCH_MIPS_REV6
 PIXELFLINGER_SRC_FILES_mips := \
@@ -66,6 +83,8 @@ LOCAL_MODULE:= libpixelflinger
 LOCAL_SRC_FILES := $(PIXELFLINGER_SRC_FILES)
 LOCAL_SRC_FILES_arm := $(PIXELFLINGER_SRC_FILES_arm)
 LOCAL_SRC_FILES_arm64 := $(PIXELFLINGER_SRC_FILES_arm64)
+LOCAL_SRC_FILES_x86 := $(PIXELFLINGER_SRC_FILES_x86)
+LOCAL_SRC_FILES_x86_64 := $(PIXELFLINGER_SRC_FILES_x86)
 LOCAL_SRC_FILES_mips := $(PIXELFLINGER_SRC_FILES_mips)
 LOCAL_SRC_FILES_mips64 := $(PIXELFLINGER_SRC_FILES_mips64)
 LOCAL_CFLAGS := $(PIXELFLINGER_CFLAGS)
@@ -73,6 +92,8 @@ LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/include
 LOCAL_C_INCLUDES += $(LOCAL_EXPORT_C_INCLUDE_DIRS) \
 		    external/safe-iop/include
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils
+LOCAL_WHOLE_STATIC_LIBRARIES_x86 := libenc
+LOCAL_WHOLE_STATIC_LIBRARIES_x86_64 := libenc
 
 # Really this should go away entirely or at least not depend on
 # libhardware, but this at least gets us built.
