@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+#define __STDC_LIMIT_MACROS
+#include <stdint.h>
+
 #include <utils/String8.h>
 
 #include <utils/Log.h>
@@ -78,6 +81,9 @@ void terminate_string8()
 static char* allocFromUTF8(const char* in, size_t len)
 {
     if (len > 0) {
+        if (len == SIZE_MAX) {
+            return NULL;
+        }
         SharedBuffer* buf = SharedBuffer::alloc(len+1);
         ALOG_ASSERT(buf, "Unable to allocate shared buffer");
         if (buf) {
