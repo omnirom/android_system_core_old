@@ -31,7 +31,7 @@
 extern struct fs_info info;     /* magic global from ext4_utils */
 extern void reset_ext4fs_info();
 
-static int format_ext4(char *fs_blkdev, char *fs_mnt_point)
+static int format_ext4(char *fs_blkdev, char *fs_mnt_point, long long fs_length)
 {
     unsigned int nr_sec;
     int fd, rc = 0;
@@ -50,6 +50,12 @@ static int format_ext4(char *fs_blkdev, char *fs_mnt_point)
     /* Format the partition using the calculated length */
     reset_ext4fs_info();
     info.len = ((off64_t)nr_sec * 512);
+
+    if (fs_length > 0) {
+        info.len = fs_length;
+    } else if (fs_length < 0) {
+        info.len += fs_length;
+    }
 
     /* Use make_ext4fs_internal to avoid wiping an already-wiped partition. */
     rc = make_ext4fs_internal(fd, NULL, NULL, fs_mnt_point, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL);
@@ -110,7 +116,7 @@ int fs_mgr_do_format(struct fstab_rec *fstab)
     if (!strncmp(fstab->fs_type, "f2fs", 4)) {
         rc = format_f2fs(fstab->blk_device);
     } else if (!strncmp(fstab->fs_type, "ext4", 4)) {
-        rc = format_ext4(fstab->blk_device, fstab->mount_point);
+        rc = format_ext4(fstab->blk_device, fstab->mount_point, fstab->length);
     } else {
         ERROR("File system type '%s' is not supported\n", fstab->fs_type);
     }
