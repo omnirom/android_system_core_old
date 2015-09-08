@@ -45,6 +45,7 @@
 #include <utils/threads.h>
 #include <utils/Log.h>
 
+#include <cutils/iosched_policy.h>
 #include <cutils/sched_policy.h>
 
 #ifdef HAVE_ANDROID_OS
@@ -98,6 +99,7 @@ struct thread_data_t {
             androidSetThreadName(name);
             free(name);
         }
+
         return f(u);
     }
 };
@@ -338,8 +340,10 @@ int androidSetThreadPriority(pid_t tid, int pri)
     } else {
         errno = lasterr;
     }
+
+    android_set_bfqio_prio(tid, pri);
 #endif
-    
+
     return rc;
 }
 
@@ -728,6 +732,12 @@ status_t Thread::run(const char* name, int32_t priority, size_t stack)
         return UNKNOWN_ERROR;
     }
     
+#ifdef HAVE_ANDROID_OS
+    pid_t tid = __pthread_gettid(android_thread_id_t_to_pthread(mThread));
+    if (tid >= 200)
+        android_set_bfqio_prio(tid, priority);
+#endif
+
     // Do not refer to mStatus here: The thread is already running (may, in fact
     // already have exited with a valid mStatus result). The NO_ERROR indication
     // here merely indicates successfully starting the thread and does not
