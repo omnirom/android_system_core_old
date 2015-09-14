@@ -244,6 +244,7 @@ static BatteryMonitor::PowerSupplyType readPowerSupplyType(const String8& path) 
             {"USB", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_USB},
             {"USB_DCP", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
             {"USB_HVDCP", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
+            {"USB_HVDCP_3", ANDROID_POWER_SUPPLY_TYPE_AC},
             {"USB_CDP", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
             {"USB_ACA", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
             {"USB_C", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
