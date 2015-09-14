@@ -306,6 +306,7 @@ static BatteryMonitor::PowerSupplyType readPowerSupplyType(const String8& path) 
             {"USB", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_USB},
             {"USB_DCP", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
             {"USB_HVDCP", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
+            {"USB_HVDCP_3", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
             {"USB_CDP", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
             {"USB_ACA", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
             {"USB_C", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
@@ -313,7 +314,7 @@ static BatteryMonitor::PowerSupplyType readPowerSupplyType(const String8& path) 
             {"USB_PD_DRP", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_USB},
             {"Wireless", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_WIRELESS},
             {"Dock", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_DOCK},
-            {"DASH", ANDROID_POWER_SUPPLY_TYPE_AC},
+            {"DASH", BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_AC},
             {NULL, 0},
     };
     std::string buf;
