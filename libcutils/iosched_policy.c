@@ -90,7 +90,7 @@ static int __get_bfqio_fd(int prio) {
             rt_audio_cgroup_fd = open("/sys/fs/cgroup/bfqio/rt-audio/tasks", O_WRONLY | O_CLOEXEC);
         }
         return rt_audio_cgroup_fd;
-    } else if (prio < -7) {
+    } else if (prio < -8) {
         if (rt_display_cgroup_fd < 0) {
             rt_display_cgroup_fd = open("/sys/fs/cgroup/bfqio/rt-display/tasks", O_WRONLY | O_CLOEXEC);
         }
