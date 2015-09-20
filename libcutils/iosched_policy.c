@@ -95,16 +95,6 @@ static int __get_bfqio_fd(int prio) {
             rt_display_cgroup_fd = open("/sys/fs/cgroup/bfqio/rt-display/tasks", O_WRONLY | O_CLOEXEC);
         }
         return rt_display_cgroup_fd;
-    } else if (prio < -2) {
-        if (display_cgroup_fd < 0) {
-            display_cgroup_fd = open("/sys/fs/cgroup/bfqio/display/tasks", O_WRONLY | O_CLOEXEC);
-        }
-        return display_cgroup_fd;
-    } else if (prio < 1) {
-        if (hipri_cgroup_fd < 0) {
-            hipri_cgroup_fd = open("/sys/fs/cgroup/bfqio/hipri/tasks", O_WRONLY | O_CLOEXEC);
-        }
-        return hipri_cgroup_fd;
     } else if (prio >= 18) {
         if (idle_cgroup_fd < 0) {
             idle_cgroup_fd = open("/sys/fs/cgroup/bfqio/idle/tasks", O_WRONLY | O_CLOEXEC);
@@ -117,10 +107,10 @@ static int __get_bfqio_fd(int prio) {
         return bg_cgroup_fd;
     }
 
-    if (fg_cgroup_fd < 0) {
-        fg_cgroup_fd = open("/sys/fs/cgroup/bfqio/tasks", O_WRONLY | O_CLOEXEC);
-    }
-    return fg_cgroup_fd;
+//    if (fg_cgroup_fd < 0) {
+//        fg_cgroup_fd = open("/sys/fs/cgroup/bfqio/tasks", O_WRONLY | O_CLOEXEC);
+//    }
+    return -1;
 }
 
 int android_set_bfqio_prio(int tid __android_unused, int prio __android_unused)
