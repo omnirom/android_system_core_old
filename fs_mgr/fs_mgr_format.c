@@ -61,15 +61,27 @@ static int format_ext4(char *fs_blkdev, char *fs_mnt_point)
     return rc;
 }
 
-static int format_f2fs(char *fs_blkdev)
+static int format_f2fs(char *fs_blkdev, long long fs_length)
 {
-    char * args[3];
+    char * args[5];
     int pid;
     int rc = 0;
+    char buff[65];
 
     args[0] = (char *)"/system/bin/make_f2fs";
-    args[1] = fs_blkdev;
-    args[2] = (char *)0;
+
+    if (fs_length >= 0) {
+        snprintf(buff, sizeof(buff), "%lld", fs_length / 512);
+        args[1] = fs_blkdev;
+        args[2] = buff;
+        args[3] = (char *)0;
+    } else if (fs_length < 0) {
+        snprintf(buff, sizeof(buff), "%lld", -fs_length);
+        args[1] = "-r";
+        args[2] = buff;
+        args[3] = fs_blkdev;
+        args[4] = (char *)0;
+    }
 
     pid = fork();
     if (pid < 0) {
@@ -108,7 +120,7 @@ int fs_mgr_do_format(struct fstab_rec *fstab)
     ERROR("%s: Format %s as '%s'.\n", __func__, fstab->blk_device, fstab->fs_type);
 
     if (!strncmp(fstab->fs_type, "f2fs", 4)) {
-        rc = format_f2fs(fstab->blk_device);
+        rc = format_f2fs(fstab->blk_device, fstab->length);
     } else if (!strncmp(fstab->fs_type, "ext4", 4)) {
         rc = format_ext4(fstab->blk_device, fstab->mount_point);
     } else {
