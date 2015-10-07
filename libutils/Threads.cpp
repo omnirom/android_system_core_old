@@ -24,21 +24,18 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#if defined(HAVE_PTHREADS)
+#if !defined(_WIN32)
 # include <pthread.h>
 # include <sched.h>
 # include <sys/resource.h>
-#ifdef HAVE_ANDROID_OS
-# include <private/bionic_pthread.h>
-#endif
-#elif defined(HAVE_WIN32_THREADS)
+#else
 # include <windows.h>
 # include <stdint.h>
 # include <process.h>
 # define HAVE_CREATETHREAD  // Cygwin, vs. HAVE__BEGINTHREADEX for MinGW
 #endif
 
-#if defined(HAVE_PRCTL)
+#if defined(__linux__)
 #include <sys/prctl.h>
 #endif
 
@@ -62,7 +59,7 @@
 using namespace android;
 
 // ----------------------------------------------------------------------------
-#if defined(HAVE_PTHREADS)
+#if !defined(_WIN32)
 // ----------------------------------------------------------------------------
 
 /*
@@ -93,7 +90,7 @@ struct thread_data_t {
         } else {
             set_sched_policy(0, SP_FOREGROUND);
         }
-        
+
         if (name) {
             androidSetThreadName(name);
             free(name);
@@ -103,7 +100,7 @@ struct thread_data_t {
 };
 
 void androidSetThreadName(const char* name) {
-#if defined(HAVE_PRCTL)
+#if defined(__linux__)
     // Mac OS doesn't have this, and we build libutil for the host too
     int hasAt = 0;
     int hasDot = 0;
@@ -130,7 +127,7 @@ int androidCreateRawThreadEtc(android_thread_func_t entryFunction,
                                size_t threadStackSize,
                                android_thread_id_t *threadId)
 {
-    pthread_attr_t attr; 
+    pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
@@ -149,14 +146,14 @@ int androidCreateRawThreadEtc(android_thread_func_t entryFunction,
         t->entryFunction = entryFunction;
         t->userData = userData;
         entryFunction = (android_thread_func_t)&thread_data_t::trampoline;
-        userData = t;            
+        userData = t;
     }
 #endif
 
     if (threadStackSize) {
         pthread_attr_setstacksize(&attr, threadStackSize);
     }
-    
+
     errno = 0;
     pthread_t thread;
     int result = pthread_create(&thread, &attr,
@@ -191,7 +188,7 @@ android_thread_id_t androidGetThreadId()
 }
 
 // ----------------------------------------------------------------------------
-#elif defined(HAVE_WIN32_THREADS)
+#else // !defined(_WIN32)
 // ----------------------------------------------------------------------------
 
 /*
@@ -271,9 +268,7 @@ android_thread_id_t androidGetThreadId()
 }
 
 // ----------------------------------------------------------------------------
-#else
-#error "Threads not supported"
-#endif
+#endif // !defined(_WIN32)
 
 // ----------------------------------------------------------------------------
 
@@ -306,21 +301,12 @@ void androidSetCreateThreadFunc(android_create_thread_fn func)
     gCreateThreadFn = func;
 }
 
-pid_t androidGetTid()
-{
-#ifdef HAVE_GETTID
-    return gettid();
-#else
-    return getpid();
-#endif
-}
-
 #ifdef HAVE_ANDROID_OS
 int androidSetThreadPriority(pid_t tid, int pri)
 {
     int rc = 0;
-    
-#if defined(HAVE_PTHREADS)
+
+#if !defined(_WIN32)
     int lasterr = 0;
 
     if (pri >= ANDROID_PRIORITY_BACKGROUND) {
@@ -339,12 +325,12 @@ int androidSetThreadPriority(pid_t tid, int pri)
         errno = lasterr;
     }
 #endif
-    
+
     return rc;
 }
 
 int androidGetThreadPriority(pid_t tid) {
-#if defined(HAVE_PTHREADS)
+#if !defined(_WIN32)
     return getpriority(PRIO_PROCESS, tid);
 #else
     return ANDROID_PRIORITY_NORMAL;
@@ -361,9 +347,9 @@ namespace android {
  * ===========================================================================
  */
 
-#if defined(HAVE_PTHREADS)
+#if !defined(_WIN32)
 // implemented as inlines in threads.h
-#elif defined(HAVE_WIN32_THREADS)
+#else
 
 Mutex::Mutex()
 {
@@ -425,9 +411,7 @@ status_t Mutex::tryLock()
     return (dwWaitResult == WAIT_OBJECT_0) ? 0 : -1;
 }
 
-#else
-#error "Somebody forgot to implement threads for this platform."
-#endif
+#endif // !defined(_WIN32)
 
 
 /*
@@ -436,9 +420,9 @@ status_t Mutex::tryLock()
  * ===========================================================================
  */
 
-#if defined(HAVE_PTHREADS)
+#if !defined(_WIN32)
 // implemented as inlines in threads.h
-#elif defined(HAVE_WIN32_THREADS)
+#else
 
 /*
  * Windows doesn't have a condition variable solution.  It's possible
@@ -486,7 +470,7 @@ typedef struct WinCondition {
         //printf("+++ wait: incr waitersCount to %d (tid=%ld)\n",
         //    condState->waitersCount, getThreadId());
         LeaveCriticalSection(&condState->waitersCountLock);
-    
+
         DWORD timeout = INFINITE;
         if (abstime) {
             nsecs_t reltime = *abstime - systemTime();
@@ -494,27 +478,27 @@ typedef struct WinCondition {
                 reltime = 0;
             timeout = reltime/1000000;
         }
-        
+
         // Atomically release the external mutex and wait on the semaphore.
         DWORD res =
             SignalObjectAndWait(hMutex, condState->sema, timeout, FALSE);
-    
+
         //printf("+++ wait: awake (tid=%ld)\n", getThreadId());
-    
+
         // Reacquire lock to avoid race conditions.
         EnterCriticalSection(&condState->waitersCountLock);
-    
+
         // No longer waiting.
         condState->waitersCount--;
-    
+
         // Check to see if we're the last waiter after a broadcast.
         bool lastWaiter = (condState->wasBroadcast && condState->waitersCount == 0);
-    
+
         //printf("+++ wait: lastWaiter=%d (wasBc=%d wc=%d)\n",
         //    lastWaiter, condState->wasBroadcast, condState->waitersCount);
-    
+
         LeaveCriticalSection(&condState->waitersCountLock);
-    
+
         // If we're the last waiter thread during this particular broadcast
         // then signal broadcast() that we're all awake.  It'll drop the
         // internal mutex.
@@ -530,11 +514,11 @@ typedef struct WinCondition {
             // Grab the internal mutex.
             WaitForSingleObject(condState->internalMutex, INFINITE);
         }
-    
+
         // Release the internal and grab the external.
         ReleaseMutex(condState->internalMutex);
         WaitForSingleObject(hMutex, INFINITE);
-    
+
         return res == WAIT_OBJECT_0 ? NO_ERROR : -1;
     }
 } WinCondition;
@@ -577,7 +561,7 @@ status_t Condition::wait(Mutex& mutex)
 {
     WinCondition* condState = (WinCondition*) mState;
     HANDLE hMutex = (HANDLE) mutex.mState;
-    
+
     return ((WinCondition*)mState)->wait(condState, hMutex, NULL);
 }
 
@@ -659,9 +643,7 @@ void Condition::broadcast()
     ReleaseMutex(condState->internalMutex);
 }
 
-#else
-#error "condition variables not supported on this platform"
-#endif
+#endif // !defined(_WIN32)
 
 // ----------------------------------------------------------------------------
 
@@ -704,7 +686,7 @@ status_t Thread::run(const char* name, int32_t priority, size_t stack)
     mStatus = NO_ERROR;
     mExitPending = false;
     mThread = thread_id_t(-1);
-    
+
     // hold a strong reference on ourself
     mHoldSelf = this;
 
@@ -718,7 +700,7 @@ status_t Thread::run(const char* name, int32_t priority, size_t stack)
         res = androidCreateRawThreadEtc(_threadLoop,
                 this, name, priority, stack, &mThread);
     }
-    
+
     if (res == false) {
         mStatus = UNKNOWN_ERROR;   // something happened!
         mRunning = false;
@@ -727,7 +709,7 @@ status_t Thread::run(const char* name, int32_t priority, size_t stack)
 
         return UNKNOWN_ERROR;
     }
-    
+
     // Do not refer to mStatus here: The thread is already running (may, in fact
     // already have exited with a valid mStatus result). The NO_ERROR indication
     // here merely indicates successfully starting the thread and does not
@@ -791,14 +773,14 @@ int Thread::_threadLoop(void* user)
             break;
         }
         }
-        
+
         // Release our strong reference, to let a chance to the thread
         // to die a peaceful death.
         strong.clear();
         // And immediately, re-acquire a strong reference for the next loop
         strong = weak.promote();
     } while(strong != 0);
-    
+
     return 0;
 }
 
@@ -819,7 +801,7 @@ status_t Thread::requestExitAndWait()
 
         return WOULD_BLOCK;
     }
-    
+
     mExitPending = true;
 
     while (mRunning == true) {
@@ -864,7 +846,7 @@ pid_t Thread::getTid() const
     pid_t tid;
     if (mRunning) {
         pthread_t pthread = android_thread_id_t_to_pthread(mThread);
-        tid = __pthread_gettid(pthread);
+        tid = pthread_gettid_np(pthread);
     } else {
         ALOGW("Thread (this=%p): getTid() is undefined before run()", this);
         tid = -1;

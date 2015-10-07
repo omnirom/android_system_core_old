@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 #if __LP64__
 #define strtoptr strtoull
@@ -18,7 +19,7 @@ static int usage()
     return -1;
 }
 
-int r_main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     if(argc < 2) return usage();
 

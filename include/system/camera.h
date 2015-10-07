@@ -187,6 +187,23 @@ enum {
      * count is non-positive or too big to be realized.
      */
     CAMERA_CMD_SET_VIDEO_BUFFER_COUNT = 10,
+
+    /**
+     * Configure an explicit format to use for video recording metadata mode.
+     * This can be used to switch the format from the
+     * default IMPLEMENTATION_DEFINED gralloc format to some other
+     * device-supported format, and the default dataspace from the BT_709 color
+     * space to some other device-supported dataspace. arg1 is the HAL pixel
+     * format, and arg2 is the HAL dataSpace. This command returns
+     * INVALID_OPERATION error if it is sent after video recording is started,
+     * or the command is not supported at all.
+     *
+     * If the gralloc format is set to a format other than
+     * IMPLEMENTATION_DEFINED, then HALv3 devices will use gralloc usage flags
+     * of SW_READ_OFTEN.
+     */
+    CAMERA_CMD_SET_VIDEO_FORMAT = 11,
+
 #ifdef QCOM_HARDWARE
     /**
      * Commands to enable/disable preview histogram
@@ -195,11 +212,11 @@ enum {
      * UI, send the appropriate command to the HAL to turn on/off the histogram
      * stats and start sending the data to the application.
      */
-    CAMERA_CMD_HISTOGRAM_ON     = 11,
-    CAMERA_CMD_HISTOGRAM_OFF     = 12,
-    CAMERA_CMD_HISTOGRAM_SEND_DATA  = 13,
-    CAMERA_CMD_LONGSHOT_ON = 14,
-    CAMERA_CMD_LONGSHOT_OFF = 15,
+    CAMERA_CMD_HISTOGRAM_ON     = 12,
+    CAMERA_CMD_HISTOGRAM_OFF     = 13,
+    CAMERA_CMD_HISTOGRAM_SEND_DATA  = 14,
+    CAMERA_CMD_LONGSHOT_ON = 15,
+    CAMERA_CMD_LONGSHOT_OFF = 16,
 #endif
     CAMERA_CMD_METADATA_ON = 100,
     CAMERA_CMD_METADATA_OFF = 101,
@@ -223,7 +240,12 @@ enum {
     /** The facing of the camera is opposite to that of the screen. */
     CAMERA_FACING_BACK = 0,
     /** The facing of the camera is the same as that of the screen. */
-    CAMERA_FACING_FRONT = 1
+    CAMERA_FACING_FRONT = 1,
+    /**
+     * The facing of the camera is not fixed relative to the screen.
+     * The cameras with this facing are external cameras, e.g. USB cameras.
+     */
+    CAMERA_FACING_EXTERNAL = 2
 };
 
 enum {

@@ -15,39 +15,45 @@
  */
 
 #include <ctype.h>
+#include <endian.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <sys/klog.h>
 #include <sys/prctl.h>
 #include <sys/uio.h>
 #include <syslog.h>
 
+#include <private/android_filesystem_config.h>
+#include <private/android_logger.h>
+
 #include "libaudit.h"
 #include "LogAudit.h"
+#include "LogKlog.h"
 
-#define KMSG_PRIORITY(PRI)         \
-    '<',                           \
-    '0' + (LOG_AUTH | (PRI)) / 10, \
-    '0' + (LOG_AUTH | (PRI)) % 10, \
+#define KMSG_PRIORITY(PRI)                          \
+    '<',                                            \
+    '0' + LOG_MAKEPRI(LOG_AUTH, LOG_PRI(PRI)) / 10, \
+    '0' + LOG_MAKEPRI(LOG_AUTH, LOG_PRI(PRI)) % 10, \
     '>'
 
-LogAudit::LogAudit(LogBuffer *buf, LogReader *reader, int fdDmsg)
-        : SocketListener(getLogSocket(), false)
-        , logbuf(buf)
-        , reader(reader)
-        , fdDmesg(-1) {
+LogAudit::LogAudit(LogBuffer *buf, LogReader *reader, int fdDmesg) :
+        SocketListener(getLogSocket(), false),
+        logbuf(buf),
+        reader(reader),
+        fdDmesg(fdDmesg),
+        initialized(false) {
     static const char auditd_message[] = { KMSG_PRIORITY(LOG_INFO),
         'l', 'o', 'g', 'd', '.', 'a', 'u', 'd', 'i', 't', 'd', ':',
         ' ', 's', 't', 'a', 'r', 't', '\n' };
-    write(fdDmsg, auditd_message, sizeof(auditd_message));
-    logDmesg();
-    fdDmesg = fdDmsg;
+    write(fdDmesg, auditd_message, sizeof(auditd_message));
 }
 
 bool LogAudit::onDataAvailable(SocketClient *cli) {
-    prctl(PR_SET_NAME, "logd.auditd");
+    if (!initialized) {
+        prctl(PR_SET_NAME, "logd.auditd");
+        initialized = true;
+    }
 
     struct audit_message rep;
 
@@ -60,7 +66,8 @@ bool LogAudit::onDataAvailable(SocketClient *cli) {
         return false;
     }
 
-    logPrint("type=%d %.*s", rep.nlh.nlmsg_type, rep.nlh.nlmsg_len, rep.data);
+    logPrint("type=%d %.*s",
+        rep.nlh.nlmsg_type, rep.nlh.nlmsg_len, rep.data);
 
     return true;
 }
@@ -87,7 +94,7 @@ int LogAudit::logPrint(const char *fmt, ...) {
     }
 
     bool info = strstr(str, " permissive=1") || strstr(str, " policy loaded ");
-    if (fdDmesg >= 0) {
+    if ((fdDmesg >= 0) && initialized) {
         struct iovec iov[3];
         static const char log_info[] = { KMSG_PRIORITY(LOG_INFO) };
         static const char log_warning[] = { KMSG_PRIORITY(LOG_WARNING) };
@@ -105,7 +112,7 @@ int LogAudit::logPrint(const char *fmt, ...) {
 
     pid_t pid = getpid();
     pid_t tid = gettid();
-    uid_t uid = getuid();
+    uid_t uid = AID_LOGD;
     log_time now;
 
     static const char audit_str[] = " audit(";
@@ -115,6 +122,15 @@ int LogAudit::logPrint(const char *fmt, ...) {
             && (*cp == ':')) {
         memcpy(timeptr + sizeof(audit_str) - 1, "0.0", 3);
         memmove(timeptr + sizeof(audit_str) - 1 + 3, cp, strlen(cp) + 1);
+        //
+        // We are either in 1970ish (MONOTONIC) or 2015+ish (REALTIME) so to
+        // differentiate without prejudice, we use 1980 to delineate, earlier
+        // is monotonic, later is real.
+        //
+#       define EPOCH_PLUS_10_YEARS (10 * 1461 / 4 * 24 * 60 * 60)
+        if (now.tv_sec < EPOCH_PLUS_10_YEARS) {
+            LogKlog::convertMonotonicToReal(now);
+        }
     } else {
         now.strptime("", ""); // side effect of setting CLOCK_REALTIME
     }
@@ -129,38 +145,36 @@ int LogAudit::logPrint(const char *fmt, ...) {
             ++cp;
         }
         tid = pid;
+        logbuf->lock();
         uid = logbuf->pidToUid(pid);
+        logbuf->unlock();
         memmove(pidptr, cp, strlen(cp) + 1);
     }
 
     // log to events
 
     size_t l = strlen(str);
-    size_t n = l + sizeof(uint32_t) + sizeof(uint8_t) + sizeof(uint32_t);
+    size_t n = l + sizeof(android_log_event_string_t);
 
     bool notify = false;
 
-    char *newstr = reinterpret_cast<char *>(malloc(n));
-    if (!newstr) {
+    android_log_event_string_t *event = static_cast<android_log_event_string_t *>(malloc(n));
+    if (!event) {
         rc = -ENOMEM;
     } else {
-        cp = newstr;
-        *cp++ = AUDITD_LOG_TAG & 0xFF;
-        *cp++ = (AUDITD_LOG_TAG >> 8) & 0xFF;
-        *cp++ = (AUDITD_LOG_TAG >> 16) & 0xFF;
-        *cp++ = (AUDITD_LOG_TAG >> 24) & 0xFF;
-        *cp++ = EVENT_TYPE_STRING;
-        *cp++ = l & 0xFF;
-        *cp++ = (l >> 8) & 0xFF;
-        *cp++ = (l >> 16) & 0xFF;
-        *cp++ = (l >> 24) & 0xFF;
-        memcpy(cp, str, l);
+        event->header.tag = htole32(AUDITD_LOG_TAG);
+        event->type = EVENT_TYPE_STRING;
+        event->length = htole32(l);
+        memcpy(event->data, str, l);
 
-        logbuf->log(LOG_ID_EVENTS, now, uid, pid, tid, newstr,
-                    (n <= USHRT_MAX) ? (unsigned short) n : USHRT_MAX);
-        free(newstr);
+        rc = logbuf->log(LOG_ID_EVENTS, now, uid, pid, tid,
+                         reinterpret_cast<char *>(event),
+                         (n <= USHRT_MAX) ? (unsigned short) n : USHRT_MAX);
+        free(event);
 
-        notify = true;
+        if (rc >= 0) {
+            notify = true;
+        }
     }
 
     // log to main
@@ -168,14 +182,20 @@ int LogAudit::logPrint(const char *fmt, ...) {
     static const char comm_str[] = " comm=\"";
     const char *comm = strstr(str, comm_str);
     const char *estr = str + strlen(str);
+    char *commfree = NULL;
     if (comm) {
         estr = comm;
         comm += sizeof(comm_str) - 1;
     } else if (pid == getpid()) {
         pid = tid;
         comm = "auditd";
-    } else if (!(comm = logbuf->pidToName(pid))) {
-        comm = "unknown";
+    } else {
+        logbuf->lock();
+        comm = commfree = logbuf->pidToName(pid);
+        logbuf->unlock();
+        if (!comm) {
+            comm = "unknown";
+        }
     }
 
     const char *ecomm = strchr(comm, '"');
@@ -188,7 +208,7 @@ int LogAudit::logPrint(const char *fmt, ...) {
     }
     n = (estr - str) + strlen(ecomm) + l + 2;
 
-    newstr = reinterpret_cast<char *>(malloc(n));
+    char *newstr = static_cast<char *>(malloc(n));
     if (!newstr) {
         rc = -ENOMEM;
     } else {
@@ -197,50 +217,45 @@ int LogAudit::logPrint(const char *fmt, ...) {
         strncpy(newstr + 1 + l, str, estr - str);
         strcpy(newstr + 1 + l + (estr - str), ecomm);
 
-        logbuf->log(LOG_ID_MAIN, now, uid, pid, tid, newstr,
-                    (n <= USHRT_MAX) ? (unsigned short) n : USHRT_MAX);
+        rc = logbuf->log(LOG_ID_MAIN, now, uid, pid, tid, newstr,
+                         (n <= USHRT_MAX) ? (unsigned short) n : USHRT_MAX);
         free(newstr);
 
-        notify = true;
+        if (rc >= 0) {
+            notify = true;
+        }
     }
 
+    free(commfree);
     free(str);
 
     if (notify) {
         reader->notifyNewLog();
+        if (rc < 0) {
+            rc = n;
+        }
     }
 
     return rc;
 }
 
-void LogAudit::logDmesg() {
-    int len = klogctl(KLOG_SIZE_BUFFER, NULL, 0);
-    if (len <= 0) {
-        return;
+int LogAudit::log(char *buf) {
+    char *audit = strstr(buf, " audit(");
+    if (!audit) {
+        return 0;
     }
 
-    len++;
-    char buf[len];
+    *audit = '\0';
 
-    int rc = klogctl(KLOG_READ_ALL, buf, len);
-
-    buf[len - 1] = '\0';
-
-    for(char *tok = buf; (rc >= 0) && ((tok = strtok(tok, "\r\n"))); tok = NULL) {
-        char *audit = strstr(tok, " audit(");
-        if (!audit) {
-            continue;
-        }
-
-        *audit++ = '\0';
-
-        char *type = strstr(tok, "type=");
-        if (type) {
-            rc = logPrint("%s %s", type, audit);
-        } else {
-            rc = logPrint("%s", audit);
-        }
+    int rc;
+    char *type = strstr(buf, "type=");
+    if (type) {
+        rc = logPrint("%s %s", type, audit + 1);
+    } else {
+        rc = logPrint("%s", audit + 1);
     }
+    *audit = ' ';
+    return rc;
 }
 
 int LogAudit::getLogSocket() {

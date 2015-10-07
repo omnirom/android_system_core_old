@@ -5,12 +5,15 @@ LOCAL_SRC_FILES:= \
     arm64_assembler_test.cpp\
     asm_test_jacket.S
 
+# asm_test_jacket.S does not compile with Clang.
+LOCAL_CLANG_ASFLAGS_arm64 += -no-integrated-as
+
 LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libpixelflinger
 
 LOCAL_C_INCLUDES := \
-    system/core/libpixelflinger
+    $(LOCAL_PATH)/../../..
 
 LOCAL_MODULE:= test-pixelflinger-arm64-assembler-test
 

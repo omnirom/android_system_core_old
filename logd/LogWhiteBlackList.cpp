@@ -22,10 +22,8 @@
 
 // White and Black list
 
-Prune::Prune(uid_t uid, pid_t pid)
-        : mUid(uid)
-        , mPid(pid)
-{ }
+Prune::Prune(uid_t uid, pid_t pid) : mUid(uid), mPid(pid) {
+}
 
 int Prune::cmp(uid_t uid, pid_t pid) const {
     if ((mUid == uid_all) || (mUid == uid)) {
@@ -39,15 +37,19 @@ int Prune::cmp(uid_t uid, pid_t pid) const {
 
 void Prune::format(char **strp) {
     if (mUid != uid_all) {
-        asprintf(strp, (mPid != pid_all) ? "%u/%u" : "%u", mUid, mPid);
-    } else {
-        // NB: mPid == pid_all can not happen if mUid == uid_all
-        asprintf(strp, (mPid != pid_all) ? "/%u" : "/", mPid);
+        if (mPid != pid_all) {
+            asprintf(strp, "%u/%u", mUid, mPid);
+        } else {
+            asprintf(strp, "%u", mUid);
+        }
+    } else if (mPid != pid_all) {
+        asprintf(strp, "/%u", mPid);
+    } else { // NB: mPid == pid_all can not happen if mUid == uid_all
+        asprintf(strp, "/");
     }
 }
 
-PruneList::PruneList()
-        : mWorstUidEnabled(false) {
+PruneList::PruneList() : mWorstUidEnabled(true) {
     mNaughty.clear();
     mNice.clear();
 }
@@ -65,7 +67,7 @@ PruneList::~PruneList() {
 }
 
 int PruneList::init(char *str) {
-    mWorstUidEnabled = false;
+    mWorstUidEnabled = true;
     PruneCollection::iterator it;
     for (it = mNice.begin(); it != mNice.end();) {
         delete (*it);

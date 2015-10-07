@@ -26,24 +26,12 @@
 #include <sys/wait.h>
 
 #include <backtrace/Backtrace.h>
+#include <base/file.h>
+#include <base/stringprintf.h>
 #include <log/log.h>
 
 const int SLEEP_TIME_USEC = 50000;         // 0.05 seconds
 const int MAX_TOTAL_SLEEP_USEC = 10000000; // 10 seconds
-
-static int write_to_am(int fd, const char* buf, int len) {
-  int to_write = len;
-  while (to_write > 0) {
-    int written = TEMP_FAILURE_RETRY(write(fd, buf + len - to_write, to_write));
-    if (written < 0) {
-      // hard failure
-      ALOGE("AM write failure (%d / %s)\n", errno, strerror(errno));
-      return -1;
-    }
-    to_write -= written;
-  }
-  return len;
-}
 
 // Whitelist output desired in the logcat output.
 bool is_allowed_in_logcat(enum logtype ltype) {
@@ -80,11 +68,11 @@ void _LOG(log_t* log, enum logtype ltype, const char* fmt, ...) {
   }
 
   if (write_to_logcat) {
-    __android_log_buf_write(LOG_ID_CRASH, ANDROID_LOG_INFO, LOG_TAG, buf);
+    __android_log_buf_write(LOG_ID_CRASH, ANDROID_LOG_FATAL, LOG_TAG, buf);
     if (write_to_activitymanager) {
-      int written = write_to_am(log->amfd, buf, len);
-      if (written <= 0) {
+      if (!android::base::WriteFully(log->amfd, buf, len)) {
         // timeout or other failure on write; stop informing the activity manager
+        ALOGE("AM write failed: %s", strerror(errno));
         log->amfd = -1;
       }
     }
@@ -131,76 +119,91 @@ int wait_for_sigstop(pid_t tid, int* total_sleep_time_usec, bool* detach_failed)
   return -1;
 }
 
-#if defined (__mips__)
-#define DUMP_MEMORY_AS_ASCII 1
+#define MEMORY_BYTES_TO_DUMP 256
+#define MEMORY_BYTES_PER_LINE 16
+
+void dump_memory(log_t* log, Backtrace* backtrace, uintptr_t addr, const char* fmt, ...) {
+  std::string log_msg;
+  va_list ap;
+  va_start(ap, fmt);
+  android::base::StringAppendV(&log_msg, fmt, ap);
+  va_end(ap);
+
+  // Align the address to sizeof(long) and start 32 bytes before the address.
+  addr &= ~(sizeof(long) - 1);
+  if (addr >= 4128) {
+    addr -= 32;
+  }
+
+  // Don't bother if the address looks too low, or looks too high.
+  if (addr < 4096 ||
+#if defined(__LP64__)
+      addr > 0x4000000000000000UL - MEMORY_BYTES_TO_DUMP) {
 #else
-#define DUMP_MEMORY_AS_ASCII 0
+      addr > 0xffff0000 - MEMORY_BYTES_TO_DUMP) {
 #endif
+    return;
+  }
 
-void dump_memory(log_t* log, pid_t tid, uintptr_t addr) {
-    char code_buffer[64];
-    char ascii_buffer[32];
-    uintptr_t p, end;
+  _LOG(log, logtype::MEMORY, "\n%s\n", log_msg.c_str());
 
-    p = addr & ~(sizeof(long) - 1);
-    /* Dump 32 bytes before addr */
-    p -= 32;
-    if (p > addr) {
-        /* catch underflow */
-        p = 0;
+  // Dump 256 bytes
+  uintptr_t data[MEMORY_BYTES_TO_DUMP/sizeof(uintptr_t)];
+  memset(data, 0, MEMORY_BYTES_TO_DUMP);
+  size_t bytes = backtrace->Read(addr, reinterpret_cast<uint8_t*>(data), sizeof(data));
+  if (bytes % sizeof(uintptr_t) != 0) {
+    // This should never happen, but just in case.
+    ALOGE("Bytes read %zu, is not a multiple of %zu", bytes, sizeof(uintptr_t));
+    bytes &= ~(sizeof(uintptr_t) - 1);
+  }
+
+  if (bytes < MEMORY_BYTES_TO_DUMP && bytes > 0) {
+    // Try to do one more read. This could happen if a read crosses a map, but
+    // the maps do not have any break between them. Only requires one extra
+    // read because a map has to contain at least one page, and the total
+    // number of bytes to dump is smaller than a page.
+    size_t bytes2 = backtrace->Read(addr + bytes, reinterpret_cast<uint8_t*>(data) + bytes,
+                                    sizeof(data) - bytes);
+    bytes += bytes2;
+    if (bytes2 > 0 && bytes % sizeof(uintptr_t) != 0) {
+      // This should never happen, but we'll try and continue any way.
+      ALOGE("Bytes after second read %zu, is not a multiple of %zu", bytes, sizeof(uintptr_t));
+      bytes &= ~(sizeof(uintptr_t) - 1);
     }
-    /* Dump 256 bytes */
-    end = p + 256;
-    /* catch overflow; 'end - p' has to be multiples of 16 */
-    while (end < p) {
-        end -= 16;
-    }
+  }
 
-    /* Dump the code around PC as:
-     *  addr             contents                           ascii
-     *  0000000000008d34 ef000000e8bd0090 e1b00000512fff1e  ............../Q
-     *  0000000000008d44 ea00b1f9e92d0090 e3a070fcef000000  ......-..p......
-     * On 32-bit machines, there are still 16 bytes per line but addresses and
-     * words are of course presented differently.
-     */
-    while (p < end) {
-        char* asc_out = ascii_buffer;
+  // Dump the code around memory as:
+  //  addr             contents                           ascii
+  //  0000000000008d34 ef000000e8bd0090 e1b00000512fff1e  ............../Q
+  //  0000000000008d44 ea00b1f9e92d0090 e3a070fcef000000  ......-..p......
+  // On 32-bit machines, there are still 16 bytes per line but addresses and
+  // words are of course presented differently.
+  uintptr_t* data_ptr = data;
+  for (size_t line = 0; line < MEMORY_BYTES_TO_DUMP / MEMORY_BYTES_PER_LINE; line++) {
+    std::string logline;
+    android::base::StringAppendF(&logline, "    %" PRIPTR, addr);
 
-        int len = snprintf(code_buffer, sizeof(code_buffer), "%" PRIPTR " ", p);
+    addr += MEMORY_BYTES_PER_LINE;
+    std::string ascii;
+    for (size_t i = 0; i < MEMORY_BYTES_PER_LINE / sizeof(uintptr_t); i++, data_ptr++) {
+      if (bytes >= sizeof(uintptr_t)) {
+        bytes -= sizeof(uintptr_t);
+        android::base::StringAppendF(&logline, " %" PRIPTR, *data_ptr);
 
-        for (size_t i = 0; i < 16/sizeof(long); i++) {
-            long data = ptrace(PTRACE_PEEKTEXT, tid, (void*)p, NULL);
-            if (data == -1 && errno != 0) {
-                // ptrace failed, probably because we're dumping memory in an
-                // unmapped or inaccessible page.
-#ifdef __LP64__
-                len += sprintf(code_buffer + len, "---------------- ");
-#else
-                len += sprintf(code_buffer + len, "-------- ");
-#endif
-            } else {
-                len += sprintf(code_buffer + len, "%" PRIPTR " ",
-                               static_cast<uintptr_t>(data));
-            }
-
-#if DUMP_MEMORY_AS_ASCII
-            for (size_t j = 0; j < sizeof(long); j++) {
-                /*
-                 * Our isprint() allows high-ASCII characters that display
-                 * differently (often badly) in different viewers, so we
-                 * just use a simpler test.
-                 */
-                char val = (data >> (j*8)) & 0xff;
-                if (val >= 0x20 && val < 0x7f) {
-                    *asc_out++ = val;
-                } else {
-                    *asc_out++ = '.';
-                }
-            }
-#endif
-            p += sizeof(long);
+        // Fill out the ascii string from the data.
+        uint8_t* ptr = reinterpret_cast<uint8_t*>(data_ptr);
+        for (size_t val = 0; val < sizeof(uintptr_t); val++, ptr++) {
+          if (*ptr >= 0x20 && *ptr < 0x7f) {
+            ascii += *ptr;
+          } else {
+            ascii += '.';
+          }
         }
-        *asc_out = '\0';
-        _LOG(log, logtype::MEMORY, "    %s %s\n", code_buffer, ascii_buffer);
+      } else {
+        logline += ' ' + std::string(sizeof(uintptr_t) * 2, '-');
+        ascii += std::string(sizeof(uintptr_t), '.');
+      }
     }
+    _LOG(log, logtype::MEMORY, "%s  %s\n", logline.c_str(), ascii.c_str());
+  }
 }

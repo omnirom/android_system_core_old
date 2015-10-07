@@ -130,7 +130,7 @@ static void BM_log_latency(int iters) {
     pid_t pid = getpid();
 
     struct logger_list * logger_list = android_logger_list_open(LOG_ID_EVENTS,
-        O_RDONLY, 0, pid);
+        ANDROID_LOG_RDONLY, 0, pid);
 
     if (!logger_list) {
         fprintf(stderr, "Unable to open events log: %s\n", strerror(errno));
@@ -208,7 +208,7 @@ static void BM_log_delay(int iters) {
     pid_t pid = getpid();
 
     struct logger_list * logger_list = android_logger_list_open(LOG_ID_EVENTS,
-        O_RDONLY, 0, pid);
+        ANDROID_LOG_RDONLY, 0, pid);
 
     if (!logger_list) {
         fprintf(stderr, "Unable to open events log: %s\n", strerror(errno));
@@ -266,3 +266,17 @@ static void BM_log_delay(int iters) {
     android_logger_list_free(logger_list);
 }
 BENCHMARK(BM_log_delay);
+
+/*
+ *	Measure the time it takes for __android_log_is_loggable.
+ */
+static void BM_is_loggable(int iters) {
+    StartBenchmarkTiming();
+
+    for (int i = 0; i < iters; ++i) {
+        __android_log_is_loggable(ANDROID_LOG_WARN, "logd", ANDROID_LOG_VERBOSE);
+    }
+
+    StopBenchmarkTiming();
+}
+BENCHMARK(BM_is_loggable);

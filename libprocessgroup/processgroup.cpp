@@ -19,7 +19,9 @@
 
 #include <assert.h>
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -100,7 +102,7 @@ static int refillBuffer(struct ctx *ctx)
 
     ctx->buf_len += ret;
     ctx->buf[ctx->buf_len] = 0;
-    SLOGV("Read %d to buffer: %s", ret, ctx->buf);
+    SLOGV("Read %zd to buffer: %s", ret, ctx->buf);
 
     assert(ctx->buf_len <= sizeof(ctx->buf));
 
@@ -250,14 +252,15 @@ static int killProcessGroupOnce(uid_t uid, int initialPid, int signal)
 int killProcessGroup(uid_t uid, int initialPid, int signal)
 {
     int processes;
-    int sleep_us = 100;
-    long startTime = android::uptimeMillis();
+    const int sleep_us = 5 * 1000;  // 5ms
+    int64_t startTime = android::uptimeMillis();
+    int retry = 40;
 
     while ((processes = killProcessGroupOnce(uid, initialPid, signal)) > 0) {
         SLOGV("killed %d processes for processgroup %d\n", processes, initialPid);
-        if (sleep_us < 128000) {
+        if (retry > 0) {
             usleep(sleep_us);
-            sleep_us *= 2;
+            --retry;
         } else {
             SLOGE("failed to kill %d processes for processgroup %d\n",
                     processes, initialPid);
@@ -265,7 +268,7 @@ int killProcessGroup(uid_t uid, int initialPid, int signal)
         }
     }
 
-    SLOGV("Killed process group uid %d pid %d in %ldms, %d procs remain", uid, initialPid,
+    SLOGV("Killed process group uid %d pid %d in %" PRId64 "ms, %d procs remain", uid, initialPid,
             android::uptimeMillis()-startTime, processes);
 
     if (processes == 0) {
@@ -279,12 +282,12 @@ static int mkdirAndChown(const char *path, mode_t mode, uid_t uid, gid_t gid)
 {
     int ret;
 
-    ret = mkdir(path, 0750);
+    ret = mkdir(path, mode);
     if (ret < 0 && errno != EEXIST) {
         return -errno;
     }
 
-    ret = chown(path, AID_SYSTEM, AID_SYSTEM);
+    ret = chown(path, uid, gid);
     if (ret < 0) {
         ret = -errno;
         rmdir(path);

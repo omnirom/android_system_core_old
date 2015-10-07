@@ -16,9 +16,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#ifdef HAVE_PTHREADS
 #include <pthread.h>
-#endif
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,9 +26,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#ifdef __BIONIC__
 #include <android/set_abort_message.h>
-#endif
 
 #ifdef MOTOROLA_LOG
 #if HAVE_LIBC_SYSTEM_PROPERTIES
@@ -49,23 +45,14 @@
 
 #define LOG_BUF_SIZE 1024
 
-#if FAKE_LOG_DEVICE
-/* This will be defined when building for the host. */
-#include "fake_log_device.h"
-#define log_open(pathname, flags) fakeLogOpen(pathname, flags)
-#define log_writev(filedes, vector, count) fakeLogWritev(filedes, vector, count)
-#define log_close(filedes) fakeLogClose(filedes)
-#else
 #define log_open(pathname, flags) open(pathname, (flags) | O_CLOEXEC)
 #define log_writev(filedes, vector, count) writev(filedes, vector, count)
 #define log_close(filedes) close(filedes)
-#endif
 
 static int __write_to_log_init(log_id_t, struct iovec *vec, size_t nr);
 static int (*write_to_log)(log_id_t, struct iovec *vec, size_t nr) = __write_to_log_init;
-#ifdef HAVE_PTHREADS
+
 static pthread_mutex_t log_init_lock = PTHREAD_MUTEX_INITIALIZER;
-#endif
 
 #ifndef __unused
 #define __unused  __attribute__((__unused__))
@@ -231,9 +218,7 @@ static int __write_to_log_kernel(log_id_t log_id, struct iovec *vec, size_t nr)
 
 static int __write_to_log_init(log_id_t log_id, struct iovec *vec, size_t nr)
 {
-#ifdef HAVE_PTHREADS
     pthread_mutex_lock(&log_init_lock);
-#endif
 
     if (write_to_log == __write_to_log_init) {
         log_fds[LOG_ID_MAIN] = log_open("/dev/"LOGGER_LOG_MAIN, O_WRONLY);
@@ -259,52 +244,14 @@ static int __write_to_log_init(log_id_t log_id, struct iovec *vec, size_t nr)
         }
     }
 
-#ifdef HAVE_PTHREADS
     pthread_mutex_unlock(&log_init_lock);
-#endif
 
     return write_to_log(log_id, vec, nr);
 }
 
 int __android_log_write(int prio, const char *tag, const char *msg)
 {
-    struct iovec vec[3];
-    log_id_t log_id = LOG_ID_MAIN;
-    char tmp_tag[32];
-
-    if (!tag)
-        tag = "";
-
-    /* XXX: This needs to go! */
-    if (!strcmp(tag, "HTC_RIL") ||
-        !strncmp(tag, "RIL", 3) || /* Any log tag with "RIL" as the prefix */
-        !strncmp(tag, "IMS", 3) || /* Any log tag with "IMS" as the prefix */
-        !strcmp(tag, "AT") ||
-        !strcmp(tag, "GSM") ||
-        !strcmp(tag, "STK") ||
-        !strcmp(tag, "CDMA") ||
-        !strcmp(tag, "PHONE") ||
-        !strcmp(tag, "SMS")) {
-            log_id = LOG_ID_RADIO;
-            /* Inform third party apps/ril/radio.. to use Rlog or RLOG */
-            snprintf(tmp_tag, sizeof(tmp_tag), "use-Rlog/RLOG-%s", tag);
-            tag = tmp_tag;
-    }
-
-#if __BIONIC__
-    if (prio == ANDROID_LOG_FATAL) {
-        android_set_abort_message(msg);
-    }
-#endif
-
-    vec[0].iov_base   = (unsigned char *) &prio;
-    vec[0].iov_len    = 1;
-    vec[1].iov_base   = (void *) tag;
-    vec[1].iov_len    = strlen(tag) + 1;
-    vec[2].iov_base   = (void *) msg;
-    vec[2].iov_len    = strlen(msg) + 1;
-
-    return write_to_log(log_id, vec, 3);
+    return __android_log_buf_write(LOG_ID_MAIN, prio, tag, msg);
 }
 
 int __android_log_buf_write(int bufID, int prio, const char *tag, const char *msg)
@@ -330,6 +277,10 @@ int __android_log_buf_write(int bufID, int prio, const char *tag, const char *ms
             /* Inform third party apps/ril/radio.. to use Rlog or RLOG */
             snprintf(tmp_tag, sizeof(tmp_tag), "use-Rlog/RLOG-%s", tag);
             tag = tmp_tag;
+    }
+
+    if (prio == ANDROID_LOG_FATAL) {
+        android_set_abort_message(msg);
     }
 
     vec[0].iov_base   = (unsigned char *) &prio;
@@ -397,7 +348,7 @@ void __android_log_assert(const char *cond, const char *tag,
     }
 
     __android_log_write(ANDROID_LOG_FATAL, tag, buf);
-    __builtin_trap(); /* trap so we have a chance to debug the situation */
+    abort(); /* abort so we have a chance to debug the situation */
     /* NOTREACHED */
 }
 

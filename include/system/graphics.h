@@ -45,9 +45,12 @@ enum {
     /*
      * "linear" color pixel formats:
      *
-     * The pixel formats below contain sRGB data but are otherwise treated
-     * as linear formats, i.e.: no special operation is performed when
-     * reading or writing into a buffer in one of these formats
+     * When used with ANativeWindow, the dataSpace field describes the color
+     * space of the buffer.
+     *
+     * The color space determines, for example, if the formats are linear or
+     * gamma-corrected; or whether any special operations are performed when
+     * reading or writing into a buffer in one of these formats.
      */
     HAL_PIXEL_FORMAT_RGBA_8888          = 1,
     HAL_PIXEL_FORMAT_RGBX_8888          = 2,
@@ -56,28 +59,6 @@ enum {
     HAL_PIXEL_FORMAT_BGRA_8888          = 5,
     HAL_PIXEL_FORMAT_RGBA_5551          = 6,
     HAL_PIXEL_FORMAT_RGBA_4444          = 7,
-    /*
-     * sRGB color pixel formats:
-     *
-     * The red, green and blue components are stored in sRGB space, and converted
-     * to linear space when read, using the standard sRGB to linear equation:
-     *
-     * Clinear = Csrgb / 12.92                  for Csrgb <= 0.04045
-     *         = (Csrgb + 0.055 / 1.055)^2.4    for Csrgb >  0.04045
-     *
-     * When written the inverse transformation is performed:
-     *
-     * Csrgb = 12.92 * Clinear                  for Clinear <= 0.0031308
-     *       = 1.055 * Clinear^(1/2.4) - 0.055  for Clinear >  0.0031308
-     *
-     *
-     *  The alpha component, if present, is always stored in linear space and
-     *  is left unmodified when read or written.
-     *
-     */
-    HAL_PIXEL_FORMAT_sRGB_A_8888        = 0xC,
-    HAL_PIXEL_FORMAT_sRGB_X_8888        = 0xD,
-
     /*
      * 0x100 - 0x1FF
      *
@@ -112,6 +93,8 @@ enum {
      *   cr_offset = y_size
      *   cb_offset = y_size + c_size
      *
+     * When used with ANativeWindow, the dataSpace field describes the color
+     * space of the buffer.
      */
     HAL_PIXEL_FORMAT_YV12   = 0x32315659, // YCrCb 4:2:0 Planar
 
@@ -136,6 +119,8 @@ enum {
      *
      *   size = stride * height
      *
+     * When used with ANativeWindow, the dataSpace field describes the color
+     * space of the buffer.
      */
     HAL_PIXEL_FORMAT_Y8     = 0x20203859,
 
@@ -160,6 +145,11 @@ enum {
      *
      *   size = stride * height * 2
      *
+     * When used with ANativeWindow, the dataSpace field describes the color
+     * space of the buffer, except that dataSpace field
+     * HAL_DATASPACE_DEPTH indicates that this buffer contains a depth
+     * image where each sample is a distance value measured by a depth camera,
+     * plus an associated confidence value.
      */
     HAL_PIXEL_FORMAT_Y16    = 0x20363159,
 
@@ -168,7 +158,7 @@ enum {
      *
      * This format is exposed outside of the camera HAL to applications.
      *
-     * RAW_SENSOR is a single-channel, 16-bit, little endian  format, typically
+     * RAW16 is a single-channel, 16-bit, little endian format, typically
      * representing raw Bayer-pattern images from an image sensor, with minimal
      * processing.
      *
@@ -194,9 +184,12 @@ enum {
      *    - GRALLOC_USAGE_HW_CAMERA_*
      *    - GRALLOC_USAGE_SW_*
      *    - GRALLOC_USAGE_RENDERSCRIPT
+     *
+     * When used with ANativeWindow, the dataSpace should be
+     * HAL_DATASPACE_ARBITRARY, as raw image sensor buffers require substantial
+     * extra metadata to define.
      */
     HAL_PIXEL_FORMAT_RAW16 = 0x20,
-    HAL_PIXEL_FORMAT_RAW_SENSOR = 0x20, // TODO(rubenbrunk): Remove RAW_SENSOR.
 
     /*
      * Android RAW10 format:
@@ -245,8 +238,62 @@ enum {
      *    - GRALLOC_USAGE_HW_CAMERA_*
      *    - GRALLOC_USAGE_SW_*
      *    - GRALLOC_USAGE_RENDERSCRIPT
+     *
+     * When used with ANativeWindow, the dataSpace field should be
+     * HAL_DATASPACE_ARBITRARY, as raw image sensor buffers require substantial
+     * extra metadata to define.
      */
     HAL_PIXEL_FORMAT_RAW10 = 0x25,
+
+    /*
+     * Android RAW12 format:
+     *
+     * This format is exposed outside of camera HAL to applications.
+     *
+     * RAW12 is a single-channel, 12-bit per pixel, densely packed in each row,
+     * unprocessed format, usually representing raw Bayer-pattern images coming from
+     * an image sensor.
+     *
+     * In an image buffer with this format, starting from the first pixel of each
+     * row, each two consecutive pixels are packed into 3 bytes (24 bits). The first
+     * and second byte contains the top 8 bits of first and second pixel. The third
+     * byte contains the 4 least significant bits of the two pixels, the exact layout
+     * data for each two consecutive pixels is illustrated below (Pi[j] stands for
+     * the jth bit of the ith pixel):
+     *
+     *           bit 7                                            bit 0
+     *          ======|======|======|======|======|======|======|======|
+     * Byte 0: |P0[11]|P0[10]|P0[ 9]|P0[ 8]|P0[ 7]|P0[ 6]|P0[ 5]|P0[ 4]|
+     *         |------|------|------|------|------|------|------|------|
+     * Byte 1: |P1[11]|P1[10]|P1[ 9]|P1[ 8]|P1[ 7]|P1[ 6]|P1[ 5]|P1[ 4]|
+     *         |------|------|------|------|------|------|------|------|
+     * Byte 2: |P1[ 3]|P1[ 2]|P1[ 1]|P1[ 0]|P0[ 3]|P0[ 2]|P0[ 1]|P0[ 0]|
+     *          =======================================================
+     *
+     * This format assumes:
+     * - a width multiple of 4 pixels
+     * - an even height
+     * - a vertical stride equal to the height
+     * - strides are specified in bytes, not in pixels
+     *
+     *   size = stride * height
+     *
+     * When stride is equal to width * (12 / 8), there will be no padding bytes at
+     * the end of each row, the entire image data is densely packed. When stride is
+     * larger than width * (12 / 8), padding bytes will be present at the end of
+     * each row (including the last row).
+     *
+     * This format must be accepted by the gralloc module when used with the
+     * following usage flags:
+     *    - GRALLOC_USAGE_HW_CAMERA_*
+     *    - GRALLOC_USAGE_SW_*
+     *    - GRALLOC_USAGE_RENDERSCRIPT
+     *
+     * When used with ANativeWindow, the dataSpace field should be
+     * HAL_DATASPACE_ARBITRARY, as raw image sensor buffers require substantial
+     * extra metadata to define.
+     */
+    HAL_PIXEL_FORMAT_RAW12 = 0x26,
 
     /*
      * Android opaque RAW format:
@@ -262,6 +309,10 @@ enum {
      *    - GRALLOC_USAGE_HW_CAMERA_*
      *    - GRALLOC_USAGE_SW_*
      *    - GRALLOC_USAGE_RENDERSCRIPT
+     *
+     * When used with ANativeWindow, the dataSpace field should be
+     * HAL_DATASPACE_ARBITRARY, as raw image sensor buffers require substantial
+     * extra metadata to define.
      */
     HAL_PIXEL_FORMAT_RAW_OPAQUE = 0x24,
 
@@ -277,6 +328,16 @@ enum {
      *
      * Buffers of this format must have a height of 1, and width equal to their
      * size in bytes.
+     *
+     * When used with ANativeWindow, the mapping of the dataSpace field to
+     * buffer contents for BLOB is as follows:
+     *
+     *  dataSpace value               | Buffer contents
+     * -------------------------------+-----------------------------------------
+     *  HAL_DATASPACE_JFIF            | An encoded JPEG image
+     *  HAL_DATASPACE_DEPTH           | An android_depth_points buffer
+     *  Other                         | Unsupported
+     *
      */
     HAL_PIXEL_FORMAT_BLOB = 0x21,
 
@@ -293,27 +354,88 @@ enum {
      * framework will assume that sampling the texture will always return an
      * alpha value of 1.0 (i.e. the buffer contains only opaque pixel values).
      *
+     * When used with ANativeWindow, the dataSpace field describes the color
+     * space of the buffer.
      */
     HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED = 0x22,
 
     /*
-     * Android flexible YCbCr formats
+     * Android flexible YCbCr 4:2:0 formats
      *
-     * This format allows platforms to use an efficient YCbCr/YCrCb buffer
-     * layout, while still describing the buffer layout in a way accessible to
-     * the CPU in a device-independent manner.  While called YCbCr, it can be
+     * This format allows platforms to use an efficient YCbCr/YCrCb 4:2:0
+     * buffer layout, while still describing the general format in a
+     * layout-independent manner.  While called YCbCr, it can be
      * used to describe formats with either chromatic ordering, as well as
      * whole planar or semiplanar layouts.
      *
      * struct android_ycbcr (below) is the the struct used to describe it.
      *
      * This format must be accepted by the gralloc module when
-     * USAGE_HW_CAMERA_WRITE and USAGE_SW_READ_* are set.
+     * USAGE_SW_WRITE_* or USAGE_SW_READ_* are set.
      *
      * This format is locked for use by gralloc's (*lock_ycbcr) method, and
      * locking with the (*lock) method will return an error.
+     *
+     * When used with ANativeWindow, the dataSpace field describes the color
+     * space of the buffer.
      */
     HAL_PIXEL_FORMAT_YCbCr_420_888 = 0x23,
+
+    /*
+     * Android flexible YCbCr 4:2:2 formats
+     *
+     * This format allows platforms to use an efficient YCbCr/YCrCb 4:2:2
+     * buffer layout, while still describing the general format in a
+     * layout-independent manner.  While called YCbCr, it can be
+     * used to describe formats with either chromatic ordering, as well as
+     * whole planar or semiplanar layouts.
+     *
+     * This format is currently only used by SW readable buffers
+     * produced by MediaCodecs, so the gralloc module can ignore this format.
+     */
+    HAL_PIXEL_FORMAT_YCbCr_422_888 = 0x27,
+
+    /*
+     * Android flexible YCbCr 4:4:4 formats
+     *
+     * This format allows platforms to use an efficient YCbCr/YCrCb 4:4:4
+     * buffer layout, while still describing the general format in a
+     * layout-independent manner.  While called YCbCr, it can be
+     * used to describe formats with either chromatic ordering, as well as
+     * whole planar or semiplanar layouts.
+     *
+     * This format is currently only used by SW readable buffers
+     * produced by MediaCodecs, so the gralloc module can ignore this format.
+     */
+    HAL_PIXEL_FORMAT_YCbCr_444_888 = 0x28,
+
+    /*
+     * Android flexible RGB 888 formats
+     *
+     * This format allows platforms to use an efficient RGB/BGR/RGBX/BGRX
+     * buffer layout, while still describing the general format in a
+     * layout-independent manner.  While called RGB, it can be
+     * used to describe formats with either color ordering and optional
+     * padding, as well as whole planar layout.
+     *
+     * This format is currently only used by SW readable buffers
+     * produced by MediaCodecs, so the gralloc module can ignore this format.
+     */
+    HAL_PIXEL_FORMAT_FLEX_RGB_888 = 0x29,
+
+    /*
+     * Android flexible RGBA 8888 formats
+     *
+     * This format allows platforms to use an efficient RGBA/BGRA/ARGB/ABGR
+     * buffer layout, while still describing the general format in a
+     * layout-independent manner.  While called RGBA, it can be
+     * used to describe formats with any of the component orderings, as
+     * well as whole planar layout.
+     *
+     * This format is currently only used by SW readable buffers
+     * produced by MediaCodecs, so the gralloc module can ignore this format.
+     */
+    HAL_PIXEL_FORMAT_FLEX_RGBA_8888 = 0x2A,
 
     /* Legacy formats (deprecated), used by ImageFormat.java */
     HAL_PIXEL_FORMAT_YCbCr_422_SP       = 0x10, // NV16
@@ -356,6 +478,48 @@ struct android_ycbcr {
 };
 
 /**
+ * Structure used to define depth point clouds for format HAL_PIXEL_FORMAT_BLOB
+ * with dataSpace value of HAL_DATASPACE_DEPTH.
+ * When locking a native buffer of the above format and dataSpace value,
+ * the vaddr pointer can be cast to this structure.
+ *
+ * A variable-length list of (x,y,z, confidence) 3D points, as floats.  (x, y,
+ * z) represents a measured point's position, with the coordinate system defined
+ * by the data source.  Confidence represents the estimated likelihood that this
+ * measurement is correct. It is between 0.f and 1.f, inclusive, with 1.f ==
+ * 100% confidence.
+ *
+ * @num_points is the number of points in the list
+ *
+ * @xyz_points is the flexible array of floating-point values.
+ *   It contains (num_points) * 4 floats.
+ *
+ *   For example:
+ *     android_depth_points d = get_depth_buffer();
+ *     struct {
+ *       float x; float y; float z; float confidence;
+ *     } firstPoint, lastPoint;
+ *
+ *     firstPoint.x = d.xyzc_points[0];
+ *     firstPoint.y = d.xyzc_points[1];
+ *     firstPoint.z = d.xyzc_points[2];
+ *     firstPoint.confidence = d.xyzc_points[3];
+ *     lastPoint.x = d.xyzc_points[(d.num_points - 1) * 4 + 0];
+ *     lastPoint.y = d.xyzc_points[(d.num_points - 1) * 4 + 1];
+ *     lastPoint.z = d.xyzc_points[(d.num_points - 1) * 4 + 2];
+ *     lastPoint.confidence = d.xyzc_points[(d.num_points - 1) * 4 + 3];
+ */
+
+struct android_depth_points {
+    uint32_t num_points;
+
+    /** reserved for future use, set to 0 by gralloc's (*lock)() */
+    uint32_t reserved[8];
+
+    float xyzc_points[];
+};
+
+/**
  * Transformation definitions
  *
  * IMPORTANT NOTE:
@@ -379,19 +543,33 @@ enum {
 };
 
 /**
- * Colorspace Definitions
+ * Dataspace Definitions
  * ======================
  *
- * Colorspace is the definition of how pixel values should be interpreted.
- * It includes primaries (including white point) and the transfer
- * characteristic function, which describes both gamma curve and numeric
- * range (within the bit depth).
+ * Dataspace is the definition of how pixel values should be interpreted.
+ *
+ * For many formats, this is the colorspace of the image data, which includes
+ * primaries (including white point) and the transfer characteristic function,
+ * which describes both gamma curve and numeric range (within the bit depth).
+ *
+ * Other dataspaces include depth measurement data from a depth camera.
  */
 
-enum {
+typedef enum android_dataspace {
     /*
-     * Arbitrary colorspace with manually defined characteristics.
-     * Colorspace definition must be communicated separately.
+     * Default-assumption data space, when not explicitly specified.
+     *
+     * It is safest to assume the buffer is an image with sRGB primaries and
+     * encoding ranges, but the consumer and/or the producer of the data may
+     * simply be using defaults. No automatic gamma transform should be
+     * expected, except for a possible display gamma transform when drawn to a
+     * screen.
+     */
+    HAL_DATASPACE_UNKNOWN = 0x0,
+
+    /*
+     * Arbitrary dataspace with manually defined characteristics.  Definition
+     * for colorspaces or other meaning must be communicated separately.
      *
      * This is used when specifying primaries, transfer characteristics,
      * etc. separately.
@@ -400,7 +578,57 @@ enum {
      * where a colorspace can have separately defined primaries, transfer
      * characteristics, etc.
      */
-    HAL_COLORSPACE_ARBITRARY = 0x1,
+    HAL_DATASPACE_ARBITRARY = 0x1,
+
+    /*
+     * RGB Colorspaces
+     * -----------------
+     *
+     * Primaries are given using (x,y) coordinates in the CIE 1931 definition
+     * of x and y specified by ISO 11664-1.
+     *
+     * Transfer characteristics are the opto-electronic transfer characteristic
+     * at the source as a function of linear optical intensity (luminance).
+     */
+
+    /*
+     * sRGB linear encoding:
+     *
+     * The red, green, and blue components are stored in sRGB space, but
+     * are linear, not gamma-encoded.
+     * The RGB primaries and the white point are the same as BT.709.
+     *
+     * The values are encoded using the full range ([0,255] for 8-bit) for all
+     * components.
+     */
+    HAL_DATASPACE_SRGB_LINEAR = 0x200,
+
+    /*
+     * sRGB gamma encoding:
+     *
+     * The red, green and blue components are stored in sRGB space, and
+     * converted to linear space when read, using the standard sRGB to linear
+     * equation:
+     *
+     * Clinear = Csrgb / 12.92                  for Csrgb <= 0.04045
+     *         = (Csrgb + 0.055 / 1.055)^2.4    for Csrgb >  0.04045
+     *
+     * When written the inverse transformation is performed:
+     *
+     * Csrgb = 12.92 * Clinear                  for Clinear <= 0.0031308
+     *       = 1.055 * Clinear^(1/2.4) - 0.055  for Clinear >  0.0031308
+     *
+     *
+     * The alpha component, if present, is always stored in linear space and
+     * is left unmodified when read or written.
+     *
+     * The RGB primaries and the white point are the same as BT.709.
+     *
+     * The values are encoded using the full range ([0,255] for 8-bit) for all
+     * components.
+     *
+     */
+    HAL_DATASPACE_SRGB = 0x201,
 
     /*
      * YCbCr Colorspaces
@@ -430,7 +658,7 @@ enum {
      *  red             0.640   0.330
      *  white (D65)     0.3127  0.3290
      */
-    HAL_COLORSPACE_JFIF = 0x101,
+    HAL_DATASPACE_JFIF = 0x101,
 
     /*
      * ITU-R Recommendation 601 (BT.601) - 625-line
@@ -457,7 +685,7 @@ enum {
      *  red             0.640   0.330
      *  white (D65)     0.3127  0.3290
      */
-    HAL_COLORSPACE_BT601_625 = 0x102,
+    HAL_DATASPACE_BT601_625 = 0x102,
 
     /*
      * ITU-R Recommendation 601 (BT.601) - 525-line
@@ -484,7 +712,7 @@ enum {
      *  red             0.630   0.340
      *  white (D65)     0.3127  0.3290
      */
-    HAL_COLORSPACE_BT601_525 = 0x103,
+    HAL_DATASPACE_BT601_525 = 0x103,
 
     /*
      * ITU-R Recommendation 709 (BT.709)
@@ -505,8 +733,29 @@ enum {
      *  red             0.640   0.330
      *  white (D65)     0.3127  0.3290
      */
-    HAL_COLORSPACE_BT709 = 0x104,
-};
+    HAL_DATASPACE_BT709 = 0x104,
+
+    /*
+     * The buffer contains depth ranging measurements from a depth camera.
+     * This value is valid with formats:
+     *    HAL_PIXEL_FORMAT_Y16: 16-bit samples, consisting of a depth measurement
+     *       and an associated confidence value. The 3 MSBs of the sample make
+     *       up the confidence value, and the low 13 LSBs of the sample make up
+     *       the depth measurement.
+     *       For the confidence section, 0 means 100% confidence, 1 means 0%
+     *       confidence. The mapping to a linear float confidence value between
+     *       0.f and 1.f can be obtained with
+     *         float confidence = (((depthSample >> 13) - 1) & 0x7) / 7.0f;
+     *       The depth measurement can be extracted simply with
+     *         uint16_t range = (depthSample & 0x1FFF);
+     *    HAL_PIXEL_FORMAT_BLOB: A depth point cloud, as
+     *       a variable-length float (x,y,z, confidence) coordinate point list.
+     *       The point cloud will be represented with the android_depth_points
+     *       structure.
+     */
+    HAL_DATASPACE_DEPTH = 0x1000
+
+} android_dataspace_t;
 
 #ifdef __cplusplus
 }

@@ -39,7 +39,7 @@ TEST(libc, __libc_android_log_event_int) {
     pid_t pid = getpid();
 
     ASSERT_TRUE(NULL != (logger_list = android_logger_list_open(
-        LOG_ID_EVENTS, O_RDONLY | O_NDELAY, 1000, pid)));
+        LOG_ID_EVENTS, ANDROID_LOG_RDONLY | ANDROID_LOG_NONBLOCK, 1000, pid)));
 
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -99,7 +99,7 @@ TEST(libc, __libc_fatal_no_abort) {
     pid_t pid = getpid();
 
     ASSERT_TRUE(NULL != (logger_list = android_logger_list_open(
-        (log_id_t)LOG_ID_CRASH, O_RDONLY | O_NDELAY, 1000, pid)));
+        (log_id_t)LOG_ID_CRASH, ANDROID_LOG_RDONLY | ANDROID_LOG_NONBLOCK, 1000, pid)));
 
     char b[80];
     struct timespec ts;
@@ -135,4 +135,13 @@ TEST(libc, __libc_fatal_no_abort) {
     EXPECT_EQ(1, count);
 
     android_logger_list_close(logger_list);
+}
+
+TEST(libc, __pstore_append) {
+    FILE *fp;
+    ASSERT_TRUE(NULL != (fp = fopen("/dev/pmsg0", "a")));
+    static const char message[] = "libc.__pstore_append\n";
+    ASSERT_EQ((size_t)1, fwrite(message, sizeof(message), 1, fp));
+    ASSERT_EQ(0, fclose(fp));
+    fprintf(stderr, "Reboot, ensure string libc.__pstore_append is in /sys/fs/pstore/pmsg-ramoops-0\n");
 }

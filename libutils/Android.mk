@@ -14,16 +14,11 @@
 
 LOCAL_PATH:= $(call my-dir)
 
-# libutils is a little unique: It's built twice, once for the host
-# and once for the device.
-
 commonSources:= \
 	BasicHashtable.cpp \
-	BlobCache.cpp \
 	CallStack.cpp \
 	FileMap.cpp \
 	JenkinsHash.cpp \
-	LinearAllocator.cpp \
 	LinearTransform.cpp \
 	Log.cpp \
 	NativeHandle.cpp \
@@ -42,7 +37,7 @@ commonSources:= \
 	Tokenizer.cpp \
 	Unicode.cpp \
 	VectorImpl.cpp \
-	misc.cpp
+	misc.cpp \
 
 host_commonCflags := -DLIBUTILS_NATIVE=1 $(TOOL_CFLAGS) -Werror
 
@@ -53,19 +48,15 @@ host_commonCflags += -DMB_CUR_MAX=1
 endif
 endif
 
-host_commonLdlibs :=
-
-ifeq ($(TARGET_OS),linux)
-host_commonLdlibs += -lrt -ldl
-endif
-
-
 # For the host
 # =====================================================
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES:= $(commonSources)
 ifeq ($(HOST_OS), linux)
 LOCAL_SRC_FILES += Looper.cpp
+endif
+ifeq ($(HOST_OS),darwin)
+LOCAL_CFLAGS += -Wno-unused-parameter
 endif
 LOCAL_MODULE:= libutils
 LOCAL_STATIC_LIBRARIES := liblog
@@ -82,6 +73,7 @@ include $(CLEAR_VARS)
 # we have the common sources, plus some device-specific stuff
 LOCAL_SRC_FILES:= \
 	$(commonSources) \
+	BlobCache.cpp \
 	Looper.cpp \
 	Trace.cpp
 
@@ -90,19 +82,14 @@ LOCAL_CFLAGS += -DALIGN_DOUBLE
 endif
 LOCAL_CFLAGS += -Werror
 
-LOCAL_C_INCLUDES += \
-		bionic/libc \
-		external/zlib
-
 LOCAL_STATIC_LIBRARIES := \
-	libcutils
+	libcutils \
+	libc
 
 LOCAL_SHARED_LIBRARIES := \
         libbacktrace \
         liblog \
         libdl
-
-include external/stlport/libstlport.mk
 
 LOCAL_MODULE:= libutils
 include $(BUILD_STATIC_LIBRARY)
@@ -119,15 +106,24 @@ LOCAL_SHARED_LIBRARIES := \
         liblog
 LOCAL_CFLAGS := -Werror
 
-include external/stlport/libstlport.mk
-
 include $(BUILD_SHARED_LIBRARY)
 
 # Include subdirectory makefiles
 # ============================================================
 
-# If we're building with ONE_SHOT_MAKEFILE (mm, mmm), then what the framework
-# team really wants is to build the stuff defined by this makefile.
-ifeq (,$(ONE_SHOT_MAKEFILE))
+include $(CLEAR_VARS)
+LOCAL_MODULE := SharedBufferTest
+LOCAL_STATIC_LIBRARIES := libutils libcutils
+LOCAL_SHARED_LIBRARIES := liblog
+LOCAL_SRC_FILES := SharedBufferTest.cpp
+include $(BUILD_NATIVE_TEST)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := SharedBufferTest
+LOCAL_STATIC_LIBRARIES := libutils libcutils
+LOCAL_SHARED_LIBRARIES := liblog
+LOCAL_SRC_FILES := SharedBufferTest.cpp
+include $(BUILD_HOST_NATIVE_TEST)
+
+# Build the tests in the tests/ subdirectory.
 include $(call first-makefiles-under,$(LOCAL_PATH))
-endif

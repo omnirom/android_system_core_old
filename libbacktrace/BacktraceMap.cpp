@@ -15,18 +15,15 @@
  */
 
 #include <ctype.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <unistd.h>
-
-#include <string>
-#include <vector>
 
 #include <backtrace/backtrace_constants.h>
 #include <backtrace/BacktraceMap.h>
 #include <log/log.h>
 
 #include "thread_utils.h"
-#include "BacktraceImpl.h"
 
 BacktraceMap::BacktraceMap(pid_t pid) : pid_(pid) {
   if (pid_ < 0) {
@@ -37,14 +34,15 @@ BacktraceMap::BacktraceMap(pid_t pid) : pid_(pid) {
 BacktraceMap::~BacktraceMap() {
 }
 
-const backtrace_map_t* BacktraceMap::Find(uintptr_t addr) {
+void BacktraceMap::FillIn(uintptr_t addr, backtrace_map_t* map) {
   for (BacktraceMap::const_iterator it = begin();
        it != end(); ++it) {
     if (addr >= it->start && addr < it->end) {
-      return &*it;
+      *map = *it;
+      return;
     }
   }
-  return NULL;
+  *map = {};
 }
 
 bool BacktraceMap::ParseLine(const char* line, backtrace_map_t* map) {
@@ -115,7 +113,7 @@ bool BacktraceMap::Build() {
   snprintf(path, sizeof(path), "/proc/%d/maps", pid_);
   FILE* fp = fopen(path, "r");
 #endif
-  if (fp == NULL) {
+  if (fp == nullptr) {
     return false;
   }
 
@@ -141,7 +139,7 @@ BacktraceMap* BacktraceMap::Create(pid_t pid, bool uncached) {
   BacktraceMap* map = new BacktraceMap(pid);
   if (!map->Build()) {
     delete map;
-    return NULL;
+    return nullptr;
   }
   return map;
 }

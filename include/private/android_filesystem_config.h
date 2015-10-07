@@ -22,8 +22,7 @@
 #ifndef _ANDROID_FILESYSTEM_CONFIG_H_
 #define _ANDROID_FILESYSTEM_CONFIG_H_
 
-#include <string.h>
-#include <sys/stat.h>
+#include <sys/cdefs.h>
 #include <sys/types.h>
 #include <stdint.h>
 
@@ -83,6 +82,11 @@
 #define AID_CACHE         2001  /* cache access */
 #define AID_DIAG          2002  /* access to diagnostic resources */
 
+/* The range 2900-2999 is reserved for OEM, and must never be
+ * used here */
+#define AID_OEM_RESERVED_START 2900
+#define AID_OEM_RESERVED_END   2999
+
 /* The 3000 series are intended for use as supplemental group id's only.
  * They indicate special Android capabilities that the kernel is aware of. */
 #define AID_NET_BT_ADMIN  3001  /* bluetooth: create any socket */
@@ -111,6 +115,14 @@
 #define AID_SHARED_GID_END   59999 /* start of gids for apps in each user to share */
 
 #if !defined(EXCLUDE_FS_CONFIG_STRUCTURES)
+/*
+ * Used in:
+ *  bionic/libc/bionic/stubs.cpp
+ *  external/libselinux/src/android.c
+ *  system/core/logd/LogStatistics.cpp
+ *  system/core/init/ueventd.cpp
+ *  system/core/init/util.cpp
+ */
 struct android_id_info {
     const char *name;
     unsigned aid;
@@ -189,125 +201,26 @@ struct fs_path_config {
     const char *prefix;
 };
 
-/* Rules for directories.
-** These rules are applied based on "first match", so they
-** should start with the most specific path and work their
-** way up to the root.
-*/
+/* Rules for directories and files has moved to system/code/libcutils/fs_config.c */
 
-static const struct fs_path_config android_dirs[] = {
-    { 00770, AID_SYSTEM, AID_CACHE,  0, "cache" },
-    { 00771, AID_SYSTEM, AID_SYSTEM, 0, "data/app" },
-    { 00771, AID_SYSTEM, AID_SYSTEM, 0, "data/app-private" },
-    { 00771, AID_ROOT,   AID_ROOT,   0, "data/dalvik-cache" },
-    { 00771, AID_SYSTEM, AID_SYSTEM, 0, "data/data" },
-    { 00771, AID_SHELL,  AID_SHELL,  0, "data/local/tmp" },
-    { 00771, AID_SHELL,  AID_SHELL,  0, "data/local" },
-    { 01771, AID_SYSTEM, AID_MISC,   0, "data/misc" },
-    { 00770, AID_DHCP,   AID_DHCP,   0, "data/misc/dhcp" },
-    { 00771, AID_SHARED_RELRO, AID_SHARED_RELRO, 0, "data/misc/shared_relro" },
-    { 00775, AID_MEDIA_RW, AID_MEDIA_RW, 0, "data/media" },
-    { 00775, AID_MEDIA_RW, AID_MEDIA_RW, 0, "data/media/Music" },
-    { 00771, AID_SYSTEM, AID_SYSTEM, 0, "data" },
-    { 00750, AID_ROOT,   AID_SHELL,  0, "sbin" },
-    { 00755, AID_ROOT,   AID_SHELL,  0, "system/bin" },
-    { 00755, AID_ROOT,   AID_SHELL,  0, "system/vendor" },
-    { 00755, AID_ROOT,   AID_SHELL,  0, "system/xbin" },
-    { 00755, AID_ROOT,   AID_ROOT,   0, "system/etc/ppp" },
-    { 00755, AID_ROOT,   AID_SHELL,  0, "vendor" },
-    { 00777, AID_ROOT,   AID_ROOT,   0, "sdcard" },
-    { 00755, AID_ROOT,   AID_ROOT,   0, 0 },
-};
+__BEGIN_DECLS
 
-/* Rules for files.
-** These rules are applied based on "first match", so they
-** should start with the most specific path and work their
-** way up to the root. Prefixes ending in * denotes wildcard
-** and will allow partial matches.
-*/
-static const struct fs_path_config android_files[] = {
-    { 00440, AID_ROOT,      AID_SHELL,     0, "system/etc/init.goldfish.rc" },
-    { 00550, AID_ROOT,      AID_SHELL,     0, "system/etc/init.goldfish.sh" },
-    { 00440, AID_ROOT,      AID_SHELL,     0, "system/etc/init.trout.rc" },
-    { 00550, AID_ROOT,      AID_SHELL,     0, "system/etc/init.ril" },
-    { 00550, AID_ROOT,      AID_SHELL,     0, "system/etc/init.testmenu" },
-    { 00550, AID_DHCP,      AID_SHELL,     0, "system/etc/dhcpcd/dhcpcd-run-hooks" },
-    { 00444, AID_RADIO,     AID_AUDIO,     0, "system/etc/AudioPara4.csv" },
-    { 00555, AID_ROOT,      AID_ROOT,      0, "system/etc/ppp/*" },
-    { 00555, AID_ROOT,      AID_ROOT,      0, "system/etc/rc.*" },
-    { 00644, AID_SYSTEM,    AID_SYSTEM,    0, "data/app/*" },
-    { 00644, AID_MEDIA_RW,  AID_MEDIA_RW,  0, "data/media/*" },
-    { 00644, AID_SYSTEM,    AID_SYSTEM,    0, "data/app-private/*" },
-    { 00644, AID_APP,       AID_APP,       0, "data/data/*" },
-    { 00755, AID_ROOT,      AID_ROOT,      0, "system/bin/ping" },
+/*
+ * Used in:
+ *  build/tools/fs_config/fs_config.c
+ *  build/tools/fs_get_stats/fs_get_stats.c
+ *  system/extras/ext4_utils/make_ext4fs_main.c
+ *  external/squashfs-tools/squashfs-tools/android.c
+ *  system/core/cpio/mkbootfs.c
+ *  system/core/adb/file_sync_service.cpp
+ *  system/extras/ext4_utils/canned_fs_config.c
+ */
+void fs_config(const char *path, int dir, const char *target_out_path,
+               unsigned *uid, unsigned *gid, unsigned *mode, uint64_t *capabilities);
 
-    /* the following file is INTENTIONALLY set-gid and not set-uid.
-     * Do not change. */
-    { 02750, AID_ROOT,      AID_INET,      0, "system/bin/netcfg" },
+ssize_t fs_config_generate(char *buffer, size_t length, const struct fs_path_config *pc);
 
-    /* the following five files are INTENTIONALLY set-uid, but they
-     * are NOT included on user builds. */
-    { 04750, AID_ROOT,      AID_SHELL,     0, "system/xbin/su" },
-    { 06755, AID_ROOT,      AID_ROOT,      0, "system/xbin/librank" },
-    { 06755, AID_ROOT,      AID_ROOT,      0, "system/xbin/procrank" },
-    { 06755, AID_ROOT,      AID_ROOT,      0, "system/xbin/procmem" },
-    { 04770, AID_ROOT,      AID_RADIO,     0, "system/bin/pppd-ril" },
+__END_DECLS
 
-    /* the following files have enhanced capabilities and ARE included in user builds. */
-    { 00750, AID_ROOT,      AID_SHELL,     (1 << CAP_SETUID) | (1 << CAP_SETGID), "system/bin/run-as" },
-
-    { 00750, AID_ROOT,      AID_ROOT,      0, "system/bin/uncrypt" },
-    { 00750, AID_ROOT,      AID_ROOT,      0, "system/bin/install-recovery.sh" },
-    { 00755, AID_ROOT,      AID_SHELL,     0, "system/bin/*" },
-    { 00755, AID_ROOT,      AID_ROOT,      0, "system/lib/valgrind/*" },
-    { 00755, AID_ROOT,      AID_ROOT,      0, "system/lib64/valgrind/*" },
-    { 00755, AID_ROOT,      AID_SHELL,     0, "system/xbin/*" },
-    { 00755, AID_ROOT,      AID_SHELL,     0, "system/vendor/bin/*" },
-    { 00755, AID_ROOT,      AID_SHELL,     0, "vendor/bin/*" },
-    { 00750, AID_ROOT,      AID_SHELL,     0, "sbin/*" },
-    { 00755, AID_ROOT,      AID_ROOT,      0, "bin/*" },
-    { 00750, AID_ROOT,      AID_SHELL,     0, "init*" },
-    { 00750, AID_ROOT,      AID_SHELL,     0, "sbin/fs_mgr" },
-    { 00640, AID_ROOT,      AID_SHELL,     0, "fstab.*" },
-    { 00755, AID_ROOT,      AID_SHELL,     0, "system/etc/init.d/*" },
-    { 00644, AID_ROOT,      AID_ROOT,      0, 0 },
-};
-
-static inline void fs_config(const char *path, int dir,
-                             unsigned *uid, unsigned *gid, unsigned *mode, uint64_t *capabilities)
-{
-    const struct fs_path_config *pc;
-    int plen;
-
-    if (path[0] == '/') {
-        path++;
-    }
-
-    pc = dir ? android_dirs : android_files;
-    plen = strlen(path);
-    for(; pc->prefix; pc++){
-        int len = strlen(pc->prefix);
-        if (dir) {
-            if(plen < len) continue;
-            if(!strncmp(pc->prefix, path, len)) break;
-            continue;
-        }
-        /* If name ends in * then allow partial matches. */
-        if (pc->prefix[len -1] == '*') {
-            if(!strncmp(pc->prefix, path, len - 1)) break;
-        } else if (plen == len){
-            if(!strncmp(pc->prefix, path, len)) break;
-        }
-    }
-    *uid = pc->uid;
-    *gid = pc->gid;
-    *mode = (*mode & (~07777)) | pc->mode;
-    *capabilities = pc->capabilities;
-
-#if 0
-    fprintf(stderr,"< '%s' '%s' %d %d %o >\n",
-            path, pc->prefix ? pc->prefix : "", *uid, *gid, *mode);
-#endif
-}
 #endif
 #endif

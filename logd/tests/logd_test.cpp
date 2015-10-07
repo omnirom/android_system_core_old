@@ -93,53 +93,42 @@ static void alloc_statistics(char **buffer, size_t *length)
 static char *find_benchmark_spam(char *cp)
 {
     // liblog_benchmarks has been run designed to SPAM.  The signature of
-    // a noisiest UID statistics is one of the following:
+    // a noisiest UID statistics is:
     //
-    // main: UID/PID Total size/num   Now          UID/PID[?]  Total
-    // 0           7500306/304207     71608/3183   0/4225?     7454388/303656
-    //    <wrap>                                                     93432/1012
-    // -or-
-    // 0/gone      7454388/303656     93432/1012
+    // Chattiest UIDs in main log buffer:                           Size Pruned
+    // UID   PACKAGE                                                BYTES LINES
+    // 0     root                                                  54164 147569
     //
-    // basically if we see a *large* number of 0/????? entries
-    unsigned long value;
+    char *benchmark = NULL;
     do {
-        char *benchmark = strstr(cp, " 0/");
-        char *benchmark_newline = strstr(cp, "\n0/");
+        static const char signature[] = "\n0     root ";
+
+        benchmark = strstr(cp, signature);
         if (!benchmark) {
-            benchmark = benchmark_newline;
-        }
-        if (benchmark_newline && (benchmark > benchmark_newline)) {
-            benchmark = benchmark_newline;
-        }
-        cp = benchmark;
-        if (!cp) {
             break;
         }
-        cp += 3;
-        while (isdigit(*cp) || (*cp == 'g') || (*cp == 'o') || (*cp == 'n')) {
+        cp = benchmark + sizeof(signature);
+        while (isspace(*cp)) {
             ++cp;
         }
-        value = 0;
-        // ###? or gone
-        if ((*cp == '?') || (*cp == 'e')) {
-            while (*++cp == ' ');
-            while (isdigit(*cp)) {
-                value = value * 10ULL + *cp - '0';
-                ++cp;
-            }
-            if (*cp != '/') {
-                value = 0;
-                continue;
-            }
-            while (isdigit(*++cp));
-            while (*cp == ' ') ++cp;
-            if (!isdigit(*cp)) {
-                value = 0;
-            }
+        benchmark = cp;
+        while (isdigit(*cp)) {
+            ++cp;
         }
-    } while ((value < 900000ULL) && *cp);
-    return cp;
+        while (isspace(*cp)) {
+            ++cp;
+        }
+        unsigned long value = 0;
+        while (isdigit(*cp)) {
+            value = value * 10ULL + *cp - '0';
+            ++cp;
+        }
+        if (value > 100000UL) {
+            break;
+        }
+        benchmark = NULL;
+    } while (*cp);
+    return benchmark;
 }
 
 TEST(logd, statistics) {
@@ -179,177 +168,19 @@ TEST(logd, statistics) {
     EXPECT_EQ(0, truncated);
 
 #ifdef TARGET_USES_LOGD
-    char *main_logs = strstr(cp, "\nmain:");
+    char *main_logs = strstr(cp, "\nChattiest UIDs in main ");
     EXPECT_TRUE(NULL != main_logs);
 
-    char *radio_logs = strstr(cp, "\nradio:");
+    char *radio_logs = strstr(cp, "\nChattiest UIDs in radio ");
     EXPECT_TRUE(NULL != radio_logs);
 
-    char *system_logs = strstr(cp, "\nsystem:");
+    char *system_logs = strstr(cp, "\nChattiest UIDs in system ");
     EXPECT_TRUE(NULL != system_logs);
 
-    char *events_logs = strstr(cp, "\nevents:");
+    char *events_logs = strstr(cp, "\nChattiest UIDs in events ");
     EXPECT_TRUE(NULL != events_logs);
 #endif
 
-    // Parse timing stats
-
-    cp = strstr(cp, "Minimum time between log events per dgram_qlen:");
-
-    if (cp) {
-        while (*cp && (*cp != '\n')) {
-            ++cp;
-        }
-        if (*cp == '\n') {
-            ++cp;
-        }
-
-        char *list_of_spans = cp;
-        EXPECT_NE('\0', *list_of_spans);
-
-        unsigned short number_of_buckets = 0;
-        unsigned short *dgram_qlen = NULL;
-        unsigned short bucket = 0;
-        while (*cp && (*cp != '\n')) {
-            bucket = 0;
-            while (isdigit(*cp)) {
-                bucket = bucket * 10 + *cp - '0';
-                ++cp;
-            }
-            while (*cp == ' ') {
-                ++cp;
-            }
-            if (!bucket) {
-                break;
-            }
-            unsigned short *new_dgram_qlen = new unsigned short[number_of_buckets + 1];
-            EXPECT_TRUE(new_dgram_qlen != NULL);
-            if (dgram_qlen) {
-                memcpy(new_dgram_qlen, dgram_qlen, sizeof(*dgram_qlen) * number_of_buckets);
-                delete [] dgram_qlen;
-            }
-
-            dgram_qlen = new_dgram_qlen;
-            dgram_qlen[number_of_buckets++] = bucket;
-        }
-
-        char *end_of_spans = cp;
-        EXPECT_NE('\0', *end_of_spans);
-
-        EXPECT_LT(5, number_of_buckets);
-
-        unsigned long long *times = new unsigned long long [number_of_buckets];
-        ASSERT_TRUE(times != NULL);
-
-        memset(times, 0, sizeof(*times) * number_of_buckets);
-
-        while (*cp == '\n') {
-            ++cp;
-        }
-
-        unsigned short number_of_values = 0;
-        unsigned long long value;
-        while (*cp && (*cp != '\n')) {
-            EXPECT_GE(number_of_buckets, number_of_values);
-
-            value = 0;
-            while (isdigit(*cp)) {
-                value = value * 10ULL + *cp - '0';
-                ++cp;
-            }
-
-            switch(*cp) {
-            case ' ':
-            case '\n':
-                value *= 1000ULL;
-                /* FALLTHRU */
-            case 'm':
-                value *= 1000ULL;
-                /* FALLTHRU */
-            case 'u':
-                value *= 1000ULL;
-                /* FALLTHRU */
-            case 'n':
-            default:
-                break;
-            }
-            while (*++cp == ' ');
-
-            if (!value) {
-                break;
-            }
-
-            times[number_of_values] = value;
-            ++number_of_values;
-        }
-
-#ifdef TARGET_USES_LOGD
-        EXPECT_EQ(number_of_values, number_of_buckets);
-#endif
-
-        FILE *fp;
-        ASSERT_TRUE(NULL != (fp = fopen("/proc/sys/net/unix/max_dgram_qlen", "r")));
-
-        unsigned max_dgram_qlen = 0;
-        fscanf(fp, "%u", &max_dgram_qlen);
-
-        fclose(fp);
-
-        // Find launch point
-        unsigned short launch = 0;
-        unsigned long long total = 0;
-        do {
-            total += times[launch];
-        } while (((++launch < number_of_buckets)
-                && ((total / launch) >= (times[launch] / 8ULL)))
-            || (launch == 1)); // too soon
-
-        bool failure = number_of_buckets <= launch;
-        if (!failure) {
-            unsigned short l = launch;
-            if (l >= number_of_buckets) {
-                l = number_of_buckets - 1;
-            }
-            failure = max_dgram_qlen < dgram_qlen[l];
-        }
-
-        // We can get failure if at any time liblog_benchmarks has been run
-        // because designed to overload /proc/sys/net/unix/max_dgram_qlen even
-        // at excessive values like 20000. It does so to measure the raw processing
-        // performance of logd.
-        if (failure) {
-            cp = find_benchmark_spam(cp);
-        }
-
-        if (cp) {
-            // Fake a failure, but without the failure code
-            if (number_of_buckets <= launch) {
-                printf ("Expected: number_of_buckets > launch, actual: %u vs %u\n",
-                        number_of_buckets, launch);
-            }
-            if (launch >= number_of_buckets) {
-                launch = number_of_buckets - 1;
-            }
-            if (max_dgram_qlen < dgram_qlen[launch]) {
-                printf ("Expected: max_dgram_qlen >= dgram_qlen[%d],"
-                            " actual: %u vs %u\n",
-                        launch, max_dgram_qlen, dgram_qlen[launch]);
-            }
-        } else
-#ifndef TARGET_USES_LOGD
-        if (total)
-#endif
-        {
-            EXPECT_GT(number_of_buckets, launch);
-            if (launch >= number_of_buckets) {
-                launch = number_of_buckets - 1;
-            }
-            EXPECT_GE(max_dgram_qlen, dgram_qlen[launch]);
-        }
-
-        delete [] dgram_qlen;
-        delete [] times;
-    }
     delete [] buf;
 }
 
@@ -417,7 +248,11 @@ static void dump_log_msg(const char *prefix,
         if (((p - cp) > 3) && !*p && ((unsigned int)(p - cp) < len)) {
             fprintf(stderr, "\"");
             while (*cp) {
-                fprintf(stderr, (*cp != '\n') ? "%c" : "\\n", *cp);
+                if (*cp != '\n') {
+                    fprintf(stderr, "%c", *cp);
+                } else {
+                    fprintf(stderr, "\\n");
+                }
                 ++cp;
                 --len;
             }
@@ -585,13 +420,13 @@ TEST(logd, benchmark) {
     }
 
 #ifdef TARGET_USES_LOGD
-    EXPECT_GE(100000UL, ns[log_maximum_retry]); // 42777 user
+    EXPECT_GE(200000UL, ns[log_maximum_retry]); // 104734 user
 #else
     EXPECT_GE(10000UL, ns[log_maximum_retry]); // 5636 kernel
 #endif
 
 #ifdef TARGET_USES_LOGD
-    EXPECT_GE(30000UL, ns[log_maximum]); // 27305 user
+    EXPECT_GE(90000UL, ns[log_maximum]); // 46913 user
 #else
     EXPECT_GE(10000UL, ns[log_maximum]); // 5637 kernel
 #endif
@@ -599,13 +434,13 @@ TEST(logd, benchmark) {
     EXPECT_GE(4096UL, ns[clock_overhead]); // 4095
 
 #ifdef TARGET_USES_LOGD
-    EXPECT_GE(250000UL, ns[log_overhead]); // 121876 user
+    EXPECT_GE(250000UL, ns[log_overhead]); // 126886 user
 #else
     EXPECT_GE(100000UL, ns[log_overhead]); // 50945 kernel
 #endif
 
 #ifdef TARGET_USES_LOGD
-    EXPECT_GE(7500UL, ns[log_latency]); // 3718 user space
+    EXPECT_GE(10000UL, ns[log_latency]); // 5669 user space
 #else
     EXPECT_GE(500000UL, ns[log_latency]); // 254200 kernel
 #endif
@@ -637,8 +472,7 @@ TEST(logd, benchmark) {
     ASSERT_TRUE(benchmark_statistics_found != NULL);
 
     // Check how effective the SPAM filter is, parse out Now size.
-    //             Total               Now
-    // 0/4225?     7454388/303656      31488/755
+    // 0     root                      54164 147569
     //                                 ^-- benchmark_statistics_found
 
     unsigned long nowSpamSize = atol(benchmark_statistics_found);

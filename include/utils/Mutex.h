@@ -21,11 +21,12 @@
 #include <sys/types.h>
 #include <time.h>
 
-#if defined(HAVE_PTHREADS)
+#if !defined(_WIN32)
 # include <pthread.h>
 #endif
 
 #include <utils/Errors.h>
+#include <utils/Timers.h>
 
 // ---------------------------------------------------------------------------
 namespace android {
@@ -45,7 +46,7 @@ public:
         PRIVATE = 0,
         SHARED = 1
     };
-    
+
                 Mutex();
                 Mutex(const char* name);
                 Mutex(int type, const char* name = NULL);
@@ -57,6 +58,16 @@ public:
 
     // lock if possible; returns 0 on success, error otherwise
     status_t    tryLock();
+
+#if HAVE_ANDROID_OS
+    // lock the mutex, but don't wait longer than timeoutMilliseconds.
+    // Returns 0 on success, TIMED_OUT for failure due to timeout expiration.
+    //
+    // OSX doesn't have pthread_mutex_timedlock() or equivalent. To keep
+    // capabilities consistent across host OSes, this method is only available
+    // when building Android binaries.
+    status_t    timedLock(nsecs_t timeoutMilliseconds);
+#endif
 
     // Manages the mutex automatically. It'll be locked when Autolock is
     // constructed and released when Autolock goes out of scope.
@@ -71,12 +82,12 @@ public:
 
 private:
     friend class Condition;
-    
+
     // A mutex cannot be copied
                 Mutex(const Mutex&);
     Mutex&      operator = (const Mutex&);
-    
-#if defined(HAVE_PTHREADS)
+
+#if !defined(_WIN32)
     pthread_mutex_t mMutex;
 #else
     void    _init();
@@ -86,7 +97,7 @@ private:
 
 // ---------------------------------------------------------------------------
 
-#if defined(HAVE_PTHREADS)
+#if !defined(_WIN32)
 
 inline Mutex::Mutex() {
     pthread_mutex_init(&mMutex, NULL);
@@ -117,8 +128,17 @@ inline void Mutex::unlock() {
 inline status_t Mutex::tryLock() {
     return -pthread_mutex_trylock(&mMutex);
 }
+#if HAVE_ANDROID_OS
+inline status_t Mutex::timedLock(nsecs_t timeoutNs) {
+    const struct timespec ts = {
+        /* .tv_sec = */ static_cast<time_t>(timeoutNs / 1000000000),
+        /* .tv_nsec = */ static_cast<long>(timeoutNs % 1000000000),
+    };
+    return -pthread_mutex_timedlock(&mMutex, &ts);
+}
+#endif
 
-#endif // HAVE_PTHREADS
+#endif // !defined(_WIN32)
 
 // ---------------------------------------------------------------------------
 
@@ -127,7 +147,7 @@ inline status_t Mutex::tryLock() {
  * When the function returns, it will go out of scope, and release the
  * mutex.
  */
- 
+
 typedef Mutex::Autolock AutoMutex;
 
 // ---------------------------------------------------------------------------

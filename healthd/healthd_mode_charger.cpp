@@ -88,7 +88,7 @@ struct frame {
     int min_capacity;
     bool level_only;
 
-    gr_surface surface;
+    GRSurface* surface;
 };
 
 struct animation {
@@ -115,7 +115,8 @@ struct charger {
     struct key_state keys[KEY_MAX + 1];
 
     struct animation *batt_anim;
-    gr_surface surf_unknown;
+    GRSurface* surf_unknown;
+    int boot_min_cap;
 };
 
 static struct frame batt_anim_frames[] = {
@@ -409,7 +410,7 @@ static void android_blue(void)
 }
 
 /* returns the last y-offset of where the surface ends */
-static int draw_surface_centered(struct charger* /*charger*/, gr_surface surface)
+static int draw_surface_centered(struct charger* /*charger*/, GRSurface* surface)
 {
     int w;
     int h;
@@ -506,7 +507,6 @@ static void reset_animation(struct animation *anim)
 static void update_screen_state(struct charger *charger, int64_t now)
 {
     struct animation *batt_anim = charger->batt_anim;
-    int cur_frame;
     int disp_time;
 
     if (!batt_anim->run || now < charger->next_screen_transition)
@@ -552,7 +552,6 @@ static void update_screen_state(struct charger *charger, int64_t now)
 
     /* animation starting, set up the animation */
     if (batt_anim->cur_frame == 0) {
-        int ret;
 
         LOGV("[%" PRId64 "] animation starting\n", now);
         if (batt_prop && batt_prop->batteryLevel >= 0 && batt_anim->num_frames != 0) {
@@ -680,7 +679,6 @@ static void process_key(struct charger *charger, int code, int64_t now)
 {
     struct animation *batt_anim = charger->batt_anim;
     struct key_state *key = &charger->keys[code];
-    int64_t next_key_check;
 
     if (code == KEY_POWER) {
         if (key->down) {
@@ -693,23 +691,34 @@ static void process_key(struct charger *charger, int code, int64_t now)
                     LOGW("[%" PRId64 "] booting from charger mode\n", now);
                     property_set("sys.boot_from_charger_mode", "1");
                 } else {
-                    LOGW("[%" PRId64 "] rebooting\n", now);
-                    android_reboot(ANDROID_RB_RESTART, 0, 0);
+                    if (charger->batt_anim->capacity >= charger->boot_min_cap) {
+                        LOGW("[%" PRId64 "] rebooting\n", now);
+                        android_reboot(ANDROID_RB_RESTART, 0, 0);
+                    } else {
+                        LOGV("[%" PRId64 "] ignore power-button press, battery level "
+                            "less than minimum\n", now);
+                    }
                 }
             } else {
                 /* if the key is pressed but timeout hasn't expired,
                  * make sure we wake up at the right-ish time to check
                  */
                 set_next_key_check(charger, key, POWER_ON_KEY_TIME);
+
+               /* Turn on the display and kick animation on power-key press
+                * rather than on key release
+                */
+                kick_animation(charger->batt_anim);
+                request_suspend(false);
             }
         } else {
             /* if the power key got released, force screen state cycle */
             if (key->pending) {
-                if (!batt_anim->run) {
+                if (!charger->batt_anim->run) {
                     request_suspend(false);
-                    kick_animation(batt_anim);
+                    kick_animation(charger->batt_anim);
                 } else {
-                    reset_animation(batt_anim);
+                    reset_animation(charger->batt_anim);
                     charger->next_screen_transition = -1;
                     #ifdef HEALTHD_FORCE_BACKLIGHT_CONTROL
                             set_backlight(false);
@@ -755,6 +764,11 @@ static void handle_power_supply_state(struct charger *charger, int64_t now)
 #endif
 
     if (!charger->charger_connected) {
+
+        /* Last cycle would have stopped at the extreme top of battery-icon
+         * Need to show the correct level corresponding to capacity.
+         */
+        kick_animation(charger->batt_anim);
         request_suspend(false);
         if (charger->next_pwr_check == -1) {
             charger->next_pwr_check = now + UNPLUGGED_SHUTDOWN_TIME;
@@ -780,7 +794,6 @@ void healthd_mode_charger_heartbeat()
 {
     struct charger *charger = &charger_state;
     int64_t now = curr_time_ms();
-    int ret;
 
     handle_input_state(charger, now);
     handle_power_supply_state(charger, now);
@@ -815,8 +828,6 @@ int healthd_mode_charger_preparetowait(void)
     int64_t now = curr_time_ms();
     int64_t next_event = INT64_MAX;
     int64_t timeout;
-    struct input_event ev;
-    int ret;
 
     LOGV("[%" PRId64 "] next screen: %" PRId64 " next key: %" PRId64 " next pwr: %" PRId64 "\n", now,
          charger->next_screen_transition, charger->next_key_check,
@@ -884,7 +895,7 @@ void healthd_mode_charger_init(struct healthd_config* config)
 
     charger->batt_anim = &battery_animation;
 
-    gr_surface* scale_frames;
+    GRSurface** scale_frames;
     int scale_count;
     ret = res_create_multi_display_surface("charger/battery_scale", &scale_count, &scale_frames);
     if (ret < 0) {
@@ -908,4 +919,5 @@ void healthd_mode_charger_init(struct healthd_config* config)
     charger->next_key_check = -1;
     charger->next_pwr_check = -1;
     healthd_config = config;
+    charger->boot_min_cap = config->boot_min_cap;
 }

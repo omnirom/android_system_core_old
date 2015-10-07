@@ -21,13 +21,17 @@
 #include <stdbool.h>
 #include <sys/types.h>
 
+#include <backtrace/Backtrace.h>
+
 // Figure out the abi based on defined macros.
 #if defined(__arm__)
 #define ABI_STRING "arm"
 #elif defined(__aarch64__)
 #define ABI_STRING "arm64"
-#elif defined(__mips__)
+#elif defined(__mips__) && !defined(__LP64__)
 #define ABI_STRING "mips"
+#elif defined(__mips__) && defined(__LP64__)
+#define ABI_STRING "mips64"
 #elif defined(__i386__)
 #define ABI_STRING "x86"
 #elif defined(__x86_64__)
@@ -73,6 +77,6 @@ void _LOG(log_t* log, logtype ltype, const char *fmt, ...)
 
 int wait_for_sigstop(pid_t, int*, bool*);
 
-void dump_memory(log_t* log, pid_t tid, uintptr_t addr);
+void dump_memory(log_t* log, Backtrace* backtrace, uintptr_t addr, const char* fmt, ...);
 
 #endif // _DEBUGGERD_UTILITY_H

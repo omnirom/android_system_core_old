@@ -24,18 +24,35 @@
 #  undef _WIN32
 #endif
 
+/*
+ * TEMP_FAILURE_RETRY is defined by some, but not all, versions of
+ * <unistd.h>. (Alas, it is not as standard as we'd hoped!) So, if it's
+ * not already defined, then define it here.
+ */
+#ifndef TEMP_FAILURE_RETRY
+/* Used to retry syscalls that can return EINTR. */
+#define TEMP_FAILURE_RETRY(exp) ({         \
+    typeof (exp) _rc;                      \
+    do {                                   \
+        _rc = (exp);                       \
+    } while (_rc == -1 && errno == EINTR); \
+    _rc; })
+#endif
+
 #ifdef _WIN32
 
+#include <ctype.h>
+#include <direct.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <io.h>
+#include <process.h>
+#include <sys/stat.h>
 #include <winsock2.h>
 #include <windows.h>
 #include <ws2tcpip.h>
-#include <process.h>
-#include <fcntl.h>
-#include <io.h>
-#include <sys/stat.h>
-#include <errno.h>
-#include <ctype.h>
-#include <direct.h>
+
+#include "fdevent.h"
 
 #define OS_PATH_SEPARATOR '\\'
 #define OS_PATH_SEPARATOR_STR "\\"
@@ -77,12 +94,15 @@ static __inline__ int  adb_thread_create( adb_thread_t  *thread, adb_thread_func
     return 0;
 }
 
+static __inline__  unsigned long adb_thread_id()
+{
+    return GetCurrentThreadId();
+}
+
 static __inline__ void  close_on_exec(int  fd)
 {
     /* nothing really */
 }
-
-extern void  disable_tcp_nagle(int  fd);
 
 #define  lstat    stat   /* no symlinks on Win32 */
 
@@ -126,10 +146,8 @@ static __inline__ int  unix_close(int fd)
 #undef   close
 #define  close   ____xxx_close
 
-static __inline__  int  unix_read(int  fd, void*  buf, size_t  len)
-{
-    return read(fd, buf, len);
-}
+extern int  unix_read(int  fd, void*  buf, size_t  len);
+
 #undef   read
 #define  read  ___xxx_read
 
@@ -182,8 +200,6 @@ extern int socket_inaddr_any_server(int port, int type);
 #define FDE_ERROR             0x0004
 #define FDE_DONT_CLOSE        0x0080
 
-typedef struct fdevent fdevent;
-
 typedef void (*fd_func)(int fd, unsigned events, void *userdata);
 
 fdevent *fdevent_create(int fd, fd_func func, void *arg);
@@ -195,20 +211,6 @@ void     fdevent_add(fdevent *fde, unsigned events);
 void     fdevent_del(fdevent *fde, unsigned events);
 void     fdevent_loop();
 
-struct fdevent {
-    fdevent *next;
-    fdevent *prev;
-
-    int fd;
-    int force_eof;
-
-    unsigned short state;
-    unsigned short events;
-
-    fd_func func;
-    void *arg;
-};
-
 static __inline__ void  adb_sleep_ms( int  mseconds )
 {
     Sleep( mseconds );
@@ -219,10 +221,21 @@ extern int  adb_socket_accept(int  serverfd, struct sockaddr*  addr, socklen_t  
 #undef   accept
 #define  accept  ___xxx_accept
 
+extern int  adb_setsockopt(int  fd, int  level, int  optname, const void*  optval, socklen_t  optlen);
+
+#undef   setsockopt
+#define  setsockopt  ___xxx_setsockopt
+
 static __inline__  int  adb_socket_setbufsize( int   fd, int  bufsize )
 {
     int opt = bufsize;
-    return setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (const char*)&opt, sizeof(opt));
+    return adb_setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (const void*)&opt, sizeof(opt));
+}
+
+static __inline__ void  disable_tcp_nagle( int  fd )
+{
+    int  on = 1;
+    adb_setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (const void*)&on, sizeof(on));
 }
 
 extern int  adb_socketpair( int  sv[2] );
@@ -258,8 +271,6 @@ static __inline__  int  adb_is_absolute_host_path( const char*  path )
     return isalpha(path[0]) && path[1] == ':' && path[2] == '\\';
 }
 
-extern char*  adb_strtok_r(char *str, const char *delim, char **saveptr);
-
 #else /* !_WIN32 a.k.a. Unix */
 
 #include "fdevent.h"
@@ -278,21 +289,6 @@ extern char*  adb_strtok_r(char *str, const char *delim, char **saveptr);
 #include <netinet/tcp.h>
 #include <string.h>
 #include <unistd.h>
-
-/*
- * TEMP_FAILURE_RETRY is defined by some, but not all, versions of
- * <unistd.h>. (Alas, it is not as standard as we'd hoped!) So, if it's
- * not already defined, then define it here.
- */
-#ifndef TEMP_FAILURE_RETRY
-/* Used to retry syscalls that can return EINTR. */
-#define TEMP_FAILURE_RETRY(exp) ({         \
-    typeof (exp) _rc;                      \
-    do {                                   \
-        _rc = (exp);                       \
-    } while (_rc == -1 && errno == EINTR); \
-    _rc; })
-#endif
 
 #define OS_PATH_SEPARATOR '/'
 #define OS_PATH_SEPARATOR_STR "/"
@@ -459,6 +455,13 @@ static __inline__ void  disable_tcp_nagle(int fd)
     setsockopt( fd, IPPROTO_TCP, TCP_NODELAY, (void*)&on, sizeof(on) );
 }
 
+static __inline__ int  adb_setsockopt( int  fd, int  level, int  optname, const void*  optval, socklen_t  optlen )
+{
+    return setsockopt( fd, level, optname, optval, optlen );
+}
+
+#undef   setsockopt
+#define  setsockopt  ___xxx_setsockopt
 
 static __inline__ int  unix_socketpair( int  d, int  type, int  protocol, int sv[2] )
 {
@@ -512,12 +515,10 @@ static __inline__  int  adb_is_absolute_host_path( const char*  path )
     return path[0] == '/';
 }
 
-static __inline__ char*  adb_strtok_r(char *str, const char *delim, char **saveptr)
+static __inline__ unsigned long adb_thread_id()
 {
-    return strtok_r(str, delim, saveptr);
+    return (unsigned long)pthread_self();
 }
-#undef   strtok_r
-#define  strtok_r  ___xxx_strtok_r
 
 #endif /* !_WIN32 */
 

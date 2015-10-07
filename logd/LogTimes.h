@@ -22,6 +22,7 @@
 #include <sys/types.h>
 #include <sysutils/SocketClient.h>
 #include <utils/List.h>
+#include <log/log.h>
 
 class LogReader;
 
@@ -31,6 +32,7 @@ class LogTimeEntry {
     bool mRelease;
     bool mError;
     bool threadRunning;
+    bool leadingDropped;
     pthread_cond_t threadTriggeredCondition;
     pthread_t mThread;
     LogReader &mReader;
@@ -38,7 +40,7 @@ class LogTimeEntry {
     static void threadStop(void *me);
     const unsigned int mLogMask;
     const pid_t mPid;
-    unsigned int skipAhead;
+    unsigned int skipAhead[LOG_ID_MAX];
     unsigned long mCount;
     unsigned long mTail;
     unsigned long mIndex;
@@ -46,13 +48,12 @@ class LogTimeEntry {
 public:
     LogTimeEntry(LogReader &reader, SocketClient *client, bool nonBlock,
                  unsigned long tail, unsigned int logMask, pid_t pid,
-                 log_time start);
+                 uint64_t start);
 
     SocketClient *mClient;
-    static const struct timespec EPOCH;
-    log_time mStart;
+    uint64_t mStart;
     const bool mNonBlock;
-    const log_time mEnd; // only relevant if mNonBlock
+    const uint64_t mEnd; // only relevant if mNonBlock
 
     // Protect List manipulations
     static void lock(void) { pthread_mutex_lock(&timesLock); }
@@ -67,7 +68,8 @@ public:
         pthread_cond_signal(&threadTriggeredCondition);
     }
 
-    void triggerSkip_Locked(unsigned int skip) { skipAhead = skip; }
+    void triggerSkip_Locked(log_id_t id, unsigned int skip) { skipAhead[id] = skip; }
+    void cleanSkip_Locked(void);
 
     // Called after LogTimeEntry removed from list, lock implicitly held
     void release_Locked(void) {
@@ -99,10 +101,10 @@ public:
         // No one else is holding a reference to this
         delete this;
     }
-
+    bool isWatching(log_id_t id) { return (mLogMask & (1<<id)) != 0; }
     // flushTo filter callbacks
-    static bool FilterFirstPass(const LogBufferElement *element, void *me);
-    static bool FilterSecondPass(const LogBufferElement *element, void *me);
+    static int FilterFirstPass(const LogBufferElement *element, void *me);
+    static int FilterSecondPass(const LogBufferElement *element, void *me);
 };
 
 typedef android::List<LogTimeEntry *> LastLogTimes;

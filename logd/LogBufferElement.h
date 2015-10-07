@@ -17,10 +17,42 @@
 #ifndef _LOGD_LOG_BUFFER_ELEMENT_H__
 #define _LOGD_LOG_BUFFER_ELEMENT_H__
 
+#include <stdatomic.h>
+#include <stdlib.h>
 #include <sys/types.h>
+
 #include <sysutils/SocketClient.h>
 #include <log/log.h>
 #include <log/log_read.h>
+
+// Hijack this header as a common include file used by most all sources
+// to report some utilities defined here and there.
+
+namespace android {
+
+// Furnished in main.cpp. Caller must own and free returned value
+char *uidToName(uid_t uid);
+
+// Furnished in LogStatistics.cpp. Caller must own and free returned value
+char *pidToName(pid_t pid);
+char *tidToName(pid_t tid);
+
+// Furnished in main.cpp. Thread safe.
+const char *tagToName(uint32_t tag);
+
+}
+
+static inline bool worstUidEnabledForLogid(log_id_t id) {
+    return (id != LOG_ID_CRASH) && (id != LOG_ID_KERNEL) && (id != LOG_ID_EVENTS);
+}
+
+class LogBuffer;
+
+#define EXPIRE_HOUR_THRESHOLD 24 // Only expire chatty UID logs to preserve
+                                 // non-chatty UIDs less than this age in hours
+#define EXPIRE_THRESHOLD 10      // A smaller expire count is considered too
+                                 // chatty for the temporal expire messages
+#define EXPIRE_RATELIMIT 10      // maximum rate in seconds to report expiration
 
 class LogBufferElement {
     const log_id_t mLogId;
@@ -28,9 +60,17 @@ class LogBufferElement {
     const pid_t mPid;
     const pid_t mTid;
     char *mMsg;
-    const unsigned short mMsgLen;
-    const log_time mMonotonicTime;
+    union {
+        const unsigned short mMsgLen; // mMSg != NULL
+        unsigned short mDropped;      // mMsg == NULL
+    };
+    const uint64_t mSequence;
     const log_time mRealTime;
+    static atomic_int_fast64_t sequence;
+
+    // assumption: mMsg == NULL
+    size_t populateDroppedMessage(char *&buffer,
+                                  LogBuffer *parent);
 
 public:
     LogBufferElement(log_id_t log_id, log_time realtime,
@@ -42,12 +82,23 @@ public:
     uid_t getUid(void) const { return mUid; }
     pid_t getPid(void) const { return mPid; }
     pid_t getTid(void) const { return mTid; }
-    unsigned short getMsgLen() const { return mMsgLen; }
-    log_time getMonotonicTime(void) const { return mMonotonicTime; }
+    unsigned short getDropped(void) const { return mMsg ? 0 : mDropped; }
+    unsigned short setDropped(unsigned short value) {
+        if (mMsg) {
+            free(mMsg);
+            mMsg = NULL;
+        }
+        return mDropped = value;
+    }
+    unsigned short getMsgLen() const { return mMsg ? mMsgLen : 0; }
+    uint64_t getSequence(void) const { return mSequence; }
+    static uint64_t getCurrentSequence(void) { return sequence.load(memory_order_relaxed); }
     log_time getRealTime(void) const { return mRealTime; }
 
-    static const log_time FLUSH_ERROR;
-    log_time flushTo(SocketClient *writer);
+    uint32_t getTag(void) const;
+
+    static const uint64_t FLUSH_ERROR;
+    uint64_t flushTo(SocketClient *writer, LogBuffer *parent);
 };
 
 #endif

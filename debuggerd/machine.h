@@ -19,9 +19,11 @@
 
 #include <sys/types.h>
 
+#include <backtrace/Backtrace.h>
+
 #include "utility.h"
 
-void dump_memory_and_code(log_t* log, pid_t tid);
+void dump_memory_and_code(log_t* log, Backtrace* backtrace);
 void dump_registers(log_t* log, pid_t tid);
 
 #endif // _DEBUGGERD_MACHINE_H

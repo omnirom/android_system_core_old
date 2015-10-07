@@ -37,7 +37,6 @@ class LogBuffer {
     pthread_mutex_t mLogElementsLock;
 
     LogStatistics stats;
-    bool dgramQlenStatistics;
 
     PruneList mPrune;
 
@@ -47,13 +46,14 @@ public:
     LastLogTimes &mTimes;
 
     LogBuffer(LastLogTimes *times);
+    void init();
 
-    void log(log_id_t log_id, log_time realtime,
-             uid_t uid, pid_t pid, pid_t tid,
-             const char *msg, unsigned short len);
-    log_time flushTo(SocketClient *writer, const log_time start,
+    int log(log_id_t log_id, log_time realtime,
+            uid_t uid, pid_t pid, pid_t tid,
+            const char *msg, unsigned short len);
+    uint64_t flushTo(SocketClient *writer, const uint64_t start,
                      bool privileged,
-                     bool (*filter)(const LogBufferElement *element, void *arg) = NULL,
+                     int (*filter)(const LogBufferElement *element, void *arg) = NULL,
                      void *arg = NULL);
 
     void clear(log_id_t id, uid_t uid = AID_ROOT);
@@ -63,11 +63,6 @@ public:
     // *strp uses malloc, use free to release.
     void formatStatistics(char **strp, uid_t uid, unsigned int logMask);
 
-    void enableDgramQlenStatistics() {
-        stats.enableDgramQlenStatistics();
-        dgramQlenStatistics = true;
-    }
-
     void enableStatistics() {
         stats.enableStatistics();
     }
@@ -76,14 +71,17 @@ public:
     // *strp uses malloc, use free to release.
     void formatPrune(char **strp) { mPrune.format(strp); }
 
-    // helper
+    // helper must be protected directly or implicitly by lock()/unlock()
     char *pidToName(pid_t pid) { return stats.pidToName(pid); }
     uid_t pidToUid(pid_t pid) { return stats.pidToUid(pid); }
+    char *uidToName(uid_t uid) { return stats.uidToName(uid); }
+    void lock() { pthread_mutex_lock(&mLogElementsLock); }
+    void unlock() { pthread_mutex_unlock(&mLogElementsLock); }
 
 private:
     void maybePrune(log_id_t id);
     void prune(log_id_t id, unsigned long pruneRows, uid_t uid = AID_ROOT);
-
+    LogBufferElementCollection::iterator erase(LogBufferElementCollection::iterator it);
 };
 
 #endif // _LOGD_LOG_BUFFER_H__

@@ -17,10 +17,9 @@
 #ifndef _INIT_PROPERTY_H
 #define _INIT_PROPERTY_H
 
-#include <stdbool.h>
+#include <stddef.h>
 #include <sys/system_properties.h>
 
-extern void handle_property_set_fd(void);
 extern void property_init(void);
 extern void property_load_boot_defaults(void);
 extern void load_persist_props(void);
@@ -29,16 +28,21 @@ extern void start_property_service(void);
 void get_property_workspace(int *fd, int *sz);
 extern int __property_get(const char *name, char *value);
 extern int property_set(const char *name, const char *value);
-extern int properties_inited();
-int get_property_set_fd(void);
+extern bool properties_initialized();
 
+#ifndef __clang__
 extern void __property_get_size_error()
     __attribute__((__error__("property_get called with too small buffer")));
+#else
+extern void __property_get_size_error();
+#endif
 
 static inline
 __attribute__ ((always_inline))
 __attribute__ ((gnu_inline))
+#ifndef __clang__
 __attribute__ ((artificial))
+#endif
 int property_get(const char *name, char *value)
 {
     size_t value_len = __builtin_object_size(value, 0);

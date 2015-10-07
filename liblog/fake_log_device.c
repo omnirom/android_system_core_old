@@ -29,7 +29,7 @@
 
 #include <log/logd.h>
 
-#ifdef HAVE_PTHREADS
+#if !defined(_WIN32)
 #include <pthread.h>
 #endif
 
@@ -88,7 +88,7 @@ typedef struct LogState {
 } LogState;
 
 
-#ifdef HAVE_PTHREADS
+#if !defined(_WIN32)
 /*
  * Locking.  Since we're emulating a device, we need to be prepared
  * to have multiple callers at the same time.  This lock is used
@@ -106,10 +106,10 @@ static void unlock()
 {
     pthread_mutex_unlock(&fakeLogDeviceLock);
 }
-#else   // !HAVE_PTHREADS
+#else   // !defined(_WIN32)
 #define lock() ((void)0)
 #define unlock() ((void)0)
-#endif  // !HAVE_PTHREADS
+#endif  // !defined(_WIN32)
 
 
 /*
@@ -320,9 +320,9 @@ static const char* getPriorityString(int priority)
     return priorityStrings[idx];
 }
 
-#ifndef HAVE_WRITEV
+#if defined(_WIN32)
 /*
- * Some platforms like WIN32 do not have writev().
+ * WIN32 does not have writev().
  * Make up something to replace it.
  */
 static ssize_t fake_writev(int fd, const struct iovec *iov, int iovcnt) {
@@ -352,7 +352,7 @@ static ssize_t fake_writev(int fd, const struct iovec *iov, int iovcnt) {
 static void showLog(LogState *state,
         int logPrio, const char* tag, const char* msg)
 {
-#if defined(HAVE_LOCALTIME_R)
+#if !defined(_WIN32)
     struct tm tmBuf;
 #endif
     struct tm* ptm;
@@ -377,7 +377,7 @@ static void showLog(LogState *state,
      * in the time stamp.  Don't use forward slashes, parenthesis,
      * brackets, asterisks, or other special chars here.
      */
-#if defined(HAVE_LOCALTIME_R)
+#if !defined(_WIN32)
     ptm = localtime_r(&when, &tmBuf);
 #else
     ptm = localtime(&when);
@@ -688,4 +688,10 @@ ssize_t fakeLogWritev(int fd, const struct iovec* vector, int count)
 {
     /* Assume that open() was called first. */
     return redirectWritev(fd, vector, count);
+}
+
+int __android_log_is_loggable(int prio, const char *tag __unused, int def)
+{
+    int logLevel = def;
+    return logLevel >= 0 && prio >= logLevel;
 }

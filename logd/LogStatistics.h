@@ -17,183 +17,327 @@
 #ifndef _LOGD_LOG_STATISTICS_H__
 #define _LOGD_LOG_STATISTICS_H__
 
+#include <memory>
+#include <stdlib.h>
 #include <sys/types.h>
 
+#include <unordered_map>
+
 #include <log/log.h>
-#include <log/log_read.h>
-#include <utils/List.h>
+
+#include "LogBufferElement.h"
 
 #define log_id_for_each(i) \
     for (log_id_t i = LOG_ID_MIN; i < LOG_ID_MAX; i = (log_id_t) (i + 1))
 
-class PidStatistics {
-    const pid_t pid;
+template <typename TKey, typename TEntry>
+class LogHashtable {
 
-    // Total
-    size_t mSizesTotal;
-    size_t mElementsTotal;
-    // Current
-    size_t mSizes;
-    size_t mElements;
-
-    char *name;
-    bool mGone;
+    std::unordered_map<TKey, TEntry> map;
 
 public:
-    static const pid_t gone = (pid_t) -1;
 
-    PidStatistics(pid_t pid, char *name = NULL);
-    PidStatistics(const PidStatistics &copy);
-    ~PidStatistics();
+    typedef typename std::unordered_map<TKey, TEntry>::iterator iterator;
 
-    pid_t getPid() const { return pid; }
-    bool pidGone();
-    char *getName() const { return name; }
-    void setName(char *name);
+    std::unique_ptr<const TEntry *[]> sort(size_t n) {
+        if (!n) {
+            std::unique_ptr<const TEntry *[]> sorted(NULL);
+            return sorted;
+        }
 
-    void add(unsigned short size);
-    bool subtract(unsigned short size); // returns true if stats and PID gone
-    void addTotal(size_t size, size_t element);
+        const TEntry **retval = new const TEntry* [n];
+        memset(retval, 0, sizeof(*retval) * n);
 
-    size_t sizes() const { return mSizes; }
-    size_t elements() const { return mElements; }
+        for(iterator it = map.begin(); it != map.end(); ++it) {
+            const TEntry &entry = it->second;
+            size_t s = entry.getSizes();
+            ssize_t i = n - 1;
+            while ((!retval[i] || (s > retval[i]->getSizes())) && (--i >= 0))
+                ;
+            if (++i < (ssize_t)n) {
+                size_t b = n - i - 1;
+                if (b) {
+                    memmove(&retval[i+1], &retval[i], b * sizeof(retval[0]));
+                }
+                retval[i] = &entry;
+            }
+        }
+        std::unique_ptr<const TEntry *[]> sorted(retval);
+        return sorted;
+    }
 
-    size_t sizesTotal() const { return mSizesTotal; }
-    size_t elementsTotal() const { return mElementsTotal; }
+    // Iteration handler for the sort method output
+    static ssize_t next(ssize_t index, std::unique_ptr<const TEntry *[]> &sorted, size_t n) {
+        ++index;
+        if (!sorted.get() || (index < 0) || (n <= (size_t)index) || !sorted[index]
+         || (sorted[index]->getSizes() <= (sorted[0]->getSizes() / 100))) {
+            return -1;
+        }
+        return index;
+    }
 
-    // helper
-    static char *pidToName(pid_t pid);
+    inline iterator add(TKey key, LogBufferElement *e) {
+        iterator it = map.find(key);
+        if (it == map.end()) {
+            it = map.insert(std::make_pair(key, TEntry(e))).first;
+        } else {
+            it->second.add(e);
+        }
+        return it;
+    }
+
+    inline iterator add(TKey key) {
+        iterator it = map.find(key);
+        if (it == map.end()) {
+            it = map.insert(std::make_pair(key, TEntry(key))).first;
+        } else {
+            it->second.add(key);
+        }
+        return it;
+    }
+
+    void subtract(TKey key, LogBufferElement *e) {
+        iterator it = map.find(key);
+        if ((it != map.end()) && it->second.subtract(e)) {
+            map.erase(it);
+        }
+    }
+
+    inline void drop(TKey key, LogBufferElement *e) {
+        iterator it = map.find(key);
+        if (it != map.end()) {
+            it->second.drop(e);
+        }
+    }
+
+    inline iterator begin() { return map.begin(); }
+    inline iterator end() { return map.end(); }
+
 };
 
-typedef android::List<PidStatistics *> PidStatisticsCollection;
+struct EntryBase {
+    size_t size;
 
-class UidStatistics {
+    EntryBase():size(0) { }
+    EntryBase(LogBufferElement *e):size(e->getMsgLen()) { }
+
+    size_t getSizes() const { return size; }
+
+    inline void add(LogBufferElement *e) { size += e->getMsgLen(); }
+    inline bool subtract(LogBufferElement *e) { size -= e->getMsgLen(); return !size; }
+};
+
+struct EntryBaseDropped : public EntryBase {
+    size_t dropped;
+
+    EntryBaseDropped():dropped(0) { }
+    EntryBaseDropped(LogBufferElement *e):EntryBase(e),dropped(e->getDropped()){ }
+
+    size_t getDropped() const { return dropped; }
+
+    inline void add(LogBufferElement *e) {
+        dropped += e->getDropped();
+        EntryBase::add(e);
+    }
+    inline bool subtract(LogBufferElement *e) {
+        dropped -= e->getDropped();
+        return EntryBase::subtract(e) && !dropped;
+    }
+    inline void drop(LogBufferElement *e) {
+        dropped += 1;
+        EntryBase::subtract(e);
+    }
+};
+
+struct UidEntry : public EntryBaseDropped {
     const uid_t uid;
 
-    PidStatisticsCollection Pids;
+    UidEntry(LogBufferElement *e):EntryBaseDropped(e),uid(e->getUid()) { }
 
-    void insert(PidStatisticsCollection::iterator i, PidStatistics *p)
-        { Pids.insert(i, p); }
-    void push_back(PidStatistics *p) { Pids.push_back(p); }
-
-    size_t mSizes;
-    size_t mElements;
-
-public:
-    UidStatistics(uid_t uid);
-    ~UidStatistics();
-
-    PidStatisticsCollection::iterator begin() { return Pids.begin(); }
-    PidStatisticsCollection::iterator end() { return Pids.end(); }
-    PidStatisticsCollection::iterator erase(PidStatisticsCollection::iterator i)
-        { return Pids.erase(i); }
-
-    uid_t getUid() { return uid; }
-
-    void add(unsigned short size, pid_t pid);
-    void subtract(unsigned short size, pid_t pid);
-    void sort();
-
-    static const pid_t pid_all = (pid_t) -1;
-
-    // fast track current value
-    size_t sizes() const { return mSizes; };
-    size_t elements() const { return mElements; };
-
-    // statistical track
-    size_t sizes(pid_t pid);
-    size_t elements(pid_t pid);
-
-    size_t sizesTotal(pid_t pid = pid_all);
-    size_t elementsTotal(pid_t pid = pid_all);
-
-    // helper
-    static char *pidToName(pid_t pid) { return PidStatistics::pidToName(pid); }
+    inline const uid_t&getKey() const { return uid; }
 };
 
-typedef android::List<UidStatistics *> UidStatisticsCollection;
+namespace android {
+uid_t pidToUid(pid_t pid);
+}
 
-class LidStatistics {
-    UidStatisticsCollection Uids;
+struct PidEntry : public EntryBaseDropped {
+    const pid_t pid;
+    uid_t uid;
+    char *name;
 
-public:
-    LidStatistics();
-    ~LidStatistics();
+    PidEntry(pid_t p):
+        EntryBaseDropped(),
+        pid(p),
+        uid(android::pidToUid(p)),
+        name(android::pidToName(pid)) { }
+    PidEntry(LogBufferElement *e):
+        EntryBaseDropped(e),
+        pid(e->getPid()),
+        uid(e->getUid()),
+        name(android::pidToName(e->getPid())) { }
+    PidEntry(const PidEntry &c):
+        EntryBaseDropped(c),
+        pid(c.pid),
+        uid(c.uid),
+        name(c.name ? strdup(c.name) : NULL) { }
+    ~PidEntry() { free(name); }
 
-    UidStatisticsCollection::iterator begin() { return Uids.begin(); }
-    UidStatisticsCollection::iterator end() { return Uids.end(); }
+    const pid_t&getKey() const { return pid; }
+    const uid_t&getUid() const { return uid; }
+    const char*getName() const { return name; }
 
-    void add(unsigned short size, uid_t uid, pid_t pid);
-    void subtract(unsigned short size, uid_t uid, pid_t pid);
-    void sort();
+    inline void add(pid_t p) {
+        if (name && !strncmp(name, "zygote", 6)) {
+            free(name);
+            name = NULL;
+        }
+        if (!name) {
+            char *n = android::pidToName(p);
+            if (n) {
+                name = n;
+            }
+        }
+    }
 
-    static const pid_t pid_all = (pid_t) -1;
-    static const uid_t uid_all = (uid_t) -1;
+    inline void add(LogBufferElement *e) {
+        uid_t u = e->getUid();
+        if (getUid() != u) {
+            uid = u;
+            free(name);
+            name = android::pidToName(e->getPid());
+        } else {
+            add(e->getPid());
+        }
+        EntryBaseDropped::add(e);
+    }
+};
 
-    size_t sizes(uid_t uid = uid_all, pid_t pid = pid_all);
-    size_t elements(uid_t uid = uid_all, pid_t pid = pid_all);
+struct TidEntry : public EntryBaseDropped {
+    const pid_t tid;
+    uid_t uid;
+    char *name;
 
-    size_t sizesTotal(uid_t uid = uid_all, pid_t pid = pid_all);
-    size_t elementsTotal(uid_t uid = uid_all, pid_t pid = pid_all);
+    TidEntry(pid_t t):
+        EntryBaseDropped(),
+        tid(t),
+        uid(android::pidToUid(t)),
+        name(android::tidToName(tid)) { }
+    TidEntry(LogBufferElement *e):
+        EntryBaseDropped(e),
+        tid(e->getTid()),
+        uid(e->getUid()),
+        name(android::tidToName(e->getTid())) { }
+    TidEntry(const TidEntry &c):
+        EntryBaseDropped(c),
+        tid(c.tid),
+        uid(c.uid),
+        name(c.name ? strdup(c.name) : NULL) { }
+    ~TidEntry() { free(name); }
+
+    const pid_t&getKey() const { return tid; }
+    const uid_t&getUid() const { return uid; }
+    const char*getName() const { return name; }
+
+    inline void add(pid_t t) {
+        if (name && !strncmp(name, "zygote", 6)) {
+            free(name);
+            name = NULL;
+        }
+        if (!name) {
+            char *n = android::tidToName(t);
+            if (n) {
+                name = n;
+            }
+        }
+    }
+
+    inline void add(LogBufferElement *e) {
+        uid_t u = e->getUid();
+        if (getUid() != u) {
+            uid = u;
+            free(name);
+            name = android::tidToName(e->getTid());
+        } else {
+            add(e->getTid());
+        }
+        EntryBaseDropped::add(e);
+    }
+};
+
+struct TagEntry : public EntryBase {
+    const uint32_t tag;
+    uid_t uid;
+
+    TagEntry(LogBufferElement *e):
+        EntryBase(e),
+        tag(e->getTag()),
+        uid(e->getUid()) { }
+
+    const uint32_t&getKey() const { return tag; }
+    const uid_t&getUid() const { return uid; }
+    const char*getName() const { return android::tagToName(tag); }
+
+    inline void add(LogBufferElement *e) {
+        uid_t u = e->getUid();
+        if (uid != u) {
+            uid = -1;
+        }
+        EntryBase::add(e);
+    }
 };
 
 // Log Statistics
 class LogStatistics {
-    LidStatistics LogIds[LOG_ID_MAX];
-
     size_t mSizes[LOG_ID_MAX];
     size_t mElements[LOG_ID_MAX];
+    size_t mSizesTotal[LOG_ID_MAX];
+    size_t mElementsTotal[LOG_ID_MAX];
+    bool enable;
 
-    bool mStatistics;
-    bool dgramQlenStatistics;
+    // uid to size list
+    typedef LogHashtable<uid_t, UidEntry> uidTable_t;
+    uidTable_t uidTable[LOG_ID_MAX];
 
-    static const unsigned short mBuckets[14];
-    log_time mMinimum[sizeof(mBuckets) / sizeof(mBuckets[0])];
+    // pid to uid list
+    typedef LogHashtable<pid_t, PidEntry> pidTable_t;
+    pidTable_t pidTable;
+
+    // tid to uid list
+    typedef LogHashtable<pid_t, TidEntry> tidTable_t;
+    tidTable_t tidTable;
+
+    // tag list
+    typedef LogHashtable<uint32_t, TagEntry> tagTable_t;
+    tagTable_t tagTable;
 
 public:
-    const log_time start;
-
     LogStatistics();
 
-    LidStatistics &id(log_id_t log_id) { return LogIds[log_id]; }
+    void enableStatistics() { enable = true; }
 
-    void enableDgramQlenStatistics() { dgramQlenStatistics = true; }
-    void enableStatistics() { mStatistics = true; }
-    static unsigned short dgramQlen(unsigned short bucket);
-    unsigned long long minimum(unsigned short bucket);
-    void recordDiff(log_time diff, unsigned short bucket);
+    void add(LogBufferElement *entry);
+    void subtract(LogBufferElement *entry);
+    // entry->setDropped(1) must follow this call
+    void drop(LogBufferElement *entry);
+    // Correct for merging two entries referencing dropped content
+    void erase(LogBufferElement *e) { --mElements[e->getLogId()]; }
 
-    void add(unsigned short size, log_id_t log_id, uid_t uid, pid_t pid);
-    void subtract(unsigned short size, log_id_t log_id, uid_t uid, pid_t pid);
-    void sort();
+    std::unique_ptr<const UidEntry *[]> sort(size_t n, log_id i) { return uidTable[i].sort(n); }
 
     // fast track current value by id only
     size_t sizes(log_id_t id) const { return mSizes[id]; }
     size_t elements(log_id_t id) const { return mElements[id]; }
-
-    // statistical track
-    static const log_id_t log_id_all = (log_id_t) -1;
-    static const uid_t uid_all = (uid_t) -1;
-    static const pid_t pid_all = (pid_t) -1;
-
-    size_t sizes(log_id_t id, uid_t uid, pid_t pid = pid_all);
-    size_t elements(log_id_t id, uid_t uid, pid_t pid = pid_all);
-    size_t sizes() { return sizes(log_id_all, uid_all); }
-    size_t elements() { return elements(log_id_all, uid_all); }
-
-    size_t sizesTotal(log_id_t id = log_id_all,
-                      uid_t uid = uid_all,
-                      pid_t pid = pid_all);
-    size_t elementsTotal(log_id_t id = log_id_all,
-                         uid_t uid = uid_all,
-                         pid_t pid = pid_all);
+    size_t sizesTotal(log_id_t id) const { return mSizesTotal[id]; }
+    size_t elementsTotal(log_id_t id) const { return mElementsTotal[id]; }
 
     // *strp = malloc, balance with free
-    void format(char **strp, uid_t uid, unsigned int logMask, log_time oldest);
+    void format(char **strp, uid_t uid, unsigned int logMask);
 
-    // helper
-    static char *pidToName(pid_t pid) { return PidStatistics::pidToName(pid); }
+    // helper (must be locked directly or implicitly by mLogElementsLock)
+    char *pidToName(pid_t pid);
     uid_t pidToUid(pid_t pid);
+    char *uidToName(uid_t uid);
 };
 
 #endif // _LOGD_LOG_STATISTICS_H__

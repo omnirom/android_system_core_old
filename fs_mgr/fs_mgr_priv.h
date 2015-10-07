@@ -21,6 +21,7 @@
 #include <fs_mgr.h>
 
 #define INFO(x...)    KLOG_INFO("fs_mgr", x)
+#define WARNING(x...) KLOG_WARNING("fs_mgr", x)
 #define ERROR(x...)   KLOG_ERROR("fs_mgr", x)
 
 #define CRYPTO_TMPFS_OPTIONS "size=256m,mode=0771,uid=1000,gid=1000"
@@ -75,9 +76,12 @@
 #define MF_FORCECRYPT   0x400
 #define MF_NOEMULATEDSD 0x800 /* no emulated sdcard daemon, sd card is the only
                                  external storage */
-#define MF_FORMATTABLE  0x1000
+#define MF_NOTRIM       0x1000
+#define MF_FILEENCRYPTION 0x2000
+#define MF_FORMATTABLE  0x4000
 
 #define DM_BUF_SIZE 4096
 
-#endif /* __CORE_FS_MGR_PRIV_H */
+int fs_mgr_set_blk_ro(const char *blockdev);
 
+#endif /* __CORE_FS_MGR_PRIV_H */

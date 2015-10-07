@@ -24,10 +24,10 @@
 #include "LogReader.h"
 #include "FlushCommand.h"
 
-LogReader::LogReader(LogBuffer *logbuf)
-        : SocketListener(getLogSocket(), true)
-        , mLogbuf(*logbuf)
-{ }
+LogReader::LogReader(LogBuffer *logbuf) :
+        SocketListener(getLogSocket(), true),
+        mLogbuf(*logbuf) {
+}
 
 // When we are notified a new log entry is available, inform
 // all of our listening sockets.
@@ -37,7 +37,11 @@ void LogReader::notifyNewLog() {
 }
 
 bool LogReader::onDataAvailable(SocketClient *cli) {
-    prctl(PR_SET_NAME, "logd.reader");
+    static bool name_set;
+    if (!name_set) {
+        prctl(PR_SET_NAME, "logd.reader");
+        name_set = true;
+    }
 
     char buffer[255];
 
@@ -100,50 +104,51 @@ bool LogReader::onDataAvailable(SocketClient *cli) {
         nonBlock = true;
     }
 
-    // Convert realtime to monotonic time
-    if (start == log_time::EPOCH) {
-        start = LogTimeEntry::EPOCH;
-    } else {
+    uint64_t sequence = 1;
+    // Convert realtime to sequence number
+    if (start != log_time::EPOCH) {
         class LogFindStart {
             const pid_t mPid;
             const unsigned mLogMask;
             bool startTimeSet;
             log_time &start;
-            log_time last;
+            uint64_t &sequence;
+            uint64_t last;
 
         public:
-            LogFindStart(unsigned logMask, pid_t pid, log_time &start)
-                    : mPid(pid)
-                    , mLogMask(logMask)
-                    , startTimeSet(false)
-                    , start(start)
-                    , last(LogTimeEntry::EPOCH)
-            { }
+            LogFindStart(unsigned logMask, pid_t pid, log_time &start, uint64_t &sequence) :
+                    mPid(pid),
+                    mLogMask(logMask),
+                    startTimeSet(false),
+                    start(start),
+                    sequence(sequence),
+                    last(sequence) {
+            }
 
-            static bool callback(const LogBufferElement *element, void *obj) {
+            static int callback(const LogBufferElement *element, void *obj) {
                 LogFindStart *me = reinterpret_cast<LogFindStart *>(obj);
-                if (!me->startTimeSet
-                        && (!me->mPid || (me->mPid == element->getPid()))
+                if ((!me->mPid || (me->mPid == element->getPid()))
                         && (me->mLogMask & (1 << element->getLogId()))) {
                     if (me->start == element->getRealTime()) {
-                        me->start = element->getMonotonicTime();
+                        me->sequence = element->getSequence();
                         me->startTimeSet = true;
+                        return -1;
                     } else {
                         if (me->start < element->getRealTime()) {
-                            me->start = me->last;
+                            me->sequence = me->last;
                             me->startTimeSet = true;
+                            return -1;
                         }
-                        me->last = element->getMonotonicTime();
+                        me->last = element->getSequence();
                     }
                 }
                 return false;
             }
 
             bool found() { return startTimeSet; }
-        } logFindStart(logMask, pid, start);
+        } logFindStart(logMask, pid, start, sequence);
 
-        logbuf().flushTo(cli, LogTimeEntry::EPOCH,
-                         FlushCommand::hasReadLogs(cli),
+        logbuf().flushTo(cli, sequence, FlushCommand::hasReadLogs(cli),
                          logFindStart.callback, &logFindStart);
 
         if (!logFindStart.found()) {
@@ -151,12 +156,11 @@ bool LogReader::onDataAvailable(SocketClient *cli) {
                 doSocketDelete(cli);
                 return false;
             }
-            log_time now(CLOCK_MONOTONIC);
-            start = now;
+            sequence = LogBufferElement::getCurrentSequence();
         }
     }
 
-    FlushCommand command(*this, nonBlock, tail, logMask, pid, start);
+    FlushCommand command(*this, nonBlock, tail, logMask, pid, sequence);
     command.runSocketCommand(cli);
     return true;
 }

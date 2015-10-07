@@ -50,15 +50,7 @@
 
 #define S_ISWHT(x) false
 
-// TODO: should this be in bionic? (glibc does this, even though it's not quite right.)
-#define O_RSYNC O_SYNC
-
 __BEGIN_DECLS
-
-/* From NetBSD <grp.h> and <pwd.h>. */
-char* group_from_gid(gid_t gid, int noname);
-int uid_from_user(const char* name, uid_t* uid);
-char* user_from_uid(uid_t uid, int noname);
 
 /* From NetBSD <stdlib.h>. */
 #define HN_DECIMAL              0x01

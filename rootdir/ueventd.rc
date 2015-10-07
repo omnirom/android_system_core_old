@@ -16,6 +16,7 @@ subsystem adf
 # Anyone can read the logs, but if they're not in the "logs"
 # group, then they'll only see log entries for their UID.
 /dev/log/*                0666   root       log
+/dev/pmsg0                0222   root       log
 
 # the msm hw3d client device node is world writable/readable.
 /dev/msm_hw3dc            0666   root       root
@@ -98,3 +99,6 @@ subsystem adf
 /sys/devices/system/cpu/cpu*   cpufreq/scaling_min_freq   0664  system system
 /sys/devices/system/cpu/cpu*   cpufreq/scaling_governor   0664  system system
 
+
+# DVB API device nodes
+/dev/dvb*                 0660   root       system

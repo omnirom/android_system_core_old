@@ -21,6 +21,7 @@
 #define LIBZIPARCHIVE_ZIPARCHIVE_H_
 
 #include <stdint.h>
+#include <string.h>
 #include <sys/types.h>
 #include <utils/Compat.h>
 
@@ -33,8 +34,16 @@ enum {
 };
 
 struct ZipEntryName {
-  const char* name;
+  const uint8_t* name;
   uint16_t name_length;
+
+  ZipEntryName() {}
+
+  /*
+   * entry_name has to be an c-style string with only ASCII characters.
+   */
+  explicit ZipEntryName(const char* entry_name)
+      : name(reinterpret_cast<const uint8_t*>(entry_name)), name_length(strlen(entry_name)) {}
 };
 
 /*
@@ -92,6 +101,9 @@ int32_t OpenArchive(const char* fileName, ZipArchiveHandle* handle);
  * Sets handle to the value of the opaque handle for this file descriptor.
  * This handle must be released by calling CloseArchive with this handle.
  *
+ * If assume_ownership parameter is 'true' calling CloseArchive will close
+ * the file.
+ *
  * This function maps and scans the central directory and builds a table
  * of entries for future lookups.
  *
@@ -100,7 +112,7 @@ int32_t OpenArchive(const char* fileName, ZipArchiveHandle* handle);
  * Returns 0 on success, and negative values on failure.
  */
 int32_t OpenArchiveFd(const int fd, const char* debugFileName,
-                      ZipArchiveHandle *handle);
+                      ZipArchiveHandle *handle, bool assume_ownership = true);
 
 /*
  * Close archive, releasing resources associated with it. This will
@@ -124,24 +136,26 @@ void CloseArchive(ZipArchiveHandle handle);
  * and length, a call to VerifyCrcAndLengths must be made after entry data
  * has been processed.
  */
-int32_t FindEntry(const ZipArchiveHandle handle, const char* entryName,
+int32_t FindEntry(const ZipArchiveHandle handle, const ZipEntryName& entryName,
                   ZipEntry* data);
 
 /*
  * Start iterating over all entries of a zip file. The order of iteration
  * is not guaranteed to be the same as the order of elements
- * in the central directory but is stable for a given zip file. |cookie|
- * must point to a writeable memory location, and will be set to the value
- * of an opaque cookie which can be used to make one or more calls to
- * Next.
+ * in the central directory but is stable for a given zip file. |cookie| will
+ * contain the value of an opaque cookie which can be used to make one or more
+ * calls to Next. All calls to StartIteration must be matched by a call to
+ * EndIteration to free any allocated memory.
  *
  * This method also accepts an optional prefix to restrict iteration to
- * entry names that start with |prefix|.
+ * entry names that start with |optional_prefix|.
  *
  * Returns 0 on success and negative values on failure.
  */
 int32_t StartIteration(ZipArchiveHandle handle, void** cookie_ptr,
-                       const char* prefix);
+                       const ZipEntryName* optional_prefix,
+                       // TODO: Remove the default parameter.
+                       const ZipEntryName* optional_suffix = NULL);
 
 /*
  * Advance to the next element in the zipfile in iteration order.
@@ -150,6 +164,12 @@ int32_t StartIteration(ZipArchiveHandle handle, void** cookie_ptr,
  * archive and lower negative values on failure.
  */
 int32_t Next(void* cookie, ZipEntry* data, ZipEntryName *name);
+
+/*
+ * End iteration over all entries of a zip file and frees the memory allocated
+ * in StartIteration.
+ */
+void EndIteration(void* cookie);
 
 /*
  * Uncompress and write an entry to an open file identified by |fd|.
