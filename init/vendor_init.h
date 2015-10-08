@@ -29,5 +29,9 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef __INIT_VENDOR__H__
 #define __INIT_VENDOR__H__
+#ifdef __cplusplus
+extern "C" void vendor_load_properties(void);
+#else
 extern void vendor_load_properties(void);
+#endif /* __cplusplus */
 #endif /* __INIT_VENDOR__H__ */

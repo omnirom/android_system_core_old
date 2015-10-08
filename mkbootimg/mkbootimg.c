@@ -174,11 +174,11 @@ int main(int argc, char **argv)
                     fprintf(stderr,"error: unsupported page size %d\n", pagesize);
                     return -1;
                 }
+            } else if(!strcmp(arg, "--dt")) {
+                dt_fn = val;
             } else {
                 return usage();
             }
-        } else if(!strcmp(arg, "--dt")) {
-            dt_fn = val;
         } else {
             return usage();
         }

@@ -18,7 +18,8 @@
 #include <fcntl.h>
 #include <net/if.h>
 #include <stdio.h>
-#include <linux/kd.h>#include <netinet/in.h>
+#include <linux/kd.h>
+#include <netinet/in.h>
 #include <linux/if.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
@@ -57,6 +58,8 @@ int add_environment(const char *name, const char *value);
 
 // System call provided by bionic but not in any header file.
 extern "C" int init_module(void *, unsigned long, const char *);
+
+int init_export_rc_file(const char *);
 
 static int insmod(const char *filename, char *options)
 {
@@ -177,6 +180,45 @@ int do_exec(int nargs, char** args) {
         return -1;
     }
     service_start(svc, NULL);
+    return 0;
+}
+
+#define MAX_PARAMETERS 64
+int do_exec_context(int nargs, char **args)
+{
+    pid_t pid;
+    int status, i = 0, j = 2;
+    char *par[MAX_PARAMETERS];
+    char *contextParam = args[1];
+    if (nargs > MAX_PARAMETERS){
+        return -1;
+    }
+    for(;i<(nargs-1) ;i++,j++) {
+        par[i] = args[j];
+    }
+    par[i] = (char*)0;
+    pid = fork();
+    if (!pid) {
+        char tmp[32];
+        int fd, sz;
+        get_property_workspace(&fd, &sz);
+        sprintf(tmp, "%d,%d", dup(fd), sz);
+        setenv("ANDROID_PROPERTY_WORKSPACE", tmp, 1);
+
+        if (contextParam != NULL) {
+            if (is_selinux_enabled() > 0 && setexeccon(contextParam) < 0) {
+                ERROR("cannot setexeccon('%s'): %s\n", contextParam, strerror(errno));
+                _exit(127);
+            }
+        }
+        execve(par[0],par,environ);
+        exit(0);
+    } else {
+        waitpid(pid, &status, 0);
+        if (WEXITSTATUS(status) != 0) {
+            ERROR("exec: pid %1d exited with return code %d: %s", (int)pid, WEXITSTATUS(status), strerror(status));
+        }
+    }
     return 0;
 }
 
