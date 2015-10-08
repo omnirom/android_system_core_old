@@ -54,7 +54,6 @@ static const char *firmware_dirs[] = { "/etc/firmware",
                                        "/firmware/image" };
 
 extern struct selabel_handle *sehandle;
-extern char bootdevice[32];
 
 static int device_fd = -1;
 
@@ -428,7 +427,7 @@ static char **get_v4l_device_symlinks(struct uevent *uevent)
     if (strncmp(uevent->path, "/devices/virtual/video4linux/video", 34))
         return NULL;
 
-    links = malloc(sizeof(char *) * 2);
+    links = (char**) malloc(sizeof(char *) * 2);
     if (!links)
         return NULL;
     memset(links, 0, sizeof(char *) * 2);
@@ -560,10 +559,6 @@ static char **get_block_device_symlinks(struct uevent *uevent)
         link_num++;
     else
         links[link_num] = NULL;
-
-    if (!strncmp(device, bootdevice, sizeof(bootdevice))) {
-        make_link_init(link_path, "/dev/block/bootdevice");
-    }
 
     return links;
 }
