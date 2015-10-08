@@ -428,7 +428,7 @@ static char **get_v4l_device_symlinks(struct uevent *uevent)
     if (strncmp(uevent->path, "/devices/virtual/video4linux/video", 34))
         return NULL;
 
-    links = malloc(sizeof(char *) * 2);
+    links = (char**) malloc(sizeof(char *) * 2);
     if (!links)
         return NULL;
     memset(links, 0, sizeof(char *) * 2);

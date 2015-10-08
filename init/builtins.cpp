@@ -18,7 +18,8 @@
 #include <fcntl.h>
 #include <net/if.h>
 #include <stdio.h>
-#include <linux/kd.h>#include <netinet/in.h>
+#include <linux/kd.h>
+#include <netinet/in.h>
 #include <linux/if.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
@@ -57,6 +58,8 @@ int add_environment(const char *name, const char *value);
 
 // System call provided by bionic but not in any header file.
 extern "C" int init_module(void *, unsigned long, const char *);
+
+extern "C" int init_export_rc_file(const char *);
 
 static int insmod(const char *filename, char *options)
 {
