@@ -467,23 +467,21 @@ typedef enum {
 
 int init_export_rc_file(const char *fn)
 {
-    char *data;
+    std::string data;
     struct parse_state state;
     char *env = NULL;
     export_rc_state_t env_state = ENV_NOTREADY;
 
-    data = read_file(fn, 0);
-    if (!data) return -1;
+    if (!read_file(fn, &data)) return -1;
 
     state.filename = fn;
     state.line = 0;
-    state.ptr = data;
+    state.ptr = strdup(data.c_str());  // TODO: fix this code!
     state.nexttoken = 0;
     state.parse_line = parse_line_no_op;
     for (;;) {
         switch (next_token(&state)) {
         case T_EOF:
-            free(data);
             return 0;
         case T_NEWLINE:
             env_state = ENV_NOTREADY;
