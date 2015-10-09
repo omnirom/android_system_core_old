@@ -631,3 +631,4 @@ inline GGLfixed gglClampx(GGLfixed c)
 // ------------------------------------------------------------------------
 
 #endif // ANDROID_GGL_FIXED_H
+
