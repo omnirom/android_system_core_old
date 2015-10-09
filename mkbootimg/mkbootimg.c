@@ -137,6 +137,7 @@ int main(int argc, char **argv)
     bool get_id = false;
     while(argc > 0){
         char *arg = argv[0];
+        char *val = argv[1];
         if (!strcmp(arg, "--id")) {
             get_id = true;
             argc -= 1;
