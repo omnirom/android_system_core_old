@@ -183,6 +183,15 @@ int do_exec(int nargs, char** args) {
     return 0;
 }
 
+int do_setcon(int nargs, char **args) {
+    if (is_selinux_enabled() <= 0)
+        return 0;
+    if (setcon(args[1]) < 0) {
+        return -errno;
+    }
+    return 0;
+}
+
 #define MAX_PARAMETERS 64
 int do_exec_context(int nargs, char **args)
 {

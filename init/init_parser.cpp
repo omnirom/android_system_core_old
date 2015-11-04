@@ -198,6 +198,7 @@ static int lookup_keyword(const char *s)
         if (!strcmp(s, "wapon_all")) return K_swapon_all;
         if (!strcmp(s, "ymlink")) return K_symlink;
         if (!strcmp(s, "ysclktz")) return K_sysclktz;
+        if (!strcmp(s, "etcon")) return K_setcon;
         break;
     case 't':
         if (!strcmp(s, "rigger")) return K_trigger;
