@@ -43,10 +43,12 @@ static char *is_prio(char *s) {
     if (!isdigit(*s++)) {
         return NULL;
     }
+    static const size_t max_prio_len = 4;
+    size_t len = 0;
     char c;
-    while ((c = *s++)) {
+    while (((c = *s++)) && (++len <= max_prio_len)) {
         if (!isdigit(c)) {
-            return (c == '>') ? s : NULL;
+            return ((c == '>') && (*s == '[')) ? s : NULL;
         }
     }
     return NULL;
@@ -73,7 +75,7 @@ static char *is_timestamp(char *s) {
 }
 
 // Like strtok_r with "\r\n" except that we look for log signatures (regex)
-// \(\(<[0-9]+>\)\([[] *[0-9]+[.][0-9]+[]] \)\{0,1\}\|[[] *[0-9]+[.][0-9]+[]] \)
+//  \(\(<[0-9]\{1,4\}>\)\([[] *[0-9]+[.][0-9]+[]] \)\{0,1\}\|[[] *[0-9]+[.][0-9]+[]] \)
 // and split if we see a second one without a newline.
 
 #define SIGNATURE_MASK     0xF0
@@ -165,7 +167,7 @@ char *log_strtok_r(char *s, char **last) {
             break;
         }
     }
-    /* NOTREACHED */
+    // NOTREACHED
 }
 
 log_time LogKlog::correction = log_time(CLOCK_REALTIME) - log_time(CLOCK_MONOTONIC);
@@ -254,6 +256,7 @@ void LogKlog::sniffTime(log_time &now, const char **buf, bool reverse) {
     if ((cp = now.strptime(*buf, "[ %s.%q]"))) {
         static const char suspend[] = "PM: suspend entry ";
         static const char resume[] = "PM: suspend exit ";
+        static const char healthd[] = "healthd: battery ";
         static const char suspended[] = "Suspended for ";
 
         if (isspace(*cp)) {
@@ -263,6 +266,15 @@ void LogKlog::sniffTime(log_time &now, const char **buf, bool reverse) {
             calculateCorrection(now, cp + sizeof(suspend) - 1);
         } else if (!strncmp(cp, resume, sizeof(resume) - 1)) {
             calculateCorrection(now, cp + sizeof(resume) - 1);
+        } else if (!strncmp(cp, healthd, sizeof(healthd) - 1)) {
+            // look for " 2???-??-?? ??:??:??.????????? ???"
+            const char *tp;
+            for (tp = cp + sizeof(healthd) - 1; *tp && (*tp != '\n'); ++tp) {
+                if ((tp[0] == ' ') && (tp[1] == '2') && (tp[5] == '-')) {
+                    calculateCorrection(now, tp + 1);
+                    break;
+                }
+            }
         } else if (!strncmp(cp, suspended, sizeof(suspended) - 1)) {
             log_time real;
             char *endp;
@@ -282,6 +294,22 @@ void LogKlog::sniffTime(log_time &now, const char **buf, bool reverse) {
     } else {
         now = log_time(CLOCK_REALTIME);
     }
+}
+
+pid_t LogKlog::sniffPid(const char *cp) {
+    while (*cp) {
+        // Mediatek kernels with modified printk
+        if (*cp == '[') {
+            int pid = 0;
+            char dummy;
+            if (sscanf(cp, "[%d:%*[a-z_./0-9:A-Z]]%c", &pid, &dummy) == 2) {
+                return pid;
+            }
+            break; // Only the first one
+        }
+        ++cp;
+    }
+    return 0;
 }
 
 // Passed the entire SYSLOG_ACTION_READ_ALL buffer and interpret a
@@ -407,9 +435,9 @@ int LogKlog::log(const char *buf) {
 
     // sniff for start marker
     const char klogd_message[] = "logd.klogd: ";
-    if (!strncmp(buf, klogd_message, sizeof(klogd_message) - 1)) {
-        char *endp;
-        uint64_t sig = strtoll(buf + sizeof(klogd_message) - 1, &endp, 10);
+    const char *start = strstr(buf, klogd_message);
+    if (start) {
+        uint64_t sig = strtoll(start + sizeof(klogd_message) - 1, NULL, 10);
         if (sig == signature.nsec()) {
             if (initialized) {
                 enableLogging = true;
@@ -425,10 +453,10 @@ int LogKlog::log(const char *buf) {
         return 0;
     }
 
-    // Parse pid, tid and uid (not possible)
-    const pid_t pid = 0;
-    const pid_t tid = 0;
-    const uid_t uid = 0;
+    // Parse pid, tid and uid
+    const pid_t pid = sniffPid(buf);
+    const pid_t tid = pid;
+    const uid_t uid = pid ? logbuf->pidToUid(pid) : 0;
 
     // Parse (rules at top) to pull out a tag from the incoming kernel message.
     // Some may view the following as an ugly heuristic, the desire is to
@@ -440,7 +468,7 @@ int LogKlog::log(const char *buf) {
     if (!*buf) {
         return 0;
     }
-    const char *start = buf;
+    start = buf;
     const char *tag = "";
     const char *etag = tag;
     if (!isspace(*buf)) {
@@ -451,7 +479,14 @@ int LogKlog::log(const char *buf) {
             // <PRI>[<TIME>] "[INFO]"<tag> ":" message
             bt = buf + 6;
         }
-        for(et = bt; *et && (*et != ':') && !isspace(*et); ++et);
+        for(et = bt; *et && (*et != ':') && !isspace(*et); ++et) {
+           // skip ':' within [ ... ]
+           if (*et == '[') {
+               while (*et && *et != ']') {
+                   ++et;
+               }
+            }
+        }
         for(cp = et; isspace(*cp); ++cp);
         size_t size;
 
@@ -465,7 +500,7 @@ int LogKlog::log(const char *buf) {
             if (strncmp(bt, cp, size)) {
                 // <PRI>[<TIME>] <tag>_host '<tag>.<num>' : message
                 if (!strncmp(bt + size - 5, "_host", 5)
-                 && !strncmp(bt, cp, size - 5)) {
+                        && !strncmp(bt, cp, size - 5)) {
                     const char *b = cp;
                     cp += size - 5;
                     if (*cp == '.') {
@@ -535,16 +570,30 @@ int LogKlog::log(const char *buf) {
         }
         size = etag - tag;
         if ((size <= 1)
-         || ((size == 2) && (isdigit(tag[0]) || isdigit(tag[1])))
-         || ((size == 3) && !strncmp(tag, "CPU", 3))
-         || ((size == 7) && !strncmp(tag, "WARNING", 7))
-         || ((size == 5) && !strncmp(tag, "ERROR", 5))
-         || ((size == 4) && !strncmp(tag, "INFO", 4))) {
+            // register names like x9
+                || ((size == 2) && (isdigit(tag[0]) || isdigit(tag[1])))
+            // register names like x18 but not driver names like en0
+                || ((size == 3) && (isdigit(tag[1]) && isdigit(tag[2])))
+            // blacklist
+                || ((size == 3) && !strncmp(tag, "CPU", 3))
+                || ((size == 7) && !strncmp(tag, "WARNING", 7))
+                || ((size == 5) && !strncmp(tag, "ERROR", 5))
+                || ((size == 4) && !strncmp(tag, "INFO", 4))) {
             buf = start;
             etag = tag = "";
         }
     }
-    size_t l = etag - tag;
+    // Suppress additional stutter in tag:
+    //   eg: [143:healthd]healthd -> [143:healthd]
+    size_t taglen = etag - tag;
+    // Mediatek-special printk induced stutter
+    char *np = strrchr(tag, ']');
+    if (np && (++np < etag)) {
+        size_t s = etag - np;
+        if (((s + s) < taglen) && !strncmp(np, np - 1 - s, s)) {
+            taglen = np - tag;
+        }
+    }
     // skip leading space
     while (isspace(*buf)) {
         ++buf;
@@ -555,11 +604,11 @@ int LogKlog::log(const char *buf) {
         --b;
     }
     // trick ... allow tag with empty content to be logged. log() drops empty
-    if (!b && l) {
+    if (!b && taglen) {
         buf = " ";
         b = 1;
     }
-    size_t n = 1 + l + 1 + b + 1;
+    size_t n = 1 + taglen + 1 + b + 1;
 
     // Allocate a buffer to hold the interpreted log message
     int rc = n;
@@ -568,15 +617,15 @@ int LogKlog::log(const char *buf) {
         rc = -ENOMEM;
         return rc;
     }
-    char *np = newstr;
+    np = newstr;
 
     // Convert priority into single-byte Android logger priority
     *np = convertKernelPrioToAndroidPrio(pri);
     ++np;
 
     // Copy parsed tag following priority
-    strncpy(np, tag, l);
-    np += l;
+    strncpy(np, tag, taglen);
+    np += taglen;
     *np = '\0';
     ++np;
 

@@ -19,9 +19,10 @@
 
 #include <sys/types.h>
 
+#include <list>
+
 #include <log/log.h>
 #include <sysutils/SocketClient.h>
-#include <utils/List.h>
 
 #include <private/android_filesystem_config.h>
 
@@ -30,7 +31,7 @@
 #include "LogStatistics.h"
 #include "LogWhiteBlackList.h"
 
-typedef android::List<LogBufferElement *> LogBufferElementCollection;
+typedef std::list<LogBufferElement *> LogBufferElementCollection;
 
 class LogBuffer {
     LogBufferElementCollection mLogElements;
@@ -39,6 +40,11 @@ class LogBuffer {
     LogStatistics stats;
 
     PruneList mPrune;
+    // watermark of any worst/chatty uid processing
+    typedef std::unordered_map<uid_t,
+                               LogBufferElementCollection::iterator>
+                LogBufferIteratorMap;
+    LogBufferIteratorMap mLastWorstUid[LOG_ID_MAX];
 
     unsigned long mMaxSize[LOG_ID_MAX];
 
@@ -81,7 +87,8 @@ public:
 private:
     void maybePrune(log_id_t id);
     void prune(log_id_t id, unsigned long pruneRows, uid_t uid = AID_ROOT);
-    LogBufferElementCollection::iterator erase(LogBufferElementCollection::iterator it);
+    LogBufferElementCollection::iterator erase(
+        LogBufferElementCollection::iterator it, bool engageStats = true);
 };
 
 #endif // _LOGD_LOG_BUFFER_H__

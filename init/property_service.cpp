@@ -519,6 +519,10 @@ void load_persist_props(void) {
     load_override_properties();
     /* Read persistent properties after all default values have been loaded. */
     load_persistent_properties();
+
+    /* vendor-specific properties
+     */
+    vendor_load_properties();
 }
 
 void load_recovery_id_prop() {
@@ -561,20 +565,10 @@ void load_recovery_id_prop() {
     close(fd);
 }
 
-void load_all_props() {
+void load_system_props() {
     load_properties_from_file(PROP_PATH_SYSTEM_BUILD, NULL);
     load_properties_from_file(PROP_PATH_VENDOR_BUILD, NULL);
     load_properties_from_file(PROP_PATH_FACTORY, "ro.*");
-
-    load_override_properties();
-
-    /* Read persistent properties after all default values have been loaded. */
-    load_persistent_properties();
-
-    /* vendor-specific properties
-     */
-    vendor_load_properties();
-
     load_recovery_id_prop();
 }
 

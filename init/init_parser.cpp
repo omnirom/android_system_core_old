@@ -163,7 +163,7 @@ static int lookup_keyword(const char *s)
     case 'l':
         if (!strcmp(s, "oglevel")) return K_loglevel;
         if (!strcmp(s, "oad_persist_props")) return K_load_persist_props;
-        if (!strcmp(s, "oad_all_props")) return K_load_all_props;
+        if (!strcmp(s, "oad_system_props")) return K_load_system_props;
         break;
     case 'm':
         if (!strcmp(s, "kdir")) return K_mkdir;
@@ -192,6 +192,7 @@ static int lookup_keyword(const char *s)
         if (!strcmp(s, "etenv")) return K_setenv;
         if (!strcmp(s, "etprop")) return K_setprop;
         if (!strcmp(s, "etrlimit")) return K_setrlimit;
+        if (!strcmp(s, "etusercryptopolicies")) return K_setusercryptopolicies;
         if (!strcmp(s, "ocket")) return K_socket;
         if (!strcmp(s, "tart")) return K_start;
         if (!strcmp(s, "top")) return K_stop;
@@ -632,7 +633,7 @@ void queue_property_triggers(const char *name, const char *value)
 
     list_for_each(node, &action_list) {
         act = node_to_item(node, struct action, alist);
-            match = !name;
+        match = !name;
         list_for_each(node2, &act->triggers) {
             cur_trigger = node_to_item(node2, struct trigger, nlist);
             if (!strncmp(cur_trigger->name, "property:", strlen("property:"))) {
@@ -646,29 +647,28 @@ void queue_property_triggers(const char *name, const char *value)
                         match = true;
                         continue;
                     }
-                } else {
-                     const char* equals = strchr(test, '=');
-                     if (equals) {
-                         char prop_name[PROP_NAME_MAX + 1];
-                         char value[PROP_VALUE_MAX];
-                         int length = equals - test;
-                         if (length <= PROP_NAME_MAX) {
-                             int ret;
-                             memcpy(prop_name, test, length);
-                             prop_name[length] = 0;
+                }
+                const char* equals = strchr(test, '=');
+                if (equals) {
+                    char prop_name[PROP_NAME_MAX + 1];
+                    char value[PROP_VALUE_MAX];
+                    int length = equals - test;
+                    if (length <= PROP_NAME_MAX) {
+                        int ret;
+                        memcpy(prop_name, test, length);
+                        prop_name[length] = 0;
 
-                             /* does the property exist, and match the trigger value? */
-                             ret = property_get(prop_name, value);
-                             if (ret > 0 && (!strcmp(equals + 1, value) ||
-                                !strcmp(equals + 1, "*"))) {
-                                 continue;
-                             }
-                         }
-                     }
-                 }
-             }
-             match = false;
-             break;
+                        /* does the property exist, and match the trigger value? */
+                        ret = property_get(prop_name, value);
+                        if (ret > 0 && (!strcmp(equals + 1, value) ||
+                                        !strcmp(equals + 1, "*"))) {
+                            continue;
+                        }
+                    }
+                }
+            }
+            match = false;
+            break;
         }
         if (match) {
             action_add_queue_tail(act);

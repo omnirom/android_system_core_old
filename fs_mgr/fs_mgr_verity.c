@@ -47,6 +47,8 @@
 
 #define VERITY_METADATA_SIZE 32768
 #define VERITY_TABLE_RSA_KEY "/verity_key"
+#define VERITY_TABLE_HASH_IDX 8
+#define VERITY_TABLE_SALT_IDX 9
 
 #define METADATA_MAGIC 0x01564c54
 #define METADATA_TAG_MAX_LENGTH 63
@@ -139,6 +141,33 @@ static int verify_table(char *signature, char *table, int table_length)
 out:
     free(key);
     return retval;
+}
+
+static int invalidate_table(char *table, int table_length)
+{
+    int n = 0;
+    int idx = 0;
+    int cleared = 0;
+
+    while (n < table_length) {
+        if (table[n++] == ' ') {
+            ++idx;
+        }
+
+        if (idx != VERITY_TABLE_HASH_IDX && idx != VERITY_TABLE_SALT_IDX) {
+            continue;
+        }
+
+        while (n < table_length && table[n] != ' ') {
+            table[n++] = '0';
+        }
+
+        if (++cleared == 2) {
+            return 0;
+        }
+    }
+
+    return -1;
 }
 
 static int squashfs_get_target_device_size(char *blk_device, uint64_t *device_size)
@@ -859,6 +888,7 @@ out:
 int fs_mgr_update_verity_state(fs_mgr_verity_state_callback callback)
 {
     _Alignas(struct dm_ioctl) char buffer[DM_BUF_SIZE];
+    bool use_state = true;
     char fstab_filename[PROPERTY_VALUE_MAX + sizeof(FSTAB_PREFIX)];
     char *mount_point;
     char propbuf[PROPERTY_VALUE_MAX];
@@ -875,7 +905,10 @@ int fs_mgr_update_verity_state(fs_mgr_verity_state_callback callback)
     property_get("ro.boot.veritymode", propbuf, "");
 
     if (*propbuf != '\0') {
-        return 0; /* state is kept by the bootloader */
+        if (fs_mgr_load_verity_state(&mode) == -1) {
+            return -1;
+        }
+        use_state = false; /* state is kept by the bootloader */
     }
 
     fd = TEMP_FAILURE_RETRY(open("/dev/device-mapper", O_RDWR | O_CLOEXEC));
@@ -900,9 +933,11 @@ int fs_mgr_update_verity_state(fs_mgr_verity_state_callback callback)
             continue;
         }
 
-        if (get_verity_state_offset(&fstab->recs[i], &offset) < 0 ||
-            read_verity_state(fstab->recs[i].verity_loc, offset, &mode) < 0) {
-            continue;
+        if (use_state) {
+            if (get_verity_state_offset(&fstab->recs[i], &offset) < 0 ||
+                read_verity_state(fstab->recs[i].verity_loc, offset, &mode) < 0) {
+                continue;
+            }
         }
 
         mount_point = basename(fstab->recs[i].mount_point);
@@ -916,7 +951,7 @@ int fs_mgr_update_verity_state(fs_mgr_verity_state_callback callback)
 
         status = &buffer[io->data_start + sizeof(struct dm_target_spec)];
 
-        if (*status == 'C') {
+        if (use_state && *status == 'C') {
             if (write_verity_state(fstab->recs[i].verity_loc, offset,
                     VERITY_MODE_LOGGING) < 0) {
                 continue;
@@ -951,6 +986,7 @@ int fs_mgr_setup_verity(struct fstab_rec *fstab) {
     char *verity_blk_name = 0;
     char *verity_table = 0;
     char *verity_table_signature = 0;
+    int verity_table_length = 0;
     uint64_t device_size = 0;
 
     _Alignas(struct dm_ioctl) char buffer[DM_BUF_SIZE];
@@ -977,6 +1013,7 @@ int fs_mgr_setup_verity(struct fstab_rec *fstab) {
     }
 
     retval = FS_MGR_SETUP_VERITY_FAIL;
+    verity_table_length = strlen(verity_table);
 
     // get the device mapper fd
     if ((fd = open("/dev/device-mapper", O_RDWR)) < 0) {
@@ -996,19 +1033,28 @@ int fs_mgr_setup_verity(struct fstab_rec *fstab) {
         goto out;
     }
 
-    // verify the signature on the table
-    if (verify_table(verity_table_signature,
-                            verity_table,
-                            strlen(verity_table)) < 0) {
-        goto out;
-    }
-
     if (load_verity_state(fstab, &mode) < 0) {
         /* if accessing or updating the state failed, switch to the default
          * safe mode. This makes sure the device won't end up in an endless
          * restart loop, and no corrupted data will be exposed to userspace
          * without a warning. */
         mode = VERITY_MODE_EIO;
+    }
+
+    // verify the signature on the table
+    if (verify_table(verity_table_signature,
+                            verity_table,
+                            verity_table_length) < 0) {
+        if (mode == VERITY_MODE_LOGGING) {
+            // the user has been warned, allow mounting without dm-verity
+            retval = FS_MGR_SETUP_VERITY_SUCCESS;
+            goto out;
+        }
+
+        // invalidate root hash and salt to trigger device-specific recovery
+        if (invalidate_table(verity_table, verity_table_length) < 0) {
+            goto out;
+        }
     }
 
     INFO("Enabling dm-verity for %s (mode %d)\n",  mount_point, mode);
