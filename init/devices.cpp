@@ -529,10 +529,10 @@ static char **get_block_device_symlinks(struct uevent *uevent)
         return NULL;
     }
 
-    char **links = (char**) malloc(sizeof(char *) * 4);
+    char **links = (char**) malloc(sizeof(char *) * 6);
     if (!links)
         return NULL;
-    memset(links, 0, sizeof(char *) * 4);
+    memset(links, 0, sizeof(char *) * 6);
 
     INFO("found %s device %s\n", type, device);
 
@@ -547,6 +547,12 @@ static char **get_block_device_symlinks(struct uevent *uevent)
             link_num++;
         else
             links[link_num] = NULL;
+#ifdef _PLATFORM_BASE
+        if (asprintf(&links[link_num], "/dev/block/bootdevice/by-name/%s", p) > 0)
+            link_num++;
+        else
+            links[link_num] = NULL;
+#endif
         free(p);
     }
 
@@ -555,6 +561,12 @@ static char **get_block_device_symlinks(struct uevent *uevent)
             link_num++;
         else
             links[link_num] = NULL;
+#ifdef _PLATFORM_BASE
+        if (asprintf(&links[link_num], "/dev/block/bootdevice/by-num/p%d", uevent->partition_num) > 0)
+            link_num++;
+        else
+            links[link_num] = NULL;
+#endif
     }
 
     slash = strrchr(uevent->path, '/');
@@ -562,12 +574,12 @@ static char **get_block_device_symlinks(struct uevent *uevent)
         link_num++;
     else
         links[link_num] = NULL;
-
+#ifdef _PLATFORM_BASE
     if (pdev && boot_device[0] != '\0' && strstr(device, boot_device)) {
         /* Create bootdevice symlink for platform boot stroage device */
         make_link_init(link_path, "/dev/block/bootdevice");
     }
-
+#endif
     return links;
 }
 
