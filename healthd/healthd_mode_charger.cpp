@@ -404,9 +404,9 @@ static int draw_text(const char *str, int x, int y)
     return y + char_height;
 }
 
-static void android_blue(void)
+static void android_white(void)
 {
-    gr_color(0, 191, 255, 255);
+    gr_color(255, 255, 255, 255);
 }
 
 /* returns the last y-offset of where the surface ends */
@@ -433,7 +433,7 @@ static void draw_unknown(struct charger *charger)
     if (charger->surf_unknown) {
         draw_surface_centered(charger, charger->surf_unknown);
     } else {
-        android_blue();
+        android_white();
         y = draw_text("Charging!", -1, -1);
         draw_text("?\?/100", -1, y + 25);
     }
@@ -472,7 +472,7 @@ static void draw_capacity(struct charger *charger)
     x = (gr_fb_width() - str_len_px) / 2;
     // draw it below the battery image
     y = (gr_fb_height() + batt_height) / 2 + char_height * 2;
-    android_blue();
+    android_white();
     gr_text(x, y, cap_str, 0);
 }
 
