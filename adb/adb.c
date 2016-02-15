@@ -1685,6 +1685,10 @@ int handle_host_request(char *service, transport_type ttype, char* serial, int r
     return -1;
 }
 
+#if !ADB_HOST
+int recovery_mode = 0;
+#endif
+
 int main(int argc, char **argv)
 {
 #if ADB_HOST
@@ -1717,6 +1721,8 @@ int main(int argc, char **argv)
             break;
         }
     }
+
+    recovery_mode = (strcmp(adb_device_banner, "recovery") == 0);
 
     start_device_log();
     D("Handling main()\n");
