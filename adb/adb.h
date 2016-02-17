@@ -339,6 +339,8 @@ int adb_commandline(int argc, const char **argv);
 
 int connection_state(atransport *t);
 
+extern int recovery_mode;
+
 #define CS_ANY       -1
 #define CS_OFFLINE    0
 #define CS_BOOTLOADER 1
