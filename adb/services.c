@@ -393,10 +393,12 @@ static int create_subproc_thread(const char *name, const subproc_mode mode)
 }
 #endif
 
+#if !ADB_HOST
 static const char* bu_path()
 {
     return (recovery_mode ? "/sbin/bu" : "/system/bin/bu");
 }
+#endif
 
 int service_to_fd(const char *name)
 {
