@@ -1,6 +1,11 @@
 # Copyright 2011 The Android Open Source Project
 
 LOCAL_PATH:= $(call my-dir)
+
+ifeq ($(TARGET_NO_MOUNT_CHECK),true)
+common_cflags += -DCONFIG_NO_MOUNT_CHECK
+endif
+
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= fs_mgr.c fs_mgr_verity.c fs_mgr_fstab.c

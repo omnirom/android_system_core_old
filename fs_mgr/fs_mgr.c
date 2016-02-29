@@ -121,6 +121,7 @@ static void check_fs(char *blk_device, char *fs_type, char *target)
          * fix the filesystem.
          */
         errno = 0;
+#ifndef CONFIG_NO_MOUNT_CHECK
         ret = mount(blk_device, target, fs_type, tmpmnt_flags, tmpmnt_opts);
         INFO("%s(): mount(%s,%s,%s)=%d: %s\n",
              __func__, blk_device, target, fs_type, ret, strerror(errno));
@@ -138,6 +139,7 @@ static void check_fs(char *blk_device, char *fs_type, char *target)
                 sleep(1);
             }
         }
+#endif
 
         /*
          * Some system images do not have e2fsck for licensing reasons
