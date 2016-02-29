@@ -85,7 +85,7 @@ int Process::checkFileDescriptorSymLinks(int pid, const char *mountPoint, char *
 
     // compute path to process's directory of open files
     char    path[PATH_MAX];
-    sprintf(path, "/proc/%d/fd", pid);
+    snprintf(path, sizeof(path), "/proc/%d/fd", pid);
     DIR *dir = opendir(path);
     if (!dir)
         return 0;
@@ -129,7 +129,7 @@ int Process::checkFileMaps(int pid, const char *mountPoint, char *openFilename, 
     FILE *file;
     char buffer[PATH_MAX + 100];
 
-    sprintf(buffer, "/proc/%d/maps", pid);
+    snprintf(buffer, sizeof(buffer), "/proc/%d/maps", pid);
     file = fopen(buffer, "r");
     if (!file)
         return 0;
@@ -155,7 +155,7 @@ int Process::checkSymLink(int pid, const char *mountPoint, const char *name) {
     char    path[PATH_MAX];
     char    link[PATH_MAX];
 
-    sprintf(path, "/proc/%d/%s", pid, name);
+    snprintf(path, sizeof(path), "/proc/%d/%s", pid, name);
     if (readSymLink(path, link, sizeof(link)) && pathMatchesMountPoint(link, mountPoint)) 
         return 1;
     return 0;

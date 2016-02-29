@@ -47,7 +47,7 @@ int Loop::dumpState(SocketClient *c) {
         struct loop_info64 li;
         int rc;
 
-        sprintf(filename, "/dev/block/loop%d", i);
+        snprintf(filename, sizeof(filename), "/dev/block/loop%d", i);
 
         if ((fd = open(filename, O_RDWR | O_CLOEXEC)) < 0) {
             if (errno != ENOENT) {
@@ -91,7 +91,7 @@ int Loop::lookupActive(const char *id, char *buffer, size_t len) {
         struct loop_info64 li;
         int rc;
 
-        sprintf(filename, "/dev/block/loop%d", i);
+        snprintf(filename, sizeof(filename), "/dev/block/loop%d", i);
 
         if ((fd = open(filename, O_RDWR | O_CLOEXEC)) < 0) {
             if (errno != ENOENT) {
@@ -137,7 +137,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
         int rc;
         char *secontext = NULL;
 
-        sprintf(filename, "/dev/block/loop%d", i);
+        snprintf(filename, sizeof(filename), "/dev/block/loop%d", i);
 
         /*
          * The kernel starts us off with 8 loop nodes, but more

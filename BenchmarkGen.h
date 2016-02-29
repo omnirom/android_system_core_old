@@ -4035,7 +4035,7 @@ static status_t CreateFile(const char* name, int len) {
         LOG(ERROR) << "Failed to read random data";
         return -EIO;
     }
-    if ((out = TEMP_FAILURE_RETRY(open(name, O_WRONLY|O_CREAT|O_TRUNC))) < 0) {
+    if ((out = TEMP_FAILURE_RETRY(open(name, O_WRONLY|O_CREAT|O_TRUNC, 0644))) < 0) {
         PLOG(ERROR) << "Failed to open " << name;
         return -errno;
     }
