@@ -1064,6 +1064,7 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
   struct dm_target_spec *tgt;
   char *crypt_params;
   char master_key_ascii[129]; /* Large enough to hold 512 bit key and null */
+  size_t buff_offset;
   int i;
 
   io = (struct dm_ioctl *) buffer;
@@ -1089,8 +1090,11 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
 
   crypt_params = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);
   convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
-  sprintf(crypt_params, "%s %s 0 %s 0 %s", crypt_ftr->crypto_type_name,
-          master_key_ascii, real_blk_name, extra_params);
+
+  buff_offset = crypt_params - buffer;
+  snprintf(crypt_params, sizeof(buffer) - buff_offset, "%s %s 0 %s 0 %s",
+           crypt_ftr->crypto_type_name, master_key_ascii, real_blk_name,
+           extra_params);
   crypt_params += strlen(crypt_params) + 1;
   crypt_params = (char *) (((unsigned long)crypt_params + 7) & ~8); /* Align to an 8 byte boundary */
   tgt->next = crypt_params - buffer;
@@ -1883,7 +1887,8 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   } else {
     /* Try mounting the file system anyway, just in case the problem's with
      * the footer, not the key. */
-    sprintf(tmp_mount_point, "%s/tmp_mnt", mount_point);
+    snprintf(tmp_mount_point, sizeof(tmp_mount_point), "%s/tmp_mnt",
+             mount_point);
     mkdir(tmp_mount_point, 0755);
     if (fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
       SLOGE("Error temp mounting decrypted block device\n");
