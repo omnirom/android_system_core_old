@@ -584,8 +584,14 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
                 _exit(0);
             }
             if (TEMP_FAILURE_RETRY(mount(storageSource.c_str(), "/storage",
-                    NULL, MS_BIND | MS_REC | MS_SLAVE, NULL)) == -1) {
+                    NULL, MS_BIND | MS_REC, NULL)) == -1) {
                 PLOG(ERROR) << "Failed to mount " << storageSource << " for "
+                        << de->d_name;
+                _exit(1);
+            }
+            if (TEMP_FAILURE_RETRY(mount(NULL, "/storage", NULL,
+                    MS_REC | MS_SLAVE, NULL)) == -1) {
+                PLOG(ERROR) << "Failed to set MS_SLAVE to /storage for "
                         << de->d_name;
                 _exit(1);
             }
