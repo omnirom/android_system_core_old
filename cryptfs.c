@@ -3236,6 +3236,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
           if (!strcmp(value, "")) {
             /* default encryption - continue first boot sequence */
             property_set("ro.crypto.state", "encrypted");
+            property_set("ro.crypto.type", "block");
             release_wake_lock(lockid);
             if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
                 // Bring up cryptkeeper that will check the password and set it
