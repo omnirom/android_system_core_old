@@ -48,6 +48,7 @@ common_shared_libraries := \
 	liblogwrap \
 	libext4_utils \
 	libf2fs_sparseblock \
+	libcrypto_utils \
 	libcrypto \
 	libselinux \
 	libutils \
@@ -61,7 +62,6 @@ common_static_libraries := \
 	libfec_rs \
 	libsquashfs_utils \
 	libscrypt_static \
-	libmincrypt \
 	libbatteryservice
 
 vold_conlyflags := -std=c11
