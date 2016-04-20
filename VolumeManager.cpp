@@ -1007,24 +1007,6 @@ int VolumeManager::resizeAsec(const char *id, unsigned long numSectors, const ch
 
     oldNumSec = info.st_size / 512;
 
-    unsigned long numImgSectors;
-    if (sb.c_opts & ASEC_SB_C_OPTS_EXT4)
-        numImgSectors = adjustSectorNumExt4(numSectors);
-    else
-        numImgSectors = adjustSectorNumFAT(numSectors);
-    /*
-     *  add one block for the superblock
-     */
-    SLOGD("Resizing from %lu sectors to %lu sectors", oldNumSec, numImgSectors + 1);
-    if (oldNumSec == numImgSectors + 1) {
-        SLOGW("Size unchanged; ignoring resize request");
-        return 0;
-    } else if (oldNumSec > numImgSectors + 1) {
-        SLOGE("Only growing is currently supported.");
-        close(fd);
-        return -1;
-    }
-
     /*
      * Try to read superblock.
      */
@@ -1050,9 +1032,25 @@ int VolumeManager::resizeAsec(const char *id, unsigned long numSectors, const ch
         return -1;
     }
 
+    unsigned long numImgSectors;
     if (!(sb.c_opts & ASEC_SB_C_OPTS_EXT4)) {
         SLOGE("Only ext4 partitions are supported for resize");
         errno = EINVAL;
+        return -1;
+    } else {
+        numImgSectors = adjustSectorNumExt4(numSectors);
+    }
+
+    /*
+     *  add one block for the superblock
+     */
+    SLOGD("Resizing from %lu sectors to %lu sectors", oldNumSec, numImgSectors + 1);
+    if (oldNumSec == numImgSectors + 1) {
+        SLOGW("Size unchanged; ignoring resize request");
+        return 0;
+    } else if (oldNumSec > numImgSectors + 1) {
+        SLOGE("Only growing is currently supported.");
+        close(fd);
         return -1;
     }
 
