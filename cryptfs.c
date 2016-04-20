@@ -1452,7 +1452,7 @@ static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
   /* Copy intermediate key if needed by params */
   if (intermediate_key && intermediate_key_size) {
     *intermediate_key = (unsigned char*) malloc(KEY_LEN_BYTES);
-    if (intermediate_key) {
+    if (*intermediate_key) {
       memcpy(*intermediate_key, ikey, KEY_LEN_BYTES);
       *intermediate_key_size = KEY_LEN_BYTES;
     }
