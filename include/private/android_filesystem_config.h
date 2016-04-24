@@ -99,7 +99,9 @@
 #define AID_NET_BT_STACK  3008  /* bluetooth: access config files */
 #define AID_QCOM_DIAG     3009  /* can read/write /dev/diag */
 
+#ifdef BOARD_HAS_SENSORS_GROUP
 #define AID_SENSORS       3011 /* access to /dev/socket/sensor_ctl_socket & QCCI/QCSI */
+#endif
 
 #define AID_EVERYBODY     9997  /* shared between all apps in the same profile */
 
