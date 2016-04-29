@@ -53,7 +53,7 @@ class IKeymasterDevice {
 
 template <typename T> class KeymasterDevice : public IKeymasterDevice {
   public:
-    KeymasterDevice(T* d) : mDevice{d} {}
+    explicit KeymasterDevice(T* d) : mDevice{d} {}
     keymaster_error_t generate_key(const keymaster_key_param_set_t* params,
                                    keymaster_key_blob_t* key_blob) const override final {
         return mDevice->generate_key(mDevice, params, key_blob, nullptr);
@@ -86,7 +86,7 @@ template <typename T> class KeymasterDevice : public IKeymasterDevice {
 
 class Keymaster1Device : public KeymasterDevice<keymaster1_device_t> {
   public:
-    Keymaster1Device(keymaster1_device_t* d) : KeymasterDevice<keymaster1_device_t>{d} {}
+    explicit Keymaster1Device(keymaster1_device_t* d) : KeymasterDevice<keymaster1_device_t>{d} {}
     ~Keymaster1Device() override final { keymaster1_close(mDevice); }
     keymaster_error_t finish(keymaster_operation_handle_t operation_handle,
                              const keymaster_key_param_set_t* in_params,
@@ -99,7 +99,7 @@ class Keymaster1Device : public KeymasterDevice<keymaster1_device_t> {
 
 class Keymaster2Device : public KeymasterDevice<keymaster2_device_t> {
   public:
-    Keymaster2Device(keymaster2_device_t* d) : KeymasterDevice<keymaster2_device_t>{d} {}
+    explicit Keymaster2Device(keymaster2_device_t* d) : KeymasterDevice<keymaster2_device_t>{d} {}
     ~Keymaster2Device() override final { keymaster2_close(mDevice); }
     keymaster_error_t finish(keymaster_operation_handle_t operation_handle,
                              const keymaster_key_param_set_t* in_params,
