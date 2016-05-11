@@ -27,7 +27,7 @@
 #include <dirent.h>
 #include <sys/wait.h>
 
-#define CONSTRAIN(amount, low, high) (amount < low ? low : (amount > high ? high : amount))
+#define CONSTRAIN(amount, low, high) ((amount) < (low) ? (low) : ((amount) > (high) ? (high) : (amount)))
 
 using android::base::StringPrintf;
 
