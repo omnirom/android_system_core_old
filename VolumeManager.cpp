@@ -63,8 +63,8 @@
 
 #define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
 
-#define ROUND_UP_POWER_OF_2(number, po2) (((!!(number & ((1U << po2) - 1))) << po2)\
-                                         + (number & (~((1U << po2) - 1))))
+#define ROUND_UP_POWER_OF_2(number, po2) (((!!((number) & ((1U << (po2)) - 1))) << (po2))\
+                                         + ((number) & (~((1U << (po2)) - 1))))
 
 using android::base::StringPrintf;
 
