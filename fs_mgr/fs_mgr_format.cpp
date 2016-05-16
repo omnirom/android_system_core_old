@@ -90,7 +90,7 @@ static int format_f2fs(char *fs_blkdev)
     int pid;
     int rc = 0;
 
-    args[0] = (char *)"/sbin/mkfs.f2fs";
+    args[0] = (char *)"/system/bin/make_f2fs";
     args[1] = fs_blkdev;
     args[2] = (char *)0;
 
@@ -100,7 +100,7 @@ static int format_f2fs(char *fs_blkdev)
     }
     if (!pid) {
         /* This doesn't return */
-        execv("/sbin/mkfs.f2fs", args);
+        execv("/system/bin/make_f2fs", args);
         exit(1);
     }
     for(;;) {
