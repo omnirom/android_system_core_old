@@ -68,7 +68,7 @@ static int format_f2fs(char *fs_blkdev, long long fs_length)
     int rc = 0;
     char buff[65];
 
-    args[0] = (char *)"/sbin/mkfs.f2fs";
+    args[0] = (char *)"/system/bin/mkfs.f2fs";
 
     if (fs_length >= 0) {
         snprintf(buff, sizeof(buff), "%lld", fs_length / 512);
@@ -89,7 +89,7 @@ static int format_f2fs(char *fs_blkdev, long long fs_length)
     }
     if (!pid) {
         /* This doesn't return */
-        execv("/sbin/mkfs.f2fs", args);
+        execv("/system/bin/mkfs.f2fs", args);
         exit(1);
     }
     for(;;) {
