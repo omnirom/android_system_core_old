@@ -45,25 +45,31 @@ class KeymasterOperation {
     ~KeymasterOperation();
     // Is this instance valid? This is false if creation fails, and becomes
     // false on finish or if an update fails.
-    explicit operator bool() { return mDevice != nullptr; }
+    explicit operator bool() { return mError == KM_ERROR_OK; }
+    keymaster_error_t error() { return mError; }
     // Call "update" repeatedly until all of the input is consumed, and
     // concatenate the output. Return true on success.
     bool updateCompletely(const std::string& input, std::string* output);
-    // Finish; pass nullptr for the "output" param.
-    bool finish();
-    // Finish and write the output to this string.
-    bool finishWithOutput(std::string* output);
+    // Finish and write the output to this string, unless pointer is null.
+    bool finish(std::string* output);
     // Move constructor
     KeymasterOperation(KeymasterOperation&& rhs) {
-        mOpHandle = std::move(rhs.mOpHandle);
         mDevice = std::move(rhs.mDevice);
+        mOpHandle = std::move(rhs.mOpHandle);
+        mError = std::move(rhs.mError);
     }
+    // Construct an object in an error state for error returns
+    KeymasterOperation() : KeymasterOperation(KM_ERROR_UNKNOWN_ERROR) {}
 
   private:
     KeymasterOperation(std::shared_ptr<IKeymasterDevice> d, keymaster_operation_handle_t h)
-        : mDevice{d}, mOpHandle{h} {}
+        : mDevice{d}, mOpHandle{h}, mError {KM_ERROR_OK} {}
+    KeymasterOperation(keymaster_error_t error)
+        : mDevice{nullptr}, mOpHandle{static_cast<keymaster_operation_handle_t>(0)},
+          mError {error} {}
     std::shared_ptr<IKeymasterDevice> mDevice;
     keymaster_operation_handle_t mOpHandle;
+    keymaster_error_t mError;
     DISALLOW_COPY_AND_ASSIGN(KeymasterOperation);
     friend class Keymaster;
 };
@@ -79,12 +85,12 @@ class Keymaster {
     bool generateKey(const AuthorizationSet& inParams, std::string* key);
     // If the keymaster supports it, permanently delete a key.
     bool deleteKey(const std::string& key);
-    // Begin a new cryptographic operation, collecting output parameters.
+    // Replace stored key blob in response to KM_ERROR_KEY_REQUIRES_UPGRADE.
+    bool upgradeKey(const std::string& oldKey, const AuthorizationSet& inParams,
+                    std::string* newKey);
+    // Begin a new cryptographic operation, collecting output parameters if pointer is non-null
     KeymasterOperation begin(keymaster_purpose_t purpose, const std::string& key,
                              const AuthorizationSet& inParams, AuthorizationSet* outParams);
-    // Begin a new cryptographic operation; don't collect output parameters.
-    KeymasterOperation begin(keymaster_purpose_t purpose, const std::string& key,
-                             const AuthorizationSet& inParams);
 
   private:
     std::shared_ptr<IKeymasterDevice> mDevice;

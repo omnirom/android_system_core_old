@@ -38,8 +38,6 @@ common_c_includes := \
 	external/scrypt/lib/crypto \
 	frameworks/native/include \
 	system/security/keystore \
-	hardware/libhardware/include/hardware \
-	system/security/softkeymaster/include/keymaster
 
 common_shared_libraries := \
 	libsysutils \
@@ -58,6 +56,7 @@ common_shared_libraries := \
 	libhardware \
 	libsoftkeymaster \
 	libbase \
+	libsoftkeymasterdevice \
 	libkeymaster_messages \
 
 common_static_libraries := \

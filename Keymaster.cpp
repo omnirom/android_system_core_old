@@ -20,6 +20,7 @@
 #include <hardware/hardware.h>
 #include <hardware/keymaster1.h>
 #include <hardware/keymaster2.h>
+#include <keymaster/keymaster_configuration.h>
 
 namespace android {
 namespace vold {
@@ -31,6 +32,9 @@ class IKeymasterDevice {
     virtual keymaster_error_t generate_key(const keymaster_key_param_set_t* params,
                                            keymaster_key_blob_t* key_blob) const = 0;
     virtual keymaster_error_t delete_key(const keymaster_key_blob_t* key) const = 0;
+    virtual keymaster_error_t upgrade_key(const keymaster_key_blob_t* key_to_upgrade,
+                                         const keymaster_key_param_set_t* upgrade_params,
+                                         keymaster_key_blob_t* upgraded_key) const = 0;
     virtual keymaster_error_t begin(keymaster_purpose_t purpose, const keymaster_key_blob_t* key,
                                     const keymaster_key_param_set_t* in_params,
                                     keymaster_key_param_set_t* out_params,
@@ -88,6 +92,11 @@ class Keymaster1Device : public KeymasterDevice<keymaster1_device_t> {
   public:
     explicit Keymaster1Device(keymaster1_device_t* d) : KeymasterDevice<keymaster1_device_t>{d} {}
     ~Keymaster1Device() override final { keymaster1_close(mDevice); }
+    keymaster_error_t upgrade_key(const keymaster_key_blob_t* key_to_upgrade,
+                                  const keymaster_key_param_set_t* upgrade_params,
+                                  keymaster_key_blob_t* upgraded_key) const override final {
+        return KM_ERROR_UNIMPLEMENTED;
+    }
     keymaster_error_t finish(keymaster_operation_handle_t operation_handle,
                              const keymaster_key_param_set_t* in_params,
                              const keymaster_blob_t* signature,
@@ -101,6 +110,11 @@ class Keymaster2Device : public KeymasterDevice<keymaster2_device_t> {
   public:
     explicit Keymaster2Device(keymaster2_device_t* d) : KeymasterDevice<keymaster2_device_t>{d} {}
     ~Keymaster2Device() override final { keymaster2_close(mDevice); }
+    keymaster_error_t upgrade_key(const keymaster_key_blob_t* key_to_upgrade,
+                                  const keymaster_key_param_set_t* upgrade_params,
+                                  keymaster_key_blob_t* upgraded_key) const override final {
+        return mDevice->upgrade_key(mDevice, key_to_upgrade, upgrade_params, upgraded_key);
+    }
     keymaster_error_t finish(keymaster_operation_handle_t operation_handle,
                              const keymaster_key_param_set_t* in_params,
                              const keymaster_blob_t* signature,
@@ -142,26 +156,19 @@ bool KeymasterOperation::updateCompletely(const std::string& input, std::string*
     return true;
 }
 
-bool KeymasterOperation::finish() {
-    auto error = mDevice->finish(mOpHandle, nullptr, nullptr, nullptr, nullptr);
-    mDevice = nullptr;
-    if (error != KM_ERROR_OK) {
-        LOG(ERROR) << "finish failed, code " << error;
-        return false;
-    }
-    return true;
-}
-
-bool KeymasterOperation::finishWithOutput(std::string* output) {
+bool KeymasterOperation::finish(std::string* output) {
     keymaster_blob_t outputBlob;
-    auto error = mDevice->finish(mOpHandle, nullptr, nullptr, nullptr, &outputBlob);
+    auto error = mDevice->finish(mOpHandle, nullptr, nullptr, nullptr,
+        output ? &outputBlob : nullptr);
     mDevice = nullptr;
     if (error != KM_ERROR_OK) {
         LOG(ERROR) << "finish failed, code " << error;
         return false;
     }
-    output->assign(reinterpret_cast<const char*>(outputBlob.data), outputBlob.data_length);
-    free(const_cast<uint8_t*>(outputBlob.data));
+    if (output) {
+        output->assign(reinterpret_cast<const char*>(outputBlob.data), outputBlob.data_length);
+        free(const_cast<uint8_t*>(outputBlob.data));
+    }
     return true;
 }
 
@@ -173,6 +180,7 @@ Keymaster::Keymaster() {
         LOG(ERROR) << "hw_get_module_by_class returned " << ret;
         return;
     }
+    LOG(DEBUG) << "module_api_version is " << module->module_api_version;
     if (module->module_api_version == KEYMASTER_MODULE_API_VERSION_1_0) {
         keymaster1_device_t* device;
         ret = keymaster1_open(module, &device);
@@ -186,6 +194,11 @@ Keymaster::Keymaster() {
         ret = keymaster2_open(module, &device);
         if (ret != 0) {
             LOG(ERROR) << "keymaster2_open returned " << ret;
+            return;
+        }
+        auto error = ConfigureDevice(device);
+        if (error != KM_ERROR_OK) {
+            LOG(ERROR) << "ConfigureDevice returned " << error;
             return;
         }
         mDevice = std::make_shared<Keymaster2Device>(device);
@@ -217,31 +230,37 @@ bool Keymaster::deleteKey(const std::string& key) {
     return true;
 }
 
+bool Keymaster::upgradeKey(const std::string& oldKey, const AuthorizationSet& inParams,
+                           std::string* newKey) {
+    keymaster_key_blob_t oldKeyBlob{reinterpret_cast<const uint8_t*>(oldKey.data()), oldKey.size()};
+    keymaster_key_blob_t newKeyBlob;
+    auto error = mDevice->upgrade_key(&oldKeyBlob, &inParams, &newKeyBlob);
+    if (error != KM_ERROR_OK) {
+        LOG(ERROR) << "upgrade_key failed, code " << error;
+        return false;
+    }
+    newKey->assign(reinterpret_cast<const char*>(newKeyBlob.key_material),
+                   newKeyBlob.key_material_size);
+    free(const_cast<uint8_t*>(newKeyBlob.key_material));
+    return true;
+}
+
 KeymasterOperation Keymaster::begin(keymaster_purpose_t purpose, const std::string& key,
                                     const keymaster::AuthorizationSet& inParams,
                                     keymaster::AuthorizationSet* outParams) {
     keymaster_key_blob_t keyBlob{reinterpret_cast<const uint8_t*>(key.data()), key.size()};
     keymaster_operation_handle_t mOpHandle;
     keymaster_key_param_set_t outParams_set;
-    auto error = mDevice->begin(purpose, &keyBlob, &inParams, &outParams_set, &mOpHandle);
+    auto error = mDevice->begin(purpose, &keyBlob, &inParams,
+        outParams ? &outParams_set : nullptr, &mOpHandle);
     if (error != KM_ERROR_OK) {
         LOG(ERROR) << "begin failed, code " << error;
-        return KeymasterOperation(nullptr, mOpHandle);
+        return KeymasterOperation(error);
     }
-    outParams->Clear();
-    outParams->push_back(outParams_set);
-    keymaster_free_param_set(&outParams_set);
-    return KeymasterOperation(mDevice, mOpHandle);
-}
-
-KeymasterOperation Keymaster::begin(keymaster_purpose_t purpose, const std::string& key,
-                                    const keymaster::AuthorizationSet& inParams) {
-    keymaster_key_blob_t keyBlob{reinterpret_cast<const uint8_t*>(key.data()), key.size()};
-    keymaster_operation_handle_t mOpHandle;
-    auto error = mDevice->begin(purpose, &keyBlob, &inParams, nullptr, &mOpHandle);
-    if (error != KM_ERROR_OK) {
-        LOG(ERROR) << "begin failed, code " << error;
-        return KeymasterOperation(nullptr, mOpHandle);
+    if (outParams) {
+        outParams->Clear();
+        outParams->push_back(outParams_set);
+        keymaster_free_param_set(&outParams_set);
     }
     return KeymasterOperation(mDevice, mOpHandle);
 }

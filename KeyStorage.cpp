@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <errno.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -66,6 +67,7 @@ static const char* kStretch_nopassword = "nopassword";
 static const std::string kStretchPrefix_scrypt = "scrypt ";
 static const char* kFn_encrypted_key = "encrypted_key";
 static const char* kFn_keymaster_key_blob = "keymaster_key_blob";
+static const char* kFn_keymaster_key_blob_upgraded = "keymaster_key_blob_upgraded";
 static const char* kFn_salt = "salt";
 static const char* kFn_secdiscardable = "secdiscardable";
 static const char* kFn_stretching = "stretching";
@@ -122,8 +124,8 @@ static bool generateKeymasterKey(Keymaster& keymaster, const KeyAuthentication& 
     return keymaster.generateKey(paramBuilder.build(), key);
 }
 
-static keymaster::AuthorizationSetBuilder beginParams(const KeyAuthentication& auth,
-                                                      const std::string& appId) {
+static keymaster::AuthorizationSet beginParams(const KeyAuthentication& auth,
+                                               const std::string& appId) {
     auto paramBuilder = keymaster::AuthorizationSetBuilder()
                             .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
                             .Authorization(keymaster::TAG_MAC_LENGTH, GCM_MAC_BYTES * 8)
@@ -133,45 +135,7 @@ static keymaster::AuthorizationSetBuilder beginParams(const KeyAuthentication& a
         LOG(DEBUG) << "Supplying auth token to Keymaster";
         addStringParam(&paramBuilder, keymaster::TAG_AUTH_TOKEN, auth.token);
     }
-    return paramBuilder;
-}
-
-static bool encryptWithKeymasterKey(Keymaster& keymaster, const std::string& key,
-                                    const KeyAuthentication& auth, const std::string& appId,
-                                    const std::string& message, std::string* ciphertext) {
-    auto params = beginParams(auth, appId).build();
-    keymaster::AuthorizationSet outParams;
-    auto opHandle = keymaster.begin(KM_PURPOSE_ENCRYPT, key, params, &outParams);
-    if (!opHandle) return false;
-    keymaster_blob_t nonceBlob;
-    if (!outParams.GetTagValue(keymaster::TAG_NONCE, &nonceBlob)) {
-        LOG(ERROR) << "GCM encryption but no nonce generated";
-        return false;
-    }
-    // nonceBlob here is just a pointer into existing data, must not be freed
-    std::string nonce(reinterpret_cast<const char*>(nonceBlob.data), nonceBlob.data_length);
-    if (!checkSize("nonce", nonce.size(), GCM_NONCE_BYTES)) return false;
-    std::string body;
-    if (!opHandle.updateCompletely(message, &body)) return false;
-
-    std::string mac;
-    if (!opHandle.finishWithOutput(&mac)) return false;
-    if (!checkSize("mac", mac.size(), GCM_MAC_BYTES)) return false;
-    *ciphertext = nonce + body + mac;
-    return true;
-}
-
-static bool decryptWithKeymasterKey(Keymaster& keymaster, const std::string& key,
-                                    const KeyAuthentication& auth, const std::string& appId,
-                                    const std::string& ciphertext, std::string* message) {
-    auto nonce = ciphertext.substr(0, GCM_NONCE_BYTES);
-    auto bodyAndMac = ciphertext.substr(GCM_NONCE_BYTES);
-    auto params = addStringParam(beginParams(auth, appId), keymaster::TAG_NONCE, nonce).build();
-    auto opHandle = keymaster.begin(KM_PURPOSE_DECRYPT, key, params);
-    if (!opHandle) return false;
-    if (!opHandle.updateCompletely(bodyAndMac, message)) return false;
-    if (!opHandle.finish()) return false;
-    return true;
+    return paramBuilder.build();
 }
 
 static bool readFileToString(const std::string& filename, std::string* result) {
@@ -187,6 +151,79 @@ static bool writeStringToFile(const std::string& payload, const std::string& fil
         PLOG(ERROR) << "Failed to write to " << filename;
         return false;
     }
+    return true;
+}
+
+static KeymasterOperation begin(Keymaster& keymaster, const std::string& dir,
+                                keymaster_purpose_t purpose,
+                                const keymaster::AuthorizationSet &keyParams,
+                                const keymaster::AuthorizationSet &opParams,
+                                keymaster::AuthorizationSet* outParams) {
+    auto kmKeyPath = dir + "/" + kFn_keymaster_key_blob;
+    std::string kmKey;
+    if (!readFileToString(kmKeyPath, &kmKey)) return KeymasterOperation();
+    keymaster::AuthorizationSet inParams;
+    inParams.push_back(keyParams);
+    inParams.push_back(opParams);
+    for (;;) {
+        auto opHandle = keymaster.begin(purpose, kmKey, inParams, outParams);
+        if (opHandle) {
+            return opHandle;
+        }
+        if (opHandle.error() != KM_ERROR_KEY_REQUIRES_UPGRADE) return opHandle;
+        LOG(DEBUG) << "Upgrading key: " << dir;
+        std::string newKey;
+        if (!keymaster.upgradeKey(kmKey, keyParams, &newKey)) return KeymasterOperation();
+        auto newKeyPath = dir + "/" + kFn_keymaster_key_blob_upgraded;
+        if (!writeStringToFile(newKey, newKeyPath)) return KeymasterOperation();
+        if (rename(newKeyPath.c_str(), kmKeyPath.c_str()) != 0) {
+            PLOG(ERROR) << "Unable to move upgraded key to location: " << kmKeyPath;
+            return KeymasterOperation();
+        }
+        if (!keymaster.deleteKey(kmKey)) {
+            LOG(ERROR) << "Key deletion failed during upgrade, continuing anyway: " << dir;
+        }
+        kmKey = newKey;
+        LOG(INFO) << "Key upgraded: " << dir;
+    }
+}
+
+static bool encryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir,
+                                    const keymaster::AuthorizationSet &keyParams,
+                                    const std::string& message, std::string* ciphertext) {
+    keymaster::AuthorizationSet opParams;
+    keymaster::AuthorizationSet outParams;
+    auto opHandle = begin(keymaster, dir, KM_PURPOSE_ENCRYPT, keyParams, opParams, &outParams);
+    if (!opHandle) return false;
+    keymaster_blob_t nonceBlob;
+    if (!outParams.GetTagValue(keymaster::TAG_NONCE, &nonceBlob)) {
+        LOG(ERROR) << "GCM encryption but no nonce generated";
+        return false;
+    }
+    // nonceBlob here is just a pointer into existing data, must not be freed
+    std::string nonce(reinterpret_cast<const char*>(nonceBlob.data), nonceBlob.data_length);
+    if (!checkSize("nonce", nonce.size(), GCM_NONCE_BYTES)) return false;
+    std::string body;
+    if (!opHandle.updateCompletely(message, &body)) return false;
+
+    std::string mac;
+    if (!opHandle.finish(&mac)) return false;
+    if (!checkSize("mac", mac.size(), GCM_MAC_BYTES)) return false;
+    *ciphertext = nonce + body + mac;
+    return true;
+}
+
+static bool decryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir,
+                                    const keymaster::AuthorizationSet &keyParams,
+                                    const std::string& ciphertext, std::string* message) {
+    auto nonce = ciphertext.substr(0, GCM_NONCE_BYTES);
+    auto bodyAndMac = ciphertext.substr(GCM_NONCE_BYTES);
+    auto opParams = addStringParam(keymaster::AuthorizationSetBuilder(),
+                                   keymaster::TAG_NONCE, nonce).build();
+    auto opHandle = begin(keymaster, dir, KM_PURPOSE_DECRYPT, keyParams, opParams, nullptr);
+    if (!opHandle) return false;
+    if (!opHandle.updateCompletely(bodyAndMac, message)) return false;
+    if (!opHandle.finish(nullptr)) return false;
     return true;
 }
 
@@ -273,8 +310,9 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const std::
     std::string kmKey;
     if (!generateKeymasterKey(keymaster, auth, appId, &kmKey)) return false;
     if (!writeStringToFile(kmKey, dir + "/" + kFn_keymaster_key_blob)) return false;
+    auto keyParams = beginParams(auth, appId);
     std::string encryptedKey;
-    if (!encryptWithKeymasterKey(keymaster, kmKey, auth, appId, key, &encryptedKey)) return false;
+    if (!encryptWithKeymasterKey(keymaster, dir, keyParams, key, &encryptedKey)) return false;
     if (!writeStringToFile(encryptedKey, dir + "/" + kFn_encrypted_key)) return false;
     return true;
 }
@@ -296,13 +334,12 @@ bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, std::str
     }
     std::string appId;
     if (!generateAppId(auth, stretching, salt, secdiscardable, &appId)) return false;
-    std::string kmKey;
-    if (!readFileToString(dir + "/" + kFn_keymaster_key_blob, &kmKey)) return false;
     std::string encryptedMessage;
     if (!readFileToString(dir + "/" + kFn_encrypted_key, &encryptedMessage)) return false;
     Keymaster keymaster;
     if (!keymaster) return false;
-    return decryptWithKeymasterKey(keymaster, kmKey, auth, appId, encryptedMessage, key);
+    auto keyParams = beginParams(auth, appId);
+    return decryptWithKeymasterKey(keymaster, dir, keyParams, encryptedMessage, key);
 }
 
 static bool deleteKey(const std::string& dir) {
