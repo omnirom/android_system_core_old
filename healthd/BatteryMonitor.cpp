@@ -328,10 +328,8 @@ static BatteryMonitor::PowerSupplyType readPowerSupplyType(const String8& path) 
     }
 
     auto ret = mapSysfsString(buf.c_str(), supplyTypeMap);
-    if (!ret) {
-        KLOG_WARNING(LOG_TAG, "Unknown power supply type '%s'\n", buf.c_str());
+    if (!ret)
         *ret = BatteryMonitor::ANDROID_POWER_SUPPLY_TYPE_UNKNOWN;
-    }
 
     return static_cast<BatteryMonitor::PowerSupplyType>(*ret);
 }
@@ -449,6 +447,52 @@ void BatteryMonitor::updateValues(void) {
         mHealthInfo->chargingState = getBatteryChargingState(buf.c_str());
 
     double MaxPower = 0;
+
+    // Rescan for the available charger types
+    std::unique_ptr<DIR, decltype(&closedir)> dir(opendir(POWER_SUPPLY_SYSFS_PATH), closedir);
+    if (dir == NULL) {
+        KLOG_ERROR(LOG_TAG, "Could not open %s\n", POWER_SUPPLY_SYSFS_PATH);
+    } else {
+        struct dirent* entry;
+        String8 path;
+
+        mChargerNames.clear();
+
+        while ((entry = readdir(dir.get()))) {
+            const char* name = entry->d_name;
+
+            if (!strcmp(name, ".") || !strcmp(name, ".."))
+                continue;
+
+            // Look for "type" file in each subdirectory
+            path.clear();
+            path.appendFormat("%s/%s/type", POWER_SUPPLY_SYSFS_PATH, name);
+            switch(readPowerSupplyType(path)) {
+            case ANDROID_POWER_SUPPLY_TYPE_AC:
+            case ANDROID_POWER_SUPPLY_TYPE_USB:
+            case ANDROID_POWER_SUPPLY_TYPE_WIRELESS:
+            case ANDROID_POWER_SUPPLY_TYPE_DOCK:
+                path.clear();
+                path.appendFormat("%s/%s/online", POWER_SUPPLY_SYSFS_PATH, name);
+                if (access(path.string(), R_OK) == 0)
+                    mChargerNames.add(String8(name));
+                break;
+            default:
+                break;
+            }
+
+            // Look for "is_dock" file
+            path.clear();
+            path.appendFormat("%s/%s/is_dock", POWER_SUPPLY_SYSFS_PATH, name);
+            if (access(path.string(), R_OK) == 0) {
+                path.clear();
+                path.appendFormat("%s/%s/online", POWER_SUPPLY_SYSFS_PATH, name);
+                if (access(path.string(), R_OK) == 0)
+                    mChargerNames.add(String8(name));
+
+            }
+        }
+    }
 
     for (size_t i = 0; i < mChargerNames.size(); i++) {
         String8 path;
