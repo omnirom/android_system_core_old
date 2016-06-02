@@ -39,11 +39,21 @@ class KeyAuthentication {
 
 extern const KeyAuthentication kEmptyAuthentication;
 
+// Checks if path "path" exists.
+bool pathExists(const std::string& path);
+
 // Create a directory at the named path, and store "key" in it,
 // in such a way that it can only be retrieved via Keymaster and
 // can be securely deleted.
 // It's safe to move/rename the directory after creation.
 bool storeKey(const std::string& dir, const KeyAuthentication& auth, const std::string& key);
+
+// Create a directory at the named path, and store "key" in it as storeKey
+// This version creates the key in "tmp_path" then atomically renames "tmp_path"
+// to "key_path" thereby ensuring that the key is either stored entirely or
+// not at all.
+bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path,
+                        const KeyAuthentication& auth, const std::string& key);
 
 // Retrieve the key from the named directory.
 bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, std::string* key);

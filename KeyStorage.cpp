@@ -400,6 +400,10 @@ static bool decryptWithoutKeymaster(const std::string& preKey,
     return true;
 }
 
+bool pathExists(const std::string& path) {
+    return access(path.c_str(), F_OK) == 0;
+}
+
 bool storeKey(const std::string& dir, const KeyAuthentication& auth, const std::string& key) {
     if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), 0700)) == -1) {
         PLOG(ERROR) << "key mkdir " << dir;
@@ -434,6 +438,25 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const std::
         if (!encryptWithoutKeymaster(appId, key, &encryptedKey)) return false;
     }
     if (!writeStringToFile(encryptedKey, dir + "/" + kFn_encrypted_key)) return false;
+    return true;
+}
+
+bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path,
+                        const KeyAuthentication& auth, const std::string& key) {
+    if (pathExists(key_path)) {
+        LOG(ERROR) << "Already exists, cannot create key at: " << key_path;
+        return false;
+    }
+    if (pathExists(tmp_path)) {
+        LOG(DEBUG) << "Already exists, destroying: " << tmp_path;
+        destroyKey(tmp_path);  // May be partially created so ignore errors
+    }
+    if (!storeKey(tmp_path, auth, key)) return false;
+    if (rename(tmp_path.c_str(), key_path.c_str()) != 0) {
+        PLOG(ERROR) << "Unable to move new key to location: " << key_path;
+        return false;
+    }
+    LOG(DEBUG) << "Created key: " << key_path;
     return true;
 }
 

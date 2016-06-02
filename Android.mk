@@ -29,12 +29,15 @@ common_src_files := \
 	TrimTask.cpp \
 	Keymaster.cpp \
 	KeyStorage.cpp \
+	KeyUtil.cpp \
 	ScryptParameters.cpp \
 	secontext.cpp \
+	EncryptInplace.cpp \
 
 common_c_includes := \
 	system/extras/f2fs_utils \
 	external/scrypt/lib/crypto \
+	external/f2fs-tools/include \
 	frameworks/native/include \
 	system/security/keystore \
 

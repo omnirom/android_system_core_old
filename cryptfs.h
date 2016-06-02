@@ -237,7 +237,6 @@ extern "C" {
   int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
           const unsigned char* key, int keysize, char* out_crypto_blkdev);
   int cryptfs_revert_ext_volume(const char* label);
-  int cryptfs_enable_file();
   int cryptfs_getfield(const char *fieldname, char *value, int len);
   int cryptfs_setfield(const char *fieldname, const char *value);
   int cryptfs_mount_default_encrypted(void);

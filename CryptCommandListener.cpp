@@ -260,7 +260,7 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
     } else if (subcommand == "enablefilecrypto") {
         if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         dumpArgs(argc, argv, -1);
-        rc = cryptfs_enable_file();
+        rc = e4crypt_initialize_global_de();
     } else if (subcommand == "changepw") {
         const char* syntax = "Usage: cryptfs changepw "
                              "default|password|pin|pattern [newpasswd]";
