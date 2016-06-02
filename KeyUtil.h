@@ -36,11 +36,14 @@ struct ext4_encryption_key {
     uint32_t size;
 };
 
+std::string keyname(const std::string& raw_ref);
 bool randomKey(std::string* key);
 bool installKey(const std::string& key, std::string* raw_ref);
 bool evictKey(const std::string& raw_ref);
 bool retrieveAndInstallKey(bool create_if_absent, const std::string& key_path,
                            const std::string& tmp_path, std::string* key_ref);
+bool retrieveKey(bool create_if_absent, const std::string& key_path,
+                 const std::string& tmp_path, std::string* key);
 
 }  // namespace vold
 }  // namespace android

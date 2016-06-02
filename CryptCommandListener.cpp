@@ -50,6 +50,7 @@
 #include "ResponseCode.h"
 #include "cryptfs.h"
 #include "Ext4Crypt.h"
+#include "MetadataCrypt.h"
 #include "Utils.h"
 
 #define DUMP_ARGS 0
@@ -201,6 +202,15 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         dumpArgs(argc, argv, -1);
         rc = cryptfs_crypto_complete();
     } else if (subcommand == "enablecrypto") {
+        if (e4crypt_is_native()) {
+            if (argc != 5 || strcmp(argv[2], "inplace") || strcmp(argv[3], "default")
+                    || strcmp(argv[4], "noui")) {
+                cli->sendMsg(ResponseCode::CommandSyntaxError,
+                        "Usage with ext4crypt: cryptfs enablecrypto inplace default noui", false);
+                return 0;
+            }
+            return sendGenericOkFailOnBool(cli, e4crypt_enable_crypto());
+        }
         const char* syntax = "Usage: cryptfs enablecrypto <wipe|inplace> "
                              "default|password|pin|pattern [passwd] [noui]";
 
@@ -318,6 +328,9 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         SLOGD("cryptfs mountdefaultencrypted");
         dumpArgs(argc, argv, -1);
 
+        if (e4crypt_is_native()) {
+            return sendGenericOkFailOnBool(cli, e4crypt_mount_metadata_encrypted());
+        }
         // Spawn as thread so init can issue commands back to vold without
         // causing deadlock, usually as a result of prep_data_fs.
         std::thread(&cryptfs_mount_default_encrypted).detach();

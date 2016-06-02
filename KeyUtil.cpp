@@ -74,7 +74,7 @@ static bool fillKey(const std::string& key, ext4_encryption_key* ext4_key) {
     return true;
 }
 
-static std::string keyname(const std::string& raw_ref) {
+std::string keyname(const std::string& raw_ref) {
     std::ostringstream o;
     o << "ext4:";
     for (auto i : raw_ref) {
@@ -159,6 +159,24 @@ bool retrieveAndInstallKey(bool create_if_absent, const std::string& key_path,
     if (!installKey(key, key_ref)) {
         LOG(ERROR) << "Failed to install key in " << key_path;
         return false;
+    }
+    return true;
+}
+
+bool retrieveKey(bool create_if_absent, const std::string& key_path,
+                 const std::string& tmp_path, std::string* key) {
+    if (pathExists(key_path)) {
+        LOG(DEBUG) << "Key exists, using: " << key_path;
+        if (!retrieveKey(key_path, kEmptyAuthentication, key)) return false;
+    } else {
+        if (!create_if_absent) {
+           LOG(ERROR) << "No key found in " << key_path;
+           return false;
+        }
+        LOG(INFO) << "Creating new key in " << key_path;
+        if (!randomKey(key)) return false;
+        if (!storeKeyAtomically(key_path, tmp_path,
+                kEmptyAuthentication, *key)) return false;
     }
     return true;
 }

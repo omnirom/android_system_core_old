@@ -33,6 +33,7 @@ common_src_files := \
 	ScryptParameters.cpp \
 	secontext.cpp \
 	EncryptInplace.cpp \
+	MetadataCrypt.cpp \
 
 common_c_includes := \
 	system/extras/f2fs_utils \
