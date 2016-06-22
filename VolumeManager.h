@@ -217,7 +217,7 @@ private:
 
 extern "C" {
 #endif /* __cplusplus */
-#define UNMOUNT_NOT_MOUNTED_ERR -2
+#define UNMOUNT_NOT_MOUNTED_ERR (-2)
     int vold_unmountAll(void);
 #ifdef __cplusplus
 }
