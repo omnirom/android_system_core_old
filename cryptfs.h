@@ -178,32 +178,32 @@ struct crypt_persist_data {
 /* Return values for cryptfs_crypto_complete */
 #define CRYPTO_COMPLETE_NOT_ENCRYPTED  1
 #define CRYPTO_COMPLETE_ENCRYPTED      0
-#define CRYPTO_COMPLETE_BAD_METADATA  -1
-#define CRYPTO_COMPLETE_PARTIAL       -2
-#define CRYPTO_COMPLETE_INCONSISTENT  -3
-#define CRYPTO_COMPLETE_CORRUPT       -4
+#define CRYPTO_COMPLETE_BAD_METADATA  (-1)
+#define CRYPTO_COMPLETE_PARTIAL       (-2)
+#define CRYPTO_COMPLETE_INCONSISTENT  (-3)
+#define CRYPTO_COMPLETE_CORRUPT       (-4)
 
 /* Return values for cryptfs_enable_inplace*() */
 #define ENABLE_INPLACE_OK 0
-#define ENABLE_INPLACE_ERR_OTHER -1
-#define ENABLE_INPLACE_ERR_DEV -2  /* crypto_blkdev issue */
+#define ENABLE_INPLACE_ERR_OTHER (-1)
+#define ENABLE_INPLACE_ERR_DEV (-2)  /* crypto_blkdev issue */
 
 /* Return values for cryptfs_getfield */
 #define CRYPTO_GETFIELD_OK                   0
-#define CRYPTO_GETFIELD_ERROR_NO_FIELD      -1
-#define CRYPTO_GETFIELD_ERROR_OTHER         -2
-#define CRYPTO_GETFIELD_ERROR_BUF_TOO_SMALL -3
+#define CRYPTO_GETFIELD_ERROR_NO_FIELD      (-1)
+#define CRYPTO_GETFIELD_ERROR_OTHER         (-2)
+#define CRYPTO_GETFIELD_ERROR_BUF_TOO_SMALL (-3)
 
 /* Return values for cryptfs_setfield */
 #define CRYPTO_SETFIELD_OK                    0
-#define CRYPTO_SETFIELD_ERROR_OTHER          -1
-#define CRYPTO_SETFIELD_ERROR_FIELD_TOO_LONG -2
-#define CRYPTO_SETFIELD_ERROR_VALUE_TOO_LONG -3
+#define CRYPTO_SETFIELD_ERROR_OTHER          (-1)
+#define CRYPTO_SETFIELD_ERROR_FIELD_TOO_LONG (-2)
+#define CRYPTO_SETFIELD_ERROR_VALUE_TOO_LONG (-3)
 
 /* Return values for persist_del_key */
 #define PERSIST_DEL_KEY_OK                 0
-#define PERSIST_DEL_KEY_ERROR_OTHER       -1
-#define PERSIST_DEL_KEY_ERROR_NO_FIELD    -2
+#define PERSIST_DEL_KEY_ERROR_OTHER       (-1)
+#define PERSIST_DEL_KEY_ERROR_NO_FIELD    (-2)
 
 #ifdef __cplusplus
 extern "C" {
