@@ -773,10 +773,92 @@ static int do_verity_update_state(const std::vector<std::string>& args) {
     return fs_mgr_update_verity_state(verity_update_property);
 }
 
+static const char * get_prefix(const std::vector<std::string>& args)
+{
+    uint32_t arglen = args.size();
+    const char *prefix = NULL;
+    for (uint32_t i = 0; i < arglen - 1; i++) {
+        if (args[i].compare("-p") == 0) {
+            prefix = args[++i].c_str();
+            break;
+        }
+    }
+    return prefix;
+
+}
+static int sanitize_path(const char *path, const char *prefix)
+{
+    struct stat st;
+    char buf[PATH_MAX] = {0};
+    if (!path || !prefix) {
+        goto error;
+    }
+    //Confirm the path exists
+    if (lstat(path, &st) < 0) {
+        ERROR("sanitize_path: Failed to locate path %s: %s\n",
+                path,
+                strerror(errno));
+        goto error;
+    }
+    //If this is a symlink check that the prefix matches
+    if (S_ISLNK(st.st_mode)){
+        if (readlink(path, buf, PATH_MAX - 1) < 0) {
+            ERROR("sanitize_path: Failed to resolve link for %s: %s\n",
+                    path,
+                    strerror(errno));
+            goto error;
+        }
+        if (strncmp(buf, prefix, strlen(prefix))) {
+            ERROR("sanitize_path: Match error: Path:%s Resolved:%s Prefix%s\n",
+                    path,
+                    buf,
+                    prefix);
+            goto error;
+        }
+    }
+    return 0;
+error:
+    return -1;
+}
+
 static int do_write(const std::vector<std::string>& args) {
-    const char* path = args[1].c_str();
-    const char* value = args[2].c_str();
+    const char* path = NULL;
+    const char* value = NULL;
+    const char* prefix = NULL;
+    uint32_t arglen = args.size();
+
+    prefix = get_prefix(args);
+    if (prefix && (arglen != 5)) {
+        ERROR("do_write: Incorrect number of args\n");
+        goto error;
+    }
+    for (uint32_t i = 1; i < arglen - 1; i++) {
+        if (args[i].compare("-p") != 0) {
+            path = args[i++].c_str();
+            value = args[i].c_str();
+            break;
+        } else {
+            //Value at current index is -p. The next index would
+            //be the prefix.Skip beyond that.
+            i+=2;
+        }
+    }
+    if (!path || !value) {
+        ERROR("do_write: Invalid path/value\n");
+        goto error;
+    }
+    if (prefix) {
+        if (sanitize_path(path, prefix) != 0) {
+            ERROR("do_write: Faield to sanitize path: %s prefix: %s\n",
+                            path,
+                            prefix);
+            goto error;
+        }
+        return write_file_follow(path, value);
+    }
     return write_file(path, value);
+error:
+    return -EINVAL;
 }
 
 static int do_copy(const std::vector<std::string>& args) {
@@ -838,18 +920,48 @@ out:
 }
 
 static int do_chown(const std::vector<std::string>& args) {
+    const char *prefix = get_prefix(args);
+    uint32_t num_prefix_args = (!prefix) ? 0:2;
     /* GID is optional. */
-    if (args.size() == 3) {
+    if (args.size() == 3 + num_prefix_args) {
+        if (prefix) {
+            if ((sanitize_path(args[2].c_str(), prefix) != 0)) {
+                ERROR("do_chown: failed for %s..prefix(%s) match error\n",
+                        args[2].c_str(),
+                        prefix);
+                goto error;
+            }
+            //Following of symlink allowed
+            if (chown(args[2].c_str(), decode_uid(args[1].c_str()), -1) == -1)
+                return -errno;
+            return 0;
+        }
+        //Followng of symlinks not allowed
         if (lchown(args[2].c_str(), decode_uid(args[1].c_str()), -1) == -1)
             return -errno;
-    } else if (args.size() == 4) {
+    } else if (args.size() == 4 + num_prefix_args) {
+        if (prefix) {
+            if ((sanitize_path(args[3].c_str(), prefix) != 0)) {
+                ERROR("do_chown: sanitize_path failed for path: %s prefix:%s\n",
+                        args[3].c_str(),
+                        prefix);
+                goto error;
+            }
+            //Following of symlink allowed
+            if (chown(args[3].c_str(), decode_uid(args[1].c_str()),
+                        decode_uid(args[2].c_str())) == -1)
+                return -errno;
+            return 0;
+        }
         if (lchown(args[3].c_str(), decode_uid(args[1].c_str()),
-                   decode_uid(args[2].c_str())) == -1)
+                    decode_uid(args[2].c_str())) == -1)
             return -errno;
     } else {
         return -1;
     }
     return 0;
+error:
+    return -1;
 }
 
 static mode_t get_mode(const char *s) {
@@ -866,8 +978,19 @@ static mode_t get_mode(const char *s) {
 }
 
 static int do_chmod(const std::vector<std::string>& args) {
+    const char *prefix = get_prefix(args);
+    int flags = AT_SYMLINK_NOFOLLOW;
+    if (prefix) {
+        if (sanitize_path(args[2].c_str(), prefix) != 0) {
+            ERROR("do_chmod: failed for %s..prefix(%s) match err\n",
+                    args[2].c_str(),
+                    prefix);
+            return -1;
+        }
+        flags = 0;
+    }
     mode_t mode = get_mode(args[1].c_str());
-    if (fchmodat(AT_FDCWD, args[2].c_str(), mode, AT_SYMLINK_NOFOLLOW) < 0) {
+    if (fchmodat(AT_FDCWD, args[2].c_str(), mode, flags) < 0) {
         return -errno;
     }
     return 0;
@@ -954,8 +1077,8 @@ BuiltinFunctionMap::Map& BuiltinFunctionMap::map() const {
     constexpr std::size_t kMax = std::numeric_limits<std::size_t>::max();
     static const Map builtin_functions = {
         {"bootchart_init",          {0,     0,    do_bootchart_init}},
-        {"chmod",                   {2,     2,    do_chmod}},
-        {"chown",                   {2,     3,    do_chown}},
+        {"chmod",                   {2,     4,    do_chmod}},
+        {"chown",                   {2,     5,    do_chown}},
         {"class_reset",             {1,     1,    do_class_reset}},
         {"class_start",             {1,     1,    do_class_start}},
         {"class_stop",              {1,     1,    do_class_stop}},
@@ -992,7 +1115,7 @@ BuiltinFunctionMap::Map& BuiltinFunctionMap::map() const {
         {"verity_load_state",       {0,     0,    do_verity_load_state}},
         {"verity_update_state",     {0,     0,    do_verity_update_state}},
         {"wait",                    {1,     2,    do_wait}},
-        {"write",                   {2,     2,    do_write}},
+        {"write",                   {2,     4,    do_write}},
     };
     return builtin_functions;
 }

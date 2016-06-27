@@ -212,6 +212,21 @@ int write_file(const char* path, const char* content) {
     return result;
 }
 
+int write_file_follow(const char* path, const char* content) {
+    int fd = TEMP_FAILURE_RETRY(open(path, O_WRONLY|O_CREAT|O_CLOEXEC, 0600));
+    if (fd == -1) {
+        NOTICE("write_file: Unable to open '%s': %s\n", path, strerror(errno));
+        return -1;
+    }
+    int result = android::base::WriteStringToFd(content, fd) ? 0 : -1;
+    if (result == -1) {
+        NOTICE("write_file: Unable to write to '%s': %s\n", path, strerror(errno));
+    }
+    close(fd);
+    return result;
+}
+
+
 #define MAX_MTD_PARTITIONS 16
 
 static struct {
