@@ -647,8 +647,92 @@ static int do_verity_update_state(const std::vector<std::string>& args) {
     return fs_mgr_update_verity_state(verity_update_property) ? 0 : 1;
 }
 
+static const char * get_prefix(const std::vector<std::string>& args)
+{
+    uint32_t arglen = args.size();
+    const char *prefix = NULL;
+    for (uint32_t i = 0; i < arglen - 1; i++) {
+        if (args[i].compare("-p") == 0) {
+            prefix = args[++i].c_str();
+            break;
+        }
+    }
+    return prefix;
+
+}
+static int sanitize_path(const char *path, const char *prefix)
+{
+    struct stat st;
+    char buf[PATH_MAX] = {0};
+    if (!path || !prefix) {
+        goto error;
+    }
+    //Confirm the path exists
+    if (lstat(path, &st) < 0) {
+        LOG(ERROR) <<"sanitize_path: Failed to locate path "
+		<< path << ": " << strerror(errno) << "\n";
+        goto error;
+    }
+    //If this is a symlink check that the prefix matches
+    if (S_ISLNK(st.st_mode)){
+        if (readlink(path, buf, PATH_MAX - 1) < 0) {
+            LOG(ERROR) << "sanitize_path: Failed to resolve link for " <<
+		    path << ": " << strerror(errno) <<
+		    "\n";
+            goto error;
+        }
+        if (strncmp(buf, prefix, strlen(prefix))) {
+            LOG(ERROR) << "sanitize_path: Match error: Path: "
+		    << path << "Resolved: " <<
+		    buf <<
+		    " Prefix: "<<
+		    prefix << "\n";
+            goto error;
+        }
+    }
+    return 0;
+error:
+    return -1;
+}
+
 static int do_write(const std::vector<std::string>& args) {
-    return write_file(args[1], args[2]) ? 0 : 1;
+    const char* path = NULL;
+    const char* value = NULL;
+    const char* prefix = NULL;
+    uint32_t arglen = args.size();
+
+    prefix = get_prefix(args);
+    if (prefix && (arglen != 5)) {
+        LOG(ERROR) << "do_write: Incorrect number of args\n";
+        goto error;
+    }
+    for (uint32_t i = 1; i < arglen - 1; i++) {
+        if (args[i].compare("-p") != 0) {
+            path = args[i++].c_str();
+            value = args[i].c_str();
+            break;
+        } else {
+            //Value at current index is -p. The next index would
+            //be the prefix.Skip it.
+            i++;
+        }
+    }
+    if (!path || !value) {
+        LOG(ERROR) << "do_write: Invalid path/value\n";
+        goto error;
+    }
+    if (prefix) {
+        if (sanitize_path(path, prefix) != 0) {
+            LOG(ERROR) << "do_write: Failed to sanitize path: " << path <<
+			    "prefix: " << prefix <<
+			    "\n";
+            goto error;
+        }
+        return write_file_follow(path, value) ? 0 : 1;
+    }
+    return write_file(path, value) ? 0 : 1;
+error:
+    return -EINVAL;
 }
 
 static int do_copy(const std::vector<std::string>& args) {
@@ -660,18 +744,46 @@ static int do_copy(const std::vector<std::string>& args) {
 }
 
 static int do_chown(const std::vector<std::string>& args) {
+    const char *prefix = get_prefix(args);
+    uint32_t num_prefix_args = (!prefix) ? 0:2;
     /* GID is optional. */
-    if (args.size() == 3) {
+    if (args.size() == 3 + num_prefix_args) {
+        if (prefix) {
+            if ((sanitize_path(args[2].c_str(), prefix) != 0)) {
+		LOG(ERROR) << "do_chown failed for " << args[2].c_str()
+			<< "..prefix (" << prefix << ") match error\n";
+                goto error;
+            }
+            //Following of symlink allowed
+            if (chown(args[2].c_str(), decode_uid(args[1].c_str()), -1) == -1)
+                return -errno;
+            return 0;
+        }
+        //Followng of symlinks not allowed
         if (lchown(args[2].c_str(), decode_uid(args[1].c_str()), -1) == -1)
             return -errno;
-    } else if (args.size() == 4) {
+    } else if (args.size() == 4 + num_prefix_args) {
+        if (prefix) {
+            if ((sanitize_path(args[3].c_str(), prefix) != 0)) {
+		LOG(ERROR) << "do_chown: sanitize_path failed for path "
+			<< args[3].c_str() << "prefix: " << prefix << "\n";
+                goto error;
+            }
+            //Following of symlink allowed
+            if (chown(args[3].c_str(), decode_uid(args[1].c_str()),
+                        decode_uid(args[2].c_str())) == -1)
+                return -errno;
+            return 0;
+        }
         if (lchown(args[3].c_str(), decode_uid(args[1].c_str()),
-                   decode_uid(args[2].c_str())) == -1)
+                    decode_uid(args[2].c_str())) == -1)
             return -errno;
     } else {
         return -1;
     }
     return 0;
+error:
+    return -1;
 }
 
 static mode_t get_mode(const char *s) {
@@ -688,8 +800,18 @@ static mode_t get_mode(const char *s) {
 }
 
 static int do_chmod(const std::vector<std::string>& args) {
+    const char *prefix = get_prefix(args);
+    int flags = AT_SYMLINK_NOFOLLOW;
+    if (prefix) {
+        if (sanitize_path(args[2].c_str(), prefix) != 0) {
+	    LOG(ERROR) << "do_chmod: failed for " << args[2].c_str()
+		    << "..prefix(" << prefix << ") match err \n";
+            return -1;
+        }
+        flags = 0;
+    }
     mode_t mode = get_mode(args[1].c_str());
-    if (fchmodat(AT_FDCWD, args[2].c_str(), mode, AT_SYMLINK_NOFOLLOW) < 0) {
+    if (fchmodat(AT_FDCWD, args[2].c_str(), mode, flags) < 0) {
         return -errno;
     }
     return 0;
@@ -848,8 +970,8 @@ BuiltinFunctionMap::Map& BuiltinFunctionMap::map() const {
     // clang-format off
     static const Map builtin_functions = {
         {"bootchart",               {1,     1,    do_bootchart}},
-        {"chmod",                   {2,     2,    do_chmod}},
-        {"chown",                   {2,     3,    do_chown}},
+        {"chmod",                   {2,     4,    do_chmod}},
+        {"chown",                   {2,     5,    do_chown}},
         {"class_reset",             {1,     1,    do_class_reset}},
         {"class_restart",           {1,     1,    do_class_restart}},
         {"class_start",             {1,     1,    do_class_start}},
@@ -889,7 +1011,7 @@ BuiltinFunctionMap::Map& BuiltinFunctionMap::map() const {
         {"verity_update_state",     {0,     0,    do_verity_update_state}},
         {"wait",                    {1,     2,    do_wait}},
         {"wait_for_prop",           {2,     2,    do_wait_for_prop}},
-        {"write",                   {2,     2,    do_write}},
+        {"write",                   {2,     4,    do_write}},
     };
     // clang-format on
     return builtin_functions;

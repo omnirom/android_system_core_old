@@ -199,6 +199,20 @@ bool write_file(const std::string& path, const std::string& content) {
     return success;
 }
 
+bool write_file_follow(const std::string& path, const std::string& content) {
+    android::base::unique_fd fd(TEMP_FAILURE_RETRY(
+        open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600)));
+    if (fd == -1) {
+        PLOG(ERROR) << "write_file: Unable to open '" << path << "'";
+        return false;
+    }
+    bool success = android::base::WriteStringToFd(content, fd);
+    if (!success) {
+        PLOG(ERROR) << "write_file: Unable to write to '" << path << "'";
+    }
+    return success;
+}
+
 boot_clock::time_point boot_clock::now() {
   timespec ts;
   clock_gettime(CLOCK_BOOTTIME, &ts);
