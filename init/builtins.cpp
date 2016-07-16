@@ -117,23 +117,35 @@ static void service_start_if_not_disabled(struct service *svc)
 
 int do_class_start(int nargs, char **args)
 {
-        /* Starting a class does not start services
-         * which are explicitly disabled.  They must
-         * be started individually.
-         */
+    char prop[PROP_NAME_MAX];
+    snprintf(prop, PROP_NAME_MAX, "class_start:%s", args[1]);
+
+    /* Starting a class does not start services
+     * which are explicitly disabled.  They must
+     * be started individually.
+     */
     service_for_each_class(args[1], service_start_if_not_disabled);
+    action_for_each_trigger(prop, action_add_queue_tail);
     return 0;
 }
 
 int do_class_stop(int nargs, char **args)
 {
+    char prop[PROP_NAME_MAX];
+    snprintf(prop, PROP_NAME_MAX, "class_stop:%s", args[1]);
+
     service_for_each_class(args[1], service_stop);
+    action_for_each_trigger(prop, action_add_queue_tail);
     return 0;
 }
 
 int do_class_reset(int nargs, char **args)
 {
+    char prop[PROP_NAME_MAX];
+    snprintf(prop, PROP_NAME_MAX, "class_reset:%s", args[1]);
+
     service_for_each_class(args[1], service_reset);
+    action_for_each_trigger(prop, action_add_queue_tail);
     return 0;
 }
 
