@@ -1409,6 +1409,8 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
       SLOGE("encrypt_master_key: crypto_scrypt failed");
     }
 
+    EVP_CIPHER_CTX_cleanup(&e_ctx);
+
     return 0;
 }
 
@@ -1457,6 +1459,8 @@ static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
       *intermediate_key_size = KEY_LEN_BYTES;
     }
   }
+
+  EVP_CIPHER_CTX_cleanup(&d_ctx);
 
   return 0;
 }
