@@ -106,7 +106,7 @@ std::shared_ptr<VolumeBase> Disk::findVolume(const std::string& id) {
 }
 
 void Disk::listVolumes(VolumeBase::Type type, std::list<std::string>& list) {
-    for (auto vol : mVolumes) {
+    for (const auto& vol : mVolumes) {
         if (vol->getType() == type) {
             list.push_back(vol->getId());
         }
@@ -179,7 +179,7 @@ void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
 }
 
 void Disk::destroyAllVolumes() {
-    for (auto vol : mVolumes) {
+    for (const auto& vol : mVolumes) {
         vol->destroy();
     }
     mVolumes.clear();
@@ -268,7 +268,7 @@ status_t Disk::readPartitions() {
 
     Table table = Table::kUnknown;
     bool foundParts = false;
-    for (auto line : output) {
+    for (const auto& line : output) {
         char* cline = (char*) line.c_str();
         char* token = strtok(cline, kSgdiskToken);
         if (token == nullptr) continue;
@@ -333,7 +333,7 @@ status_t Disk::readPartitions() {
 }
 
 status_t Disk::unmountAll() {
-    for (auto vol : mVolumes) {
+    for (const auto& vol : mVolumes) {
         vol->unmount();
     }
     return OK;
