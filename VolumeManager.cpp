@@ -294,7 +294,7 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
 
     switch (evt->getAction()) {
     case NetlinkEvent::Action::kAdd: {
-        for (auto source : mDiskSources) {
+        for (const auto& source : mDiskSources) {
             if (source->matches(eventPath)) {
                 // For now, assume that MMC devices are SD, and that
                 // everything else is USB
@@ -316,7 +316,7 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
     }
     case NetlinkEvent::Action::kChange: {
         LOG(DEBUG) << "Disk at " << major << ":" << minor << " changed";
-        for (auto disk : mDisks) {
+        for (const auto& disk : mDisks) {
             if (disk->getDevice() == device) {
                 disk->readMetadata();
                 disk->readPartitions();
@@ -360,7 +360,7 @@ std::shared_ptr<android::vold::VolumeBase> VolumeManager::findVolume(const std::
     if (mInternalEmulated->getId() == id) {
         return mInternalEmulated;
     }
-    for (auto disk : mDisks) {
+    for (const auto& disk : mDisks) {
         auto vol = disk->findVolume(id);
         if (vol != nullptr) {
             return vol;
@@ -372,7 +372,7 @@ std::shared_ptr<android::vold::VolumeBase> VolumeManager::findVolume(const std::
 void VolumeManager::listVolumes(android::vold::VolumeBase::Type type,
         std::list<std::string>& list) {
     list.clear();
-    for (auto disk : mDisks) {
+    for (const auto& disk : mDisks) {
         disk->listVolumes(type, list);
     }
 }
@@ -503,7 +503,7 @@ static int unmount_tree(const char* path) {
     }
     endmntent(fp);
 
-    for (auto path : toUnmount) {
+    for (const auto& path : toUnmount) {
         if (umount2(path.c_str(), MNT_DETACH)) {
             ALOGW("Failed to unmount %s: %s", path.c_str(), strerror(errno));
         }
@@ -629,7 +629,7 @@ int VolumeManager::reset() {
     // newly connected framework hears all events.
     mInternalEmulated->destroy();
     mInternalEmulated->create();
-    for (auto disk : mDisks) {
+    for (const auto& disk : mDisks) {
         disk->destroy();
         disk->create();
     }
@@ -640,7 +640,7 @@ int VolumeManager::reset() {
 
 int VolumeManager::shutdown() {
     mInternalEmulated->destroy();
-    for (auto disk : mDisks) {
+    for (const auto& disk : mDisks) {
         disk->destroy();
     }
     mDisks.clear();
@@ -654,7 +654,7 @@ int VolumeManager::unmountAll() {
     if (mInternalEmulated != nullptr) {
         mInternalEmulated->unmount();
     }
-    for (auto disk : mDisks) {
+    for (const auto& disk : mDisks) {
         disk->unmountAll();
     }
 
@@ -678,7 +678,7 @@ int VolumeManager::unmountAll() {
     }
     endmntent(fp);
 
-    for (auto path : toUnmount) {
+    for (const auto& path : toUnmount) {
         SLOGW("Tearing down stale mount %s", path.c_str());
         android::vold::ForceUnmount(path);
     }
