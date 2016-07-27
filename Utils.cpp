@@ -208,7 +208,7 @@ static status_t readMetadata(const std::string& path, std::string& fsType,
     }
 
     char value[128];
-    for (auto line : output) {
+    for (const auto& line : output) {
         // Extract values from blkid output, if defined
         const char* cline = line.c_str();
         const char* start = strstr(cline, "TYPE=");
