@@ -53,7 +53,7 @@ TrimTask::TrimTask(int flags) : mFlags(flags) {
     VolumeManager* vm = VolumeManager::Instance();
     std::list<std::string> privateIds;
     vm->listVolumes(VolumeBase::Type::kPrivate, privateIds);
-    for (auto id : privateIds) {
+    for (const auto& id : privateIds) {
         auto vol = vm->findVolume(id);
         if (vol != nullptr && vol->getState() == VolumeBase::State::kMounted) {
             mPaths.push_back(vol->getPath());
@@ -114,7 +114,7 @@ static void notifyResult(const std::string& path, int64_t bytes, int64_t delta) 
 void TrimTask::run() {
     acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
 
-    for (auto path : mPaths) {
+    for (const auto& path : mPaths) {
         LOG(DEBUG) << "Starting trim of " << path;
 
         int fd = open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
