@@ -29,6 +29,8 @@
 
 #define CONSTRAIN(amount, low, high) ((amount) < (low) ? (low) : ((amount) > (high) ? (high) : (amount)))
 
+#define EXEC_BLOCKING 0
+
 using android::base::StringPrintf;
 
 namespace android {
@@ -93,6 +95,9 @@ static status_t execRm(const std::string& path, int startProgress, int stepProgr
         return OK;
     }
 
+#if EXEC_BLOCKING
+    return ForkExecvp(cmd);
+#else
     pid_t pid = ForkExecvpAsync(cmd);
     if (pid == -1) return -1;
 
@@ -113,6 +118,7 @@ static status_t execRm(const std::string& path, int startProgress, int stepProgr
                 ((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress));
     }
     return -1;
+#endif
 }
 
 static status_t execCp(const std::string& fromPath, const std::string& toPath,
@@ -134,6 +140,9 @@ static status_t execCp(const std::string& fromPath, const std::string& toPath,
     }
     cmd.push_back(toPath.c_str());
 
+#if EXEC_BLOCKING
+    return ForkExecvp(cmd);
+#else
     pid_t pid = ForkExecvpAsync(cmd);
     if (pid == -1) return -1;
 
@@ -154,6 +163,7 @@ static status_t execCp(const std::string& fromPath, const std::string& toPath,
                 ((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress));
     }
     return -1;
+#endif
 }
 
 static void bringOffline(const std::shared_ptr<VolumeBase>& vol) {
