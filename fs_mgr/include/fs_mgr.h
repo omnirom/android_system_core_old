@@ -106,6 +106,7 @@ int fs_mgr_is_noemulatedsd(const struct fstab_rec *fstab);
 int fs_mgr_is_notrim(struct fstab_rec *fstab);
 int fs_mgr_is_formattable(struct fstab_rec *fstab);
 int fs_mgr_swapon_all(struct fstab *fstab);
+int fs_mgr_is_mdtp_activated(void);
 
 int fs_mgr_do_format(struct fstab_rec *fstab);
 

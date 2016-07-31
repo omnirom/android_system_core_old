@@ -503,6 +503,52 @@ static int handle_encryptable(struct fstab *fstab, const struct fstab_rec* rec)
     return FS_MGR_MNTALL_DEV_NOT_ENCRYPTED;
 }
 
+/*
+ * Reads the kernel cmdline to check if MDTP is activated.
+ * When MDTP is activated, kernel cmdline will have the word 'mdtp'.
+ */
+int fs_mgr_is_mdtp_activated()
+{
+      char cmdline[2048];
+      char *ptr;
+      int fd;
+      static int mdtp_activated = 0;
+      static int mdtp_activated_set = 0;
+
+      if (mdtp_activated_set) {
+          return mdtp_activated;
+      }
+
+      fd = open("/proc/cmdline", O_RDONLY);
+      if (fd >= 0) {
+          int n = read(fd, cmdline, sizeof(cmdline) - 1);
+          if (n < 0) n = 0;
+
+          /* get rid of trailing newline, it happens */
+          if (n > 0 && cmdline[n-1] == '\n') n--;
+
+          cmdline[n] = 0;
+          close(fd);
+      } else {
+          cmdline[0] = 0;
+      }
+
+      ptr = cmdline;
+      while (ptr && *ptr) {
+          char *x = strchr(ptr, ' ');
+          if (x != 0) *x++ = 0;
+          if (!strcmp(ptr,"mdtp")) {
+            mdtp_activated = 1;
+            break;
+          }
+          ptr = x;
+      }
+
+      mdtp_activated_set = 1;
+
+      return mdtp_activated;
+}
+
 /* When multiple fstab records share the same mount_point, it will
  * try to mount each one in turn, and ignore any duplicates after a
  * first successful mount.
