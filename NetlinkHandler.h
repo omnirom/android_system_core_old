@@ -22,7 +22,7 @@
 class NetlinkHandler: public NetlinkListener {
 
 public:
-    NetlinkHandler(int listenerSocket);
+    explicit NetlinkHandler(int listenerSocket);
     virtual ~NetlinkHandler();
 
     int start(void);
