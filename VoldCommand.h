@@ -21,7 +21,7 @@
 
 class VoldCommand : public FrameworkCommand {
 public:
-    VoldCommand(const char *cmd);
+    explicit VoldCommand(const char *cmd);
     virtual ~VoldCommand() {}
 };
 

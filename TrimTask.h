@@ -27,7 +27,7 @@ namespace vold {
 
 class TrimTask {
 public:
-    TrimTask(int flags);
+    explicit TrimTask(int flags);
     virtual ~TrimTask();
 
     enum Flags {
