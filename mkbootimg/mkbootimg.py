@@ -79,7 +79,7 @@ def write_header(args):
         args.base + args.second_offset,                 # physical load addr
         args.base + args.tags_offset,                   # physical addr for kernel tags
         args.pagesize,                                  # flash page size we assume
-        args.header_version,                            # version of bootimage header
+        max(args.header_version, filesize(args.dt)),    # version of bootimage header or dt size in bytes
         (args.os_version << 11) | args.os_patch_level)) # os version and patch level
     args.output.write(pack('16s', args.board.encode())) # asciiz product name
     args.output.write(pack('512s', args.cmdline[:512].encode()))
@@ -88,6 +88,7 @@ def write_header(args):
     update_sha(sha, args.kernel)
     update_sha(sha, args.ramdisk)
     update_sha(sha, args.second)
+    update_sha(sha, args.dt)
 
     if args.header_version > 0:
         update_sha(sha, args.recovery_dtbo)
@@ -203,15 +204,22 @@ def parse_cmdline():
     parser.add_argument('--id', help='print the image ID on standard output',
                         action='store_true')
     parser.add_argument('--header_version', help='boot image header version', type=parse_int, default=0)
+    parser.add_argument('--dt', help='path to the device tree image', type=FileType('rb'))
     parser.add_argument('-o', '--output', help='output file name', type=FileType('wb'),
                         required=True)
-    return parser.parse_args()
+
+    args = parser.parse_args()
+    if args.header_version > 0 and args.dt != None:
+        raise ValueError('header_version and dt cannot be set at the same time')
+
+    return args
 
 
 def write_data(args):
     write_padded_file(args.output, args.kernel, args.pagesize)
     write_padded_file(args.output, args.ramdisk, args.pagesize)
     write_padded_file(args.output, args.second, args.pagesize)
+    write_padded_file(args.output, args.dt, args.pagesize)
 
     if args.header_version > 0:
         write_padded_file(args.output, args.recovery_dtbo, args.pagesize)
