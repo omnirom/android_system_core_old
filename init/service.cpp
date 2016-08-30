@@ -80,7 +80,10 @@ static std::string ComputeContextFromExecutable(std::string& service_name,
     }
     if (rc == 0 && computed_context == mycon.get()) {
         LOG(ERROR) << "service " << service_name << " does not have a SELinux domain defined";
-        return "";
+        if (selinux_status_getenforce() > 0) {
+            return "";
+        }
+        LOG(INFO) << "Service " << service_name << " allowed on permissive init";
     }
     if (rc < 0) {
         LOG(ERROR) << "could not get context while starting '" << service_name << "'";
