@@ -90,15 +90,16 @@ static Result<std::string> ComputeContextFromExecutable(const std::string& servi
         free(new_con);
     }
     if (rc == 0 && computed_context == mycon.get()) {
-        LOG(ERROR) << "service " << service_path << " does not have a SELinux domain defined";
-        if (selinux_status_getenforce() > 0) {
-            return "";
-        }
-        return Error() << "File " << service_path << "(labeled \"" << filecon.get()
+        std::ostringstream file_label_err;
+        file_label_err << "File " << service_path << "(labeled \"" << filecon.get()
                        << "\") has incorrect label or no domain transition from " << mycon.get()
                        << " to another SELinux domain defined. Have you configured your "
                           "service correctly? https://source.android.com/security/selinux/"
                           "device-policy#label_new_services_and_address_denials";
+        if (selinux_status_getenforce() > 0) {
+            return Error() << file_label_err.str();
+        }
+        LOG(ERROR) << file_label_err.str();
     }
     if (rc < 0) {
         return Error() << "Could not get process context";
