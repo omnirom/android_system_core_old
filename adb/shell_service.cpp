@@ -85,6 +85,7 @@
 #include <pty.h>
 #include <pwd.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <termios.h>
 
 #include <memory>
@@ -102,6 +103,8 @@
 #include "adb_trace.h"
 #include "adb_utils.h"
 #include "security_log_tags.h"
+
+#include "cutils/properties.h"
 
 namespace {
 
@@ -228,6 +231,7 @@ bool Subprocess::ForkAndExec(std::string* error) {
     ScopedFd child_stdinout_sfd, child_stderr_sfd;
     ScopedFd parent_error_sfd, child_error_sfd;
     char pts_name[PATH_MAX];
+    char propbuf[PATH_MAX];
 
     if (command_.empty()) {
         __android_log_security_bswrite(SEC_TAG_ADB_SHELL_INTERACTIVE, "");
@@ -334,12 +338,25 @@ bool Subprocess::ForkAndExec(std::string* error) {
         parent_error_sfd.Reset();
         close_on_exec(child_error_sfd.fd());
 
-        if (command_.empty()) {
-            execle(_PATH_BSHELL, _PATH_BSHELL, "-", nullptr, cenv.data());
+        std::string shell_command;
+        struct stat st;
+        property_get("persist.sys.adb.shell", propbuf, "");
+        if (propbuf[0] != '\0' && stat(propbuf, &st) == 0) {
+            shell_command = propbuf;
+        } else if (stat(_PATH_BSHELL2, &st) == 0) {
+            shell_command = _PATH_BSHELL2;
         } else {
-            execle(_PATH_BSHELL, _PATH_BSHELL, "-c", command_.c_str(), nullptr, cenv.data());
+            shell_command = _PATH_BSHELL;
         }
-        WriteFdExactly(child_error_sfd.fd(), "exec '" _PATH_BSHELL "' failed: ");
+
+        if (command_.empty()) {
+            execle(shell_command.c_str(), shell_command.c_str(), "-", nullptr, cenv.data());
+        } else {
+            execle(shell_command.c_str(), shell_command.c_str(), "-c", command_.c_str(), nullptr, cenv.data());
+        }
+
+        std::string errmsg = "exec '" + shell_command + "' failed: ";
+        WriteFdExactly(child_error_sfd.fd(), errmsg.c_str());
         WriteFdExactly(child_error_sfd.fd(), strerror(errno));
         child_error_sfd.Reset();
         _Exit(1);
