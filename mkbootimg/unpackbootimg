@@ -16,9 +16,13 @@
 from __future__ import print_function
 from sys import exit
 from argparse import ArgumentParser, FileType
-from os import rename
-from os.path import basename
+from os import rename, makedirs
+from os.path import basename, exists
 from struct import unpack, calcsize
+import zlib
+
+def ROUNDDOWN(number, alignment):
+    return ((number) & ~((alignment)-1))
 
 class Bunch:
     def __init__(self, **kwds):
@@ -67,14 +71,30 @@ def read_header(args, off):
     os_version = unpacked[10]>>11
     os_patch_level = unpacked[10]&0x7ff
 
-    a = (os_version>>14)&0x7f
-    b = (os_version>>7)&0x7f
-    c = os_version&0x7f
-    parsed.os_version = '%d.%d.%d' % (a,b,c)
+    parsed.os_version = None
+    if os_version != 0:
+        a = (os_version>>14)&0x7f
+        b = (os_version>>7)&0x7f
+        c = os_version&0x7f
+        parsed.os_version = '%d.%d.%d' % (a,b,c)
 
-    y = (os_patch_level>>4) + 2000
-    m = os_patch_level&0xf
-    parsed.os_patch_level = '%04d-%02d-%02d' % (y,m,0)
+    parsed.os_patch_level = None
+    if os_patch_level != 0:
+        y = (os_patch_level>>4) + 2000
+        m = os_patch_level&0xf
+        parsed.os_patch_level = '%04d-%02d-%02d' % (y,m,0)
+
+    # find common base of all loading addresses
+    parsed.base = min(parsed.kernel_addr, parsed.ramdisk_addr, parsed.second_addr, parsed.tags_addr)
+    parsed.base = ROUNDDOWN(parsed.base, parsed.pagesize)
+    if (parsed.base&0xffff) == 0x8000:
+        parsed.base -= 0x8000
+
+    # calculate offsets relative to base
+    parsed.kernel_offset = parsed.kernel_addr - parsed.base
+    parsed.ramdisk_offset = parsed.ramdisk_addr - parsed.base
+    parsed.second_offset = parsed.second_addr - parsed.base
+    parsed.tags_offset = parsed.tags_addr - parsed.base
 
     return parsed
 
@@ -89,7 +109,7 @@ def parse_cmdline():
     parser = ArgumentParser()
     parser.add_argument('-i', '--input', help='input file name', type=FileType('rb'),
                         required=True)
-    parser.add_argument('-o', '--output', help='output directory', default='')
+    parser.add_argument('-o', '--output', help='output directory', default='./')
     parser.add_argument('--pagesize', help='page size', type=parse_int,
                         choices=[2**i for i in range(11,18)], default=0)
     return parser.parse_args()
@@ -119,21 +139,49 @@ def fix_ramdisk_extension(filename):
     else:
         rename(filename, filename+'.gz')
 
+def is_gzip_package(filename):
+    bytes = []
+    with open(filename, 'rb') as f:
+        data = f.read(3)
+        if(len(data))!=3:
+            return False
+        bytes = unpack('BBB', data)
+
+    return bytes[0]==0x1f and bytes[1]==0x8b and bytes[2]==0x08
+
+def is_arm64(filename):
+    data = None
+    with open(filename, 'rb') as f:
+        fmt = '2I6Q2I'
+        size = calcsize(fmt)
+        buf = f.read(size)
+        if(len(buf))!=size:
+            return False
+        data = unpack(fmt, buf)
+
+    return data[8]==0x644D5241
+
 def write_data(args, header, off):
     file_prefix = args.output
     if file_prefix and file_prefix[-1]!='/':
         file_prefix += '/'
     file_prefix += basename(args.input.name) + '-'
 
+    if not exists(args.output):
+        makedirs(args.output)
+
     write_str_to_file(file_prefix+'cmdline', header.cmdline)
-    write_str_to_file(file_prefix+'base', '%08x' % (header.kernel_addr - 0x00008000))
-    write_str_to_file(file_prefix+'ramdisk_offset', '%08x' % (header.ramdisk_addr - header.kernel_addr + 0x00008000))
-    write_str_to_file(file_prefix+'second_offset', '%08x' % (header.second_addr - header.kernel_addr + 0x00008000))
-    write_str_to_file(file_prefix+'tags_offset', '%08x' % (header.tags_addr - header.kernel_addr + 0x00008000))
+    write_str_to_file(file_prefix+'base', '%08x' % header.base)
+    write_str_to_file(file_prefix+'kernel_offset', '%08x' % header.kernel_offset)
+    write_str_to_file(file_prefix+'ramdisk_offset', '%08x' % header.ramdisk_offset)
+    write_str_to_file(file_prefix+'second_offset', '%08x' % header.second_offset)
+    write_str_to_file(file_prefix+'tags_offset', '%08x' % header.tags_offset)
     write_str_to_file(file_prefix+'pagesize', '%d' % header.pagesize)
     write_str_to_file(file_prefix+'name', header.name)
-    write_str_to_file(file_prefix+'os_version', header.os_version)
-    write_str_to_file(file_prefix+'os_patch_level', header.os_patch_level)
+    if header.os_version:
+        write_str_to_file(file_prefix+'os_version', header.os_version)
+    if header.os_patch_level:
+        write_str_to_file(file_prefix+'os_patch_level', header.os_patch_level)
 
     seek_padding(args.input, header.headersz, args.pagesize)
 
@@ -144,16 +192,50 @@ def write_data(args, header, off):
 
     fix_ramdisk_extension(file_prefix+'ramdisk')
 
+    if header.kernel_size >= 2:
+        if is_gzip_package(file_prefix+'zImage'):
+            with open(file_prefix+'zImage', 'rb') as f_in:
+                # seek past gzip header
+                f_in.seek(10)
+
+                # write uncompressed zImage
+                with open(file_prefix+'zImage.gunzip', 'wb') as f_out:
+                    decomp = zlib.decompressobj(-15)
+                    f_out.write(decomp.decompress(f_in.read()))
+
+                # write fdt
+                with open(file_prefix+'zImage.fdt', 'wb') as f_out:
+                    f_out.write(decomp.unused_data[8:])
+
+        elif not is_arm64(file_prefix+'zImage'):
+            with open(file_prefix+'zImage', 'rb') as f_in:
+                # get kernel size
+                f_in.seek(0x28)
+                unpacked = auto_unpack('2I', f_in)
+                zimage_start = unpacked[0]
+                zimage_end = unpacked[1]
+                zimage_size = zimage_end - zimage_start;
+
+                if zimage_size<header.kernel_size:
+                    # write zImage
+                    f_in.seek(0)
+                    with open(file_prefix+'zImage.real', 'wb') as f_out:
+                        f_out.write(f_in.read(zimage_size))
+
+                    # write fdt
+                    with open(file_prefix+'zImage.fdt', 'wb') as f_out:
+                        f_out.write(f_in.read())
+
 def main():
     args = parse_cmdline()
     off = get_magic_off(args.input)
     header = read_header(args, off)
 
     print('BOARD_KERNEL_CMDLINE %s' % header.cmdline)
-    print('BOARD_KERNEL_BASE %08x' % (header.kernel_addr - 0x00008000))
-    print('BOARD_RAMDISK_OFFSET %08x' % (header.ramdisk_addr - header.kernel_addr + 0x00008000))
-    print('BOARD_SECOND_OFFSET %08x' % (header.second_addr - header.kernel_addr + 0x00008000))
-    print('BOARD_TAGS_OFFSET %08x' % (header.tags_addr - header.kernel_addr + 0x00008000))
+    print('BOARD_KERNEL_BASE %08x' % header.kernel_offset)
+    print('BOARD_RAMDISK_OFFSET %08x' % header.ramdisk_offset)
+    print('BOARD_SECOND_OFFSET %08x' % header.second_offset)
+    print('BOARD_TAGS_OFFSET %08x' % header.tags_offset)
     print('BOARD_PAGE_SIZE %d' % header.pagesize)
     print('BOARD_SECOND_SIZE %d' % header.second_size)
     print('BOARD_DT_SIZE %d' % header.dt_size)
