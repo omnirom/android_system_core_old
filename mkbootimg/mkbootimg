@@ -179,7 +179,7 @@ def parse_cmdline():
     parser.add_argument('--board', help='board name', default='', action=ValidateStrLenAction,
                         maxlen=16)
     parser.add_argument('--pagesize', help='page size', type=parse_int,
-                        choices=[2**i for i in range(11,15)], default=2048)
+                        choices=[2**i for i in range(11,18)], default=2048)
     parser.add_argument('--id', help='print the image ID on standard output',
                         action='store_true')
     parser.add_argument('--header_version', help='boot image header version', type=parse_int, default=0)
