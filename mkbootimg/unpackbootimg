@@ -91,7 +91,7 @@ def parse_cmdline():
                         required=True)
     parser.add_argument('-o', '--output', help='output directory', default='')
     parser.add_argument('--pagesize', help='page size', type=parse_int,
-                        choices=[2**i for i in range(11,15)], default=0)
+                        choices=[2**i for i in range(11,18)], default=0)
     return parser.parse_args()
 
 def seek_padding(f, size, pagesize):
