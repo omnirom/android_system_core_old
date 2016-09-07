@@ -839,8 +839,8 @@ static int do_write(const std::vector<std::string>& args) {
             break;
         } else {
             //Value at current index is -p. The next index would
-            //be the prefix.Skip beyond that.
-            i+=2;
+            //be the prefix.Skip it.
+            i++;
         }
     }
     if (!path || !value) {
