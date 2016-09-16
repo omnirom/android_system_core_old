@@ -55,6 +55,7 @@
 #include "init.h"
 #include "util.h"
 #include "log.h"
+#include "vendor_init.h"
 
 using android::base::StringPrintf;
 
@@ -622,6 +623,10 @@ void load_persist_props(void) {
     /* Read persistent properties after all default values have been loaded. */
     load_persistent_properties();
     property_set("ro.persistent_properties.ready", "true");
+
+    /* vendor-specific properties
+     */
+    vendor_load_properties();
 }
 
 void load_recovery_id_prop() {
