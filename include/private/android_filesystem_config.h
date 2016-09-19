@@ -112,13 +112,14 @@
 #define AID_READPROC      3009  /* Allow /proc read access */
 #define AID_WAKELOCK      3010  /* Allow system wakelock read/write access */
 
-/* The range 5000-5999 is also reserved for OEM, and must never be used here. */
-#define AID_OEM_RESERVED_2_START 5000
-#define AID_OEM_RESERVED_2_END   5999
-
 #ifdef BOARD_HAS_SENSORS_GROUP
 #define AID_SENSORS       3011 /* access to /dev/socket/sensor_ctl_socket & QCCI/QCSI */
 #endif
+#define AID_QCOM_DIAG     3012  /* can read/write /dev/diag */
+
+/* The range 5000-5999 is also reserved for OEM, and must never be used here. */
+#define AID_OEM_RESERVED_2_START 5000
+#define AID_OEM_RESERVED_2_END   5999
 
 #define AID_EVERYBODY     9997  /* shared between all apps in the same profile */
 #define AID_MISC          9998  /* access to misc storage */
@@ -215,6 +216,7 @@ static const struct android_id_info android_ids[] = {
     { "net_bt_stack",  AID_NET_BT_STACK, },
     { "readproc",      AID_READPROC, },
     { "wakelock",      AID_WAKELOCK, },
+    { "qcom_diag",     AID_QCOM_DIAG, },
 
 #ifdef BOARD_HAS_SENSORS_GROUP
     { "sensors",       AID_SENSORS, },
