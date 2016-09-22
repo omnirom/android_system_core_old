@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <assert.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
