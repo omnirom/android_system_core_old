@@ -30,8 +30,6 @@
 
 using android::base::StringPrintf;
 
-#define DEBUG 1
-
 namespace android {
 namespace vold {
 
