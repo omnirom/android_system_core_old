@@ -33,7 +33,6 @@ common_src_files := \
 	secontext.cpp \
 
 common_c_includes := \
-	system/extras/ext4_utils \
 	system/extras/f2fs_utils \
 	external/scrypt/lib/crypto \
 	frameworks/native/include \
