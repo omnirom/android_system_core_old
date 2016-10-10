@@ -40,13 +40,13 @@
 #include <private/android_filesystem_config.h>
 
 #include "cryptfs.h"
-#include "ext4_crypt.h"
-#include "key_control.h"
 
 #define EMULATED_USES_SELINUX 0
 #define MANAGE_MISC_DIRS 0
 
 #include <cutils/fs.h>
+#include <ext4_utils/ext4_crypt.h>
+#include <ext4_utils/key_control.h>
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
