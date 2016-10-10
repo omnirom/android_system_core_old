@@ -38,7 +38,8 @@
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 #include <errno.h>
-#include <ext4.h>
+#include <ext4_utils/ext4.h>
+#include <ext4_utils/ext4_utils.h>
 #include <linux/kdev_t.h>
 #include <fs_mgr.h>
 #include <time.h>
@@ -57,7 +58,6 @@
 #include "VoldUtil.h"
 #include "crypto_scrypt.h"
 #include "Ext4Crypt.h"
-#include "ext4_utils.h"
 #include "f2fs_sparseblock.h"
 #include "CheckBattery.h"
 #include "Process.h"
