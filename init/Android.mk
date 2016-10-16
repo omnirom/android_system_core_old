@@ -73,6 +73,10 @@ LOCAL_SRC_FILES:= \
     vendor_init.cpp \
     watchdogd.cpp \
 
+ifeq ($(KERNEL_HAS_FINIT_MODULE), false)
+LOCAL_CFLAGS += -DNO_FINIT_MODULE
+endif
+
 LOCAL_MODULE:= init
 LOCAL_C_INCLUDES += \
     system/extras/ext4_utils \
