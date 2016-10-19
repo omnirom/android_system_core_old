@@ -75,8 +75,7 @@ std::set<userid_t> s_ephemeral_users;
 // Map user ids to key references
 std::map<userid_t, std::string> s_de_key_raw_refs;
 std::map<userid_t, std::string> s_ce_key_raw_refs;
-// TODO abolish this map. Keys should not be long-lived in user memory, only kernel memory.
-// See b/26948053
+// TODO abolish this map, per b/26948053
 std::map<userid_t, std::string> s_ce_keys;
 
 // ext4enc:TODO get this const from somewhere good
