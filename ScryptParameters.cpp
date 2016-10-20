@@ -20,7 +20,7 @@
 #include <string.h>
 
 bool parse_scrypt_parameters(const char* paramstr, int *Nf, int *rf, int *pf) {
-    int params[3];
+    int params[3] = {};
     char *token;
     char *saveptr;
     int i;
