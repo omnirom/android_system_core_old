@@ -17,135 +17,48 @@
 #include "Keymaster.h"
 
 #include <android-base/logging.h>
-#include <hardware/hardware.h>
-#include <hardware/keymaster1.h>
-#include <hardware/keymaster2.h>
-#include <keymaster/keymaster_configuration.h>
+#include <keystore/keymaster_tags.h>
+#include <keystore/authorization_set.h>
+#include <keystore/keystore_hidl_support.h>
+
+using namespace ::keystore;
 
 namespace android {
 namespace vold {
 
-class IKeymasterDevice {
-  public:
-    IKeymasterDevice() {}
-    virtual ~IKeymasterDevice() {}
-    virtual keymaster_error_t generate_key(const keymaster_key_param_set_t* params,
-                                           keymaster_key_blob_t* key_blob) const = 0;
-    virtual keymaster_error_t delete_key(const keymaster_key_blob_t* key) const = 0;
-    virtual keymaster_error_t upgrade_key(const keymaster_key_blob_t* key_to_upgrade,
-                                         const keymaster_key_param_set_t* upgrade_params,
-                                         keymaster_key_blob_t* upgraded_key) const = 0;
-    virtual keymaster_error_t begin(keymaster_purpose_t purpose, const keymaster_key_blob_t* key,
-                                    const keymaster_key_param_set_t* in_params,
-                                    keymaster_key_param_set_t* out_params,
-                                    keymaster_operation_handle_t* operation_handle) const = 0;
-    virtual keymaster_error_t update(keymaster_operation_handle_t operation_handle,
-                                     const keymaster_key_param_set_t* in_params,
-                                     const keymaster_blob_t* input, size_t* input_consumed,
-                                     keymaster_key_param_set_t* out_params,
-                                     keymaster_blob_t* output) const = 0;
-    virtual keymaster_error_t finish(keymaster_operation_handle_t operation_handle,
-                                     const keymaster_key_param_set_t* in_params,
-                                     const keymaster_blob_t* signature,
-                                     keymaster_key_param_set_t* out_params,
-                                     keymaster_blob_t* output) const = 0;
-    virtual keymaster_error_t abort(keymaster_operation_handle_t operation_handle) const = 0;
-
-  protected:
-    DISALLOW_COPY_AND_ASSIGN(IKeymasterDevice);
-};
-
-template <typename T> class KeymasterDevice : public IKeymasterDevice {
-  public:
-    explicit KeymasterDevice(T* d) : mDevice{d} {}
-    keymaster_error_t generate_key(const keymaster_key_param_set_t* params,
-                                   keymaster_key_blob_t* key_blob) const override final {
-        return mDevice->generate_key(mDevice, params, key_blob, nullptr);
-    }
-    keymaster_error_t delete_key(const keymaster_key_blob_t* key) const override final {
-        if (mDevice->delete_key == nullptr) return KM_ERROR_OK;
-        return mDevice->delete_key(mDevice, key);
-    }
-    keymaster_error_t begin(keymaster_purpose_t purpose, const keymaster_key_blob_t* key,
-                            const keymaster_key_param_set_t* in_params,
-                            keymaster_key_param_set_t* out_params,
-                            keymaster_operation_handle_t* operation_handle) const override final {
-        return mDevice->begin(mDevice, purpose, key, in_params, out_params, operation_handle);
-    }
-    keymaster_error_t update(keymaster_operation_handle_t operation_handle,
-                             const keymaster_key_param_set_t* in_params,
-                             const keymaster_blob_t* input, size_t* input_consumed,
-                             keymaster_key_param_set_t* out_params,
-                             keymaster_blob_t* output) const override final {
-        return mDevice->update(mDevice, operation_handle, in_params, input, input_consumed,
-                               out_params, output);
-    }
-    keymaster_error_t abort(keymaster_operation_handle_t operation_handle) const override final {
-        return mDevice->abort(mDevice, operation_handle);
-    }
-
-  protected:
-    T* const mDevice;
-};
-
-class Keymaster1Device : public KeymasterDevice<keymaster1_device_t> {
-  public:
-    explicit Keymaster1Device(keymaster1_device_t* d) : KeymasterDevice<keymaster1_device_t>{d} {}
-    ~Keymaster1Device() override final { keymaster1_close(mDevice); }
-    keymaster_error_t upgrade_key(const keymaster_key_blob_t* key_to_upgrade,
-                                  const keymaster_key_param_set_t* upgrade_params,
-                                  keymaster_key_blob_t* upgraded_key) const override final {
-        return KM_ERROR_UNIMPLEMENTED;
-    }
-    keymaster_error_t finish(keymaster_operation_handle_t operation_handle,
-                             const keymaster_key_param_set_t* in_params,
-                             const keymaster_blob_t* signature,
-                             keymaster_key_param_set_t* out_params,
-                             keymaster_blob_t* output) const override final {
-        return mDevice->finish(mDevice, operation_handle, in_params, signature, out_params, output);
-    }
-};
-
-class Keymaster2Device : public KeymasterDevice<keymaster2_device_t> {
-  public:
-    explicit Keymaster2Device(keymaster2_device_t* d) : KeymasterDevice<keymaster2_device_t>{d} {}
-    ~Keymaster2Device() override final { keymaster2_close(mDevice); }
-    keymaster_error_t upgrade_key(const keymaster_key_blob_t* key_to_upgrade,
-                                  const keymaster_key_param_set_t* upgrade_params,
-                                  keymaster_key_blob_t* upgraded_key) const override final {
-        return mDevice->upgrade_key(mDevice, key_to_upgrade, upgrade_params, upgraded_key);
-    }
-    keymaster_error_t finish(keymaster_operation_handle_t operation_handle,
-                             const keymaster_key_param_set_t* in_params,
-                             const keymaster_blob_t* signature,
-                             keymaster_key_param_set_t* out_params,
-                             keymaster_blob_t* output) const override final {
-        return mDevice->finish(mDevice, operation_handle, in_params, nullptr, signature, out_params,
-                               output);
-    }
-};
-
 KeymasterOperation::~KeymasterOperation() {
-    if (mDevice) mDevice->abort(mOpHandle);
+    if (mDevice.get()) mDevice->abort(mOpHandle);
 }
 
 bool KeymasterOperation::updateCompletely(const std::string& input, std::string* output) {
     output->clear();
     auto it = input.begin();
+    uint32_t inputConsumed;
+
+    ErrorCode km_error;
+    auto hidlCB = [&] (ErrorCode ret, uint32_t _inputConsumed,
+            const hidl_vec<KeyParameter>& /*ignored*/, const hidl_vec<uint8_t>& _output) {
+        km_error = ret;
+        if (km_error != ErrorCode::OK) return;
+        inputConsumed = _inputConsumed;
+        if (output)
+            output->append(reinterpret_cast<const char*>(&_output[0]), _output.size());
+    };
+
     while (it != input.end()) {
         size_t toRead = static_cast<size_t>(input.end() - it);
-        keymaster_blob_t inputBlob{reinterpret_cast<const uint8_t*>(&*it), toRead};
-        keymaster_blob_t outputBlob;
-        size_t inputConsumed;
-        auto error =
-            mDevice->update(mOpHandle, nullptr, &inputBlob, &inputConsumed, nullptr, &outputBlob);
-        if (error != KM_ERROR_OK) {
-            LOG(ERROR) << "update failed, code " << error;
+        auto inputBlob = blob2hidlVec(reinterpret_cast<const uint8_t*>(&*it), toRead);
+        auto error = mDevice->update(mOpHandle, hidl_vec<KeyParameter>(), inputBlob, hidlCB);
+        if (!error.isOk()) {
+            LOG(ERROR) << "update failed: " << error.description();
             mDevice = nullptr;
             return false;
         }
-        output->append(reinterpret_cast<const char*>(outputBlob.data), outputBlob.data_length);
-        free(const_cast<uint8_t*>(outputBlob.data));
+        if (km_error != ErrorCode::OK) {
+            LOG(ERROR) << "update failed, code " << uint32_t(km_error);
+            mDevice = nullptr;
+            return false;
+        }
         if (inputConsumed > toRead) {
             LOG(ERROR) << "update reported too much input consumed";
             mDevice = nullptr;
@@ -157,74 +70,63 @@ bool KeymasterOperation::updateCompletely(const std::string& input, std::string*
 }
 
 bool KeymasterOperation::finish(std::string* output) {
-    keymaster_blob_t outputBlob;
-    auto error = mDevice->finish(mOpHandle, nullptr, nullptr, nullptr,
-        output ? &outputBlob : nullptr);
+    ErrorCode km_error;
+    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<KeyParameter>& /*ignored*/,
+            const hidl_vec<uint8_t>& _output) {
+        km_error = ret;
+        if (km_error != ErrorCode::OK) return;
+        if (output)
+            output->assign(reinterpret_cast<const char*>(&_output[0]), _output.size());
+    };
+    auto error = mDevice->finish(mOpHandle, hidl_vec<KeyParameter>(), hidl_vec<uint8_t>(),
+            hidl_vec<uint8_t>(), hidlCb);
     mDevice = nullptr;
-    if (error != KM_ERROR_OK) {
-        LOG(ERROR) << "finish failed, code " << error;
+    if (!error.isOk()) {
+        LOG(ERROR) << "finish failed: " << error.description();
         return false;
     }
-    if (output) {
-        output->assign(reinterpret_cast<const char*>(outputBlob.data), outputBlob.data_length);
-        free(const_cast<uint8_t*>(outputBlob.data));
+    if (km_error != ErrorCode::OK) {
+        LOG(ERROR) << "finish failed, code " << uint32_t(km_error);
+        return false;
     }
     return true;
 }
 
 Keymaster::Keymaster() {
-    mDevice = nullptr;
-    const hw_module_t* module;
-    int ret = hw_get_module_by_class(KEYSTORE_HARDWARE_MODULE_ID, NULL, &module);
-    if (ret != 0) {
-        LOG(ERROR) << "hw_get_module_by_class returned " << ret;
-        return;
-    }
-    LOG(DEBUG) << "module_api_version is " << module->module_api_version;
-    if (module->module_api_version == KEYMASTER_MODULE_API_VERSION_1_0) {
-        keymaster1_device_t* device;
-        ret = keymaster1_open(module, &device);
-        if (ret != 0) {
-            LOG(ERROR) << "keymaster1_open returned " << ret;
-            return;
-        }
-        mDevice = std::make_shared<Keymaster1Device>(device);
-    } else if (module->module_api_version == KEYMASTER_MODULE_API_VERSION_2_0) {
-        keymaster2_device_t* device;
-        ret = keymaster2_open(module, &device);
-        if (ret != 0) {
-            LOG(ERROR) << "keymaster2_open returned " << ret;
-            return;
-        }
-        auto error = ConfigureDevice(device);
-        if (error != KM_ERROR_OK) {
-            LOG(ERROR) << "ConfigureDevice returned " << error;
-            return;
-        }
-        mDevice = std::make_shared<Keymaster2Device>(device);
-    } else {
-        LOG(ERROR) << "module_api_version is " << module->module_api_version;
-        return;
-    }
+    mDevice = ::android::hardware::keymaster::V3_0::IKeymasterDevice::getService("keymaster");
 }
 
-bool Keymaster::generateKey(const keymaster::AuthorizationSet& inParams, std::string* key) {
-    keymaster_key_blob_t keyBlob;
-    auto error = mDevice->generate_key(&inParams, &keyBlob);
-    if (error != KM_ERROR_OK) {
-        LOG(ERROR) << "generate_key failed, code " << error;
+bool Keymaster::generateKey(const AuthorizationSet& inParams, std::string* key) {
+    ErrorCode km_error;
+    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<uint8_t>& keyBlob,
+            const KeyCharacteristics& /*ignored*/) {
+        km_error = ret;
+        if (km_error != ErrorCode::OK) return;
+        if (key)
+            key->assign(reinterpret_cast<const char*>(&keyBlob[0]), keyBlob.size());
+    };
+
+    auto error = mDevice->generateKey(inParams.hidl_data(), hidlCb);
+    if (!error.isOk()) {
+        LOG(ERROR) << "generate_key failed: " << error.description();
         return false;
     }
-    key->assign(reinterpret_cast<const char*>(keyBlob.key_material), keyBlob.key_material_size);
-    free(const_cast<uint8_t*>(keyBlob.key_material));
+    if (km_error != ErrorCode::OK) {
+        LOG(ERROR) << "generate_key failed, code " << int32_t(km_error);
+        return false;
+    }
     return true;
 }
 
 bool Keymaster::deleteKey(const std::string& key) {
-    keymaster_key_blob_t keyBlob{reinterpret_cast<const uint8_t*>(key.data()), key.size()};
-    auto error = mDevice->delete_key(&keyBlob);
-    if (error != KM_ERROR_OK) {
-        LOG(ERROR) << "delete_key failed, code " << error;
+    auto keyBlob = blob2hidlVec(key);
+    auto error = mDevice->deleteKey(keyBlob);
+    if (!error.isOk()) {
+        LOG(ERROR) << "delete_key failed: " << error.description();
+        return false;
+    }
+    if (ErrorCode(error) != ErrorCode::OK) {
+        LOG(ERROR) << "delete_key failed, code " << uint32_t(ErrorCode(error));
         return false;
     }
     return true;
@@ -232,35 +134,51 @@ bool Keymaster::deleteKey(const std::string& key) {
 
 bool Keymaster::upgradeKey(const std::string& oldKey, const AuthorizationSet& inParams,
                            std::string* newKey) {
-    keymaster_key_blob_t oldKeyBlob{reinterpret_cast<const uint8_t*>(oldKey.data()), oldKey.size()};
-    keymaster_key_blob_t newKeyBlob;
-    auto error = mDevice->upgrade_key(&oldKeyBlob, &inParams, &newKeyBlob);
-    if (error != KM_ERROR_OK) {
-        LOG(ERROR) << "upgrade_key failed, code " << error;
+    auto oldKeyBlob = blob2hidlVec(oldKey);
+    ErrorCode km_error;
+    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<uint8_t>& upgradedKeyBlob) {
+        km_error = ret;
+        if (km_error != ErrorCode::OK) return;
+        if (newKey)
+            newKey->assign(reinterpret_cast<const char*>(&upgradedKeyBlob[0]),
+                    upgradedKeyBlob.size());
+    };
+    auto error = mDevice->upgradeKey(oldKeyBlob, inParams.hidl_data(), hidlCb);
+    if (!error.isOk()) {
+        LOG(ERROR) << "upgrade_key failed: " << error.description();
         return false;
     }
-    newKey->assign(reinterpret_cast<const char*>(newKeyBlob.key_material),
-                   newKeyBlob.key_material_size);
-    free(const_cast<uint8_t*>(newKeyBlob.key_material));
+    if (km_error != ErrorCode::OK) {
+        LOG(ERROR) << "upgrade_key failed, code " << int32_t(km_error);
+        return false;
+    }
     return true;
 }
 
-KeymasterOperation Keymaster::begin(keymaster_purpose_t purpose, const std::string& key,
-                                    const keymaster::AuthorizationSet& inParams,
-                                    keymaster::AuthorizationSet* outParams) {
-    keymaster_key_blob_t keyBlob{reinterpret_cast<const uint8_t*>(key.data()), key.size()};
-    keymaster_operation_handle_t mOpHandle;
-    keymaster_key_param_set_t outParams_set;
-    auto error = mDevice->begin(purpose, &keyBlob, &inParams,
-        outParams ? &outParams_set : nullptr, &mOpHandle);
-    if (error != KM_ERROR_OK) {
-        LOG(ERROR) << "begin failed, code " << error;
-        return KeymasterOperation(error);
+KeymasterOperation Keymaster::begin(KeyPurpose purpose, const std::string& key,
+                                    const AuthorizationSet& inParams,
+                                    AuthorizationSet* outParams) {
+    auto keyBlob = blob2hidlVec(key);
+    uint64_t mOpHandle;
+    ErrorCode km_error;
+
+    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<KeyParameter>& _outParams,
+            uint64_t operationHandle) {
+        km_error = ret;
+        if (km_error != ErrorCode::OK) return;
+        if (outParams)
+            *outParams = _outParams;
+        mOpHandle = operationHandle;
+    };
+
+    auto error = mDevice->begin(purpose, keyBlob, inParams.hidl_data(), hidlCb);
+    if (!error.isOk()) {
+        LOG(ERROR) << "begin failed: " << error.description();
+        return KeymasterOperation(ErrorCode::UNKNOWN_ERROR);
     }
-    if (outParams) {
-        outParams->Clear();
-        outParams->push_back(outParams_set);
-        keymaster_free_param_set(&outParams_set);
+    if (km_error != ErrorCode::OK) {
+        LOG(ERROR) << "begin failed, code " << uint32_t(km_error);
+        return KeymasterOperation(km_error);
     }
     return KeymasterOperation(mDevice, mOpHandle);
 }
