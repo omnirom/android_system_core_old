@@ -20,11 +20,14 @@
 #include "Utils.h"
 
 #include <algorithm>
+#include <chrono>
 #include <iomanip>
 #include <map>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 
 #include <dirent.h>
 #include <errno.h>
@@ -60,6 +63,8 @@ static constexpr int FLAG_STORAGE_DE = 1 << 0;
 static constexpr int FLAG_STORAGE_CE = 1 << 1;
 
 namespace {
+const std::chrono::seconds s_key_eviction_sleep_time(20);
+
 const std::string device_key_dir = std::string() + DATA_MNT_POINT + e4crypt_unencrypted_folder;
 const std::string device_key_path = device_key_dir + "/key";
 const std::string device_key_temp = device_key_dir + "/temp";
@@ -71,6 +76,10 @@ bool s_global_de_initialized = false;
 
 // Some users are ephemeral, don't try to wipe their keys from disk
 std::set<userid_t> s_ephemeral_users;
+
+// Allow evictions to be cancelled.
+std::map<std::string, std::thread::id> s_desired_eviction_threads;
+std::mutex s_desired_eviction_threads_mutex;
 
 // Map user ids to key references
 std::map<userid_t, std::string> s_de_key_raw_refs;
@@ -158,6 +167,9 @@ static bool install_key(const std::string& key, std::string* raw_ref) {
     ext4_encryption_key ext4_key;
     if (!fill_key(key, &ext4_key)) return false;
     *raw_ref = generate_key_ref(ext4_key.raw, ext4_key.size);
+    // Ensure that no thread is waiting to evict this ref
+    std::lock_guard<std::mutex> lock(s_desired_eviction_threads_mutex);
+    s_desired_eviction_threads.erase(*raw_ref);
     auto ref = keyname(*raw_ref);
     key_serial_t device_keyring;
     if (!e4crypt_keyring(&device_keyring)) return false;
@@ -516,15 +528,66 @@ bool e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) 
     return true;
 }
 
+static void evict_key_after_delay(const std::string raw_ref) {
+    LOG(DEBUG) << "Waiting to evict key in thread " << std::this_thread::get_id();
+    std::this_thread::sleep_for(s_key_eviction_sleep_time);
+    LOG(DEBUG) << "Done waiting to evict key in thread " << std::this_thread::get_id();
+
+    std::lock_guard<std::mutex> lock(s_desired_eviction_threads_mutex);
+    // Check the key should be evicted by this thread
+    auto search = s_desired_eviction_threads.find(raw_ref);
+    if (search == s_desired_eviction_threads.end()) {
+        LOG(DEBUG) << "Not evicting renewed-desirability key";
+        return;
+    }
+    if (search->second != std::this_thread::get_id()) {
+        LOG(DEBUG) << "We are not the thread to evict this key";
+        return;
+    }
+
+    // Remove the key from the keyring
+    auto ref = keyname(raw_ref);
+    key_serial_t device_keyring;
+    if (!e4crypt_keyring(&device_keyring)) return;
+    auto key_serial = keyctl_search(device_keyring, "logon", ref.c_str(), 0);
+    if (keyctl_revoke(key_serial) != 0) {
+        PLOG(ERROR) << "Failed to revoke key with serial " << key_serial;
+        return;
+    }
+    LOG(DEBUG) << "Revoked key with serial " << key_serial;
+}
+
+static bool evict_key(const std::string &raw_ref) {
+    // FIXME the use of a thread with delay is a work around for a kernel bug
+    std::lock_guard<std::mutex> lock(s_desired_eviction_threads_mutex);
+    std::thread t(evict_key_after_delay, raw_ref);
+    s_desired_eviction_threads[raw_ref] = t.get_id();
+    LOG(DEBUG) << "Scheduled key eviction in thread " << t.get_id();
+    t.detach();
+    return true; // Sadly no way to know if we were successful :(
+}
+
+static bool evict_ce_key(userid_t user_id) {
+    s_ce_keys.erase(user_id);
+    bool success = true;
+    std::string raw_ref;
+    // If we haven't loaded the CE key, no need to evict it.
+    if (lookup_key_ref(s_ce_key_raw_refs, user_id, &raw_ref)) {
+        success &= evict_key(raw_ref);
+    }
+    s_ce_key_raw_refs.erase(user_id);
+    return success;
+}
+
 bool e4crypt_destroy_user_key(userid_t user_id) {
     LOG(DEBUG) << "e4crypt_destroy_user_key(" << user_id << ")";
     if (!e4crypt_is_native()) {
         return true;
     }
     bool success = true;
-    s_ce_keys.erase(user_id);
     std::string raw_ref;
-    s_ce_key_raw_refs.erase(user_id);
+    success &= evict_ce_key(user_id);
+    success &= lookup_key_ref(s_de_key_raw_refs, user_id, &raw_ref) && evict_key(raw_ref);
     s_de_key_raw_refs.erase(user_id);
     auto it = s_ephemeral_users.find(user_id);
     if (it != s_ephemeral_users.end()) {
@@ -659,8 +722,9 @@ bool e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token_hex
 
 // TODO: rename to 'evict' for consistency
 bool e4crypt_lock_user_key(userid_t user_id) {
+    LOG(DEBUG) << "e4crypt_lock_user_key " << user_id;
     if (e4crypt_is_native()) {
-        // TODO: remove from kernel keyring
+        return evict_ce_key(user_id);
     } else if (e4crypt_is_emulated()) {
         // When in emulation mode, we just use chmod
         if (!emulated_lock(android::vold::BuildDataSystemCePath(user_id)) ||
