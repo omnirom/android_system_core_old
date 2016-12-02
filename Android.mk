@@ -71,6 +71,16 @@ common_static_libraries := \
 vold_conlyflags := -std=c11
 vold_cflags := -Werror -Wall -Wno-missing-field-initializers -Wno-unused-variable -Wno-unused-parameter
 
+required_modules :=
+ifeq ($(TARGET_USERIMAGES_USE_EXT4), true)
+  ifeq ($(TARGET_USES_MKE2FS), true)
+    vold_cflags += -DTARGET_USES_MKE2FS
+    required_modules += mke2fs
+  else
+    required_modules += make_ext4fs
+  endif
+endif
+
 include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
@@ -83,6 +93,7 @@ LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
 LOCAL_MODULE_TAGS := eng tests
 LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
+LOCAL_REQUIRED_MODULES := $(required_modules)
 
 include $(BUILD_STATIC_LIBRARY)
 
@@ -109,6 +120,7 @@ endif
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
+LOCAL_REQUIRED_MODULES := $(required_modules)
 
 include $(BUILD_EXECUTABLE)
 
