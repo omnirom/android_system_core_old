@@ -703,8 +703,9 @@ static android::status_t runCommandInNamespace(const std::string& command,
             PLOG(ERROR) << "Failed to stat /proc/" << pid;
             return -errno;
         }
-        if (sb.st_uid != uid) {
-            LOG(ERROR) << "Mismatch UID expected=" << uid << ", actual=" << sb.st_uid;
+        if (sb.st_uid != AID_SYSTEM) {
+            LOG(ERROR) << "Only system can mount appfuse. UID expected=" << AID_SYSTEM
+                    << ", actual=" << sb.st_uid;
             return -EPERM;
         }
     }
