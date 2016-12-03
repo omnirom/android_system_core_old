@@ -2194,6 +2194,19 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
     int rc = -1;
 
     if (type == EXT4_FS) {
+#ifdef TARGET_USES_MKE2FS
+        args[0] = "/system/bin/mke2fs";
+        args[1] = "-M";
+        args[2] = "/data";
+        args[3] = "-b";
+        args[4] = "4096";
+        args[5] = "-t";
+        args[6] = "ext4";
+        args[7] = crypto_blkdev;
+        snprintf(size_str, sizeof(size_str), "%" PRId64, size / (4096 / 512));
+        args[8] = size_str;
+        num_args = 9;
+#else
         args[0] = "/system/bin/make_ext4fs";
         args[1] = "-a";
         args[2] = "/data";
@@ -2202,6 +2215,7 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
         args[4] = size_str;
         args[5] = crypto_blkdev;
         num_args = 6;
+#endif
         SLOGI("Making empty filesystem with command %s %s %s %s %s %s\n",
               args[0], args[1], args[2], args[3], args[4], args[5]);
     } else if (type == F2FS_FS) {
