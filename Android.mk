@@ -53,10 +53,11 @@ common_shared_libraries := \
 	libselinux \
 	libutils \
 	libhardware \
-	libsoftkeymaster \
 	libbase \
-	libsoftkeymasterdevice \
-	libkeymaster_messages \
+	libhwbinder \
+	libhidlbase \
+	android.hardware.keymaster@3.0 \
+	libkeystore_binder
 
 common_static_libraries := \
 	libbootloader_message \

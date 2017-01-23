@@ -38,7 +38,8 @@
 
 #include <hardware/hw_auth_token.h>
 
-#include <keymaster/authorization_set.h>
+#include <keystore/authorization_set.h>
+#include <keystore/keystore_hidl_support.h>
 
 extern "C" {
 
@@ -47,6 +48,7 @@ extern "C" {
 
 namespace android {
 namespace vold {
+using namespace keystore;
 
 const KeyAuthentication kEmptyAuthentication{"", ""};
 
@@ -100,15 +102,15 @@ static std::string hashSecdiscardable(const std::string& secdiscardable) {
 
 static bool generateKeymasterKey(Keymaster& keymaster, const KeyAuthentication& auth,
                                  const std::string& appId, std::string* key) {
-    auto paramBuilder = keymaster::AuthorizationSetBuilder()
+    auto paramBuilder = AuthorizationSetBuilder()
                             .AesEncryptionKey(AES_KEY_BYTES * 8)
-                            .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
-                            .Authorization(keymaster::TAG_MIN_MAC_LENGTH, GCM_MAC_BYTES * 8)
-                            .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE);
-    addStringParam(&paramBuilder, keymaster::TAG_APPLICATION_ID, appId);
+                            .Authorization(TAG_BLOCK_MODE, BlockMode::GCM)
+                            .Authorization(TAG_MIN_MAC_LENGTH, GCM_MAC_BYTES * 8)
+                            .Authorization(TAG_PADDING, PaddingMode::NONE)
+                            .Authorization(TAG_APPLICATION_ID, blob2hidlVec(appId));
     if (auth.token.empty()) {
         LOG(DEBUG) << "Creating key that doesn't need auth token";
-        paramBuilder.Authorization(keymaster::TAG_NO_AUTH_REQUIRED);
+        paramBuilder.Authorization(TAG_NO_AUTH_REQUIRED);
     } else {
         LOG(DEBUG) << "Auth token required for key";
         if (auth.token.size() != sizeof(hw_auth_token_t)) {
@@ -117,25 +119,25 @@ static bool generateKeymasterKey(Keymaster& keymaster, const KeyAuthentication& 
             return false;
         }
         const hw_auth_token_t* at = reinterpret_cast<const hw_auth_token_t*>(auth.token.data());
-        paramBuilder.Authorization(keymaster::TAG_USER_SECURE_ID, at->user_id);
-        paramBuilder.Authorization(keymaster::TAG_USER_AUTH_TYPE, HW_AUTH_PASSWORD);
-        paramBuilder.Authorization(keymaster::TAG_AUTH_TIMEOUT, AUTH_TIMEOUT);
+        paramBuilder.Authorization(TAG_USER_SECURE_ID, at->user_id);
+        paramBuilder.Authorization(TAG_USER_AUTH_TYPE, HardwareAuthenticatorType::PASSWORD);
+        paramBuilder.Authorization(TAG_AUTH_TIMEOUT, AUTH_TIMEOUT);
     }
-    return keymaster.generateKey(paramBuilder.build(), key);
+    return keymaster.generateKey(paramBuilder, key);
 }
 
-static keymaster::AuthorizationSet beginParams(const KeyAuthentication& auth,
+static AuthorizationSet beginParams(const KeyAuthentication& auth,
                                                const std::string& appId) {
-    auto paramBuilder = keymaster::AuthorizationSetBuilder()
-                            .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
-                            .Authorization(keymaster::TAG_MAC_LENGTH, GCM_MAC_BYTES * 8)
-                            .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE);
-    addStringParam(&paramBuilder, keymaster::TAG_APPLICATION_ID, appId);
+    auto paramBuilder = AuthorizationSetBuilder()
+                            .Authorization(TAG_BLOCK_MODE, BlockMode::GCM)
+                            .Authorization(TAG_MAC_LENGTH, GCM_MAC_BYTES * 8)
+                            .Authorization(TAG_PADDING, PaddingMode::NONE)
+                            .Authorization(TAG_APPLICATION_ID, blob2hidlVec(appId));
     if (!auth.token.empty()) {
         LOG(DEBUG) << "Supplying auth token to Keymaster";
-        addStringParam(&paramBuilder, keymaster::TAG_AUTH_TOKEN, auth.token);
+        paramBuilder.Authorization(TAG_AUTH_TOKEN, blob2hidlVec(auth.token));
     }
-    return paramBuilder.build();
+    return paramBuilder;
 }
 
 static bool readFileToString(const std::string& filename, std::string* result) {
@@ -155,22 +157,21 @@ static bool writeStringToFile(const std::string& payload, const std::string& fil
 }
 
 static KeymasterOperation begin(Keymaster& keymaster, const std::string& dir,
-                                keymaster_purpose_t purpose,
-                                const keymaster::AuthorizationSet &keyParams,
-                                const keymaster::AuthorizationSet &opParams,
-                                keymaster::AuthorizationSet* outParams) {
+                                KeyPurpose purpose,
+                                const AuthorizationSet &keyParams,
+                                const AuthorizationSet &opParams,
+                                AuthorizationSet* outParams) {
     auto kmKeyPath = dir + "/" + kFn_keymaster_key_blob;
     std::string kmKey;
     if (!readFileToString(kmKeyPath, &kmKey)) return KeymasterOperation();
-    keymaster::AuthorizationSet inParams;
-    inParams.push_back(keyParams);
-    inParams.push_back(opParams);
+    AuthorizationSet inParams(keyParams);
+    inParams.append(opParams.begin(), opParams.end());
     for (;;) {
         auto opHandle = keymaster.begin(purpose, kmKey, inParams, outParams);
         if (opHandle) {
             return opHandle;
         }
-        if (opHandle.error() != KM_ERROR_KEY_REQUIRES_UPGRADE) return opHandle;
+        if (opHandle.error() != ErrorCode::KEY_REQUIRES_UPGRADE) return opHandle;
         LOG(DEBUG) << "Upgrading key: " << dir;
         std::string newKey;
         if (!keymaster.upgradeKey(kmKey, keyParams, &newKey)) return KeymasterOperation();
@@ -189,19 +190,19 @@ static KeymasterOperation begin(Keymaster& keymaster, const std::string& dir,
 }
 
 static bool encryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir,
-                                    const keymaster::AuthorizationSet &keyParams,
+                                    const AuthorizationSet &keyParams,
                                     const std::string& message, std::string* ciphertext) {
-    keymaster::AuthorizationSet opParams;
-    keymaster::AuthorizationSet outParams;
-    auto opHandle = begin(keymaster, dir, KM_PURPOSE_ENCRYPT, keyParams, opParams, &outParams);
+    AuthorizationSet opParams;
+    AuthorizationSet outParams;
+    auto opHandle = begin(keymaster, dir, KeyPurpose::ENCRYPT, keyParams, opParams, &outParams);
     if (!opHandle) return false;
-    keymaster_blob_t nonceBlob;
-    if (!outParams.GetTagValue(keymaster::TAG_NONCE, &nonceBlob)) {
+    auto nonceBlob = outParams.GetTagValue(TAG_NONCE);
+    if (!nonceBlob.isOk()) {
         LOG(ERROR) << "GCM encryption but no nonce generated";
         return false;
     }
     // nonceBlob here is just a pointer into existing data, must not be freed
-    std::string nonce(reinterpret_cast<const char*>(nonceBlob.data), nonceBlob.data_length);
+    std::string nonce(reinterpret_cast<const char*>(&nonceBlob.value()[0]), nonceBlob.value().size());
     if (!checkSize("nonce", nonce.size(), GCM_NONCE_BYTES)) return false;
     std::string body;
     if (!opHandle.updateCompletely(message, &body)) return false;
@@ -214,13 +215,13 @@ static bool encryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir
 }
 
 static bool decryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir,
-                                    const keymaster::AuthorizationSet &keyParams,
+                                    const AuthorizationSet &keyParams,
                                     const std::string& ciphertext, std::string* message) {
     auto nonce = ciphertext.substr(0, GCM_NONCE_BYTES);
     auto bodyAndMac = ciphertext.substr(GCM_NONCE_BYTES);
-    auto opParams = addStringParam(keymaster::AuthorizationSetBuilder(),
-                                   keymaster::TAG_NONCE, nonce).build();
-    auto opHandle = begin(keymaster, dir, KM_PURPOSE_DECRYPT, keyParams, opParams, nullptr);
+    auto opParams = AuthorizationSetBuilder()
+            .Authorization(TAG_NONCE, blob2hidlVec(nonce));
+    auto opHandle = begin(keymaster, dir, KeyPurpose::DECRYPT, keyParams, opParams, nullptr);
     if (!opHandle) return false;
     if (!opHandle.updateCompletely(bodyAndMac, message)) return false;
     if (!opHandle.finish(nullptr)) return false;
