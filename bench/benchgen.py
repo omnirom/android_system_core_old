@@ -183,7 +183,12 @@ static status_t BenchmarkRun() {
                 if handle not in defined:
                     print >>bench, "int ",
                     defined.add(handle)
-                print >>bench, '%s = TEMP_FAILURE_RETRY(open("file%s", %s));' % (handle, f.ident, e.args[2])
+                create_mode = ''
+                if 'O_CREAT' in e.args[2]:
+                    assert len(e.args) > 3, 'File creation lacks a mode?'
+                    create_mode = ', ' + e.args[3]
+                print >>bench, '%s = TEMP_FAILURE_RETRY(open("file%s", %s%s));' \
+                        % (handle, f.ident, e.args[2], create_mode)
 
         elif e.call == "close":
             fd, f, handle = extract_file(e, e.args[0])
@@ -273,7 +278,7 @@ static status_t CreateFile(const char* name, int len) {
         LOG(ERROR) << "Failed to read random data";
         return -EIO;
     }
-    if ((out = TEMP_FAILURE_RETRY(open(name, O_WRONLY|O_CREAT|O_TRUNC))) < 0) {
+    if ((out = TEMP_FAILURE_RETRY(open(name, O_WRONLY|O_CREAT|O_TRUNC, 0644))) < 0) {
         PLOG(ERROR) << "Failed to open " << name;
         return -errno;
     }
