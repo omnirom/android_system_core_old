@@ -350,6 +350,7 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
 }
 
 void VolumeManager::addDiskSource(const std::shared_ptr<DiskSource>& diskSource) {
+    std::lock_guard<std::mutex> lock(mLock);
     mDiskSources.push_back(diskSource);
 }
 
