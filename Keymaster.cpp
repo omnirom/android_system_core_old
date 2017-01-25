@@ -94,7 +94,7 @@ bool KeymasterOperation::finish(std::string* output) {
 }
 
 Keymaster::Keymaster() {
-    mDevice = ::android::hardware::keymaster::V3_0::IKeymasterDevice::getService("keymaster");
+    mDevice = ::android::hardware::keymaster::V3_0::IKeymasterDevice::getService();
 }
 
 bool Keymaster::generateKey(const AuthorizationSet& inParams, std::string* key) {
