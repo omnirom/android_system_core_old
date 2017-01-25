@@ -756,6 +756,10 @@ static android::status_t runCommandInNamespace(const std::string& command,
                 PLOG(ERROR) << "Failed to unmount directory.";
                 _exit(-errno);
             }
+            if (rmdir(path.c_str()) != 0) {
+                PLOG(ERROR) << "Failed to remove the mount directory.";
+                _exit(-errno);
+            }
             _exit(android::OK);
         } else {
             LOG(ERROR) << "Unknown appfuse command " << command;
