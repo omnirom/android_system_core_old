@@ -749,7 +749,17 @@ static android::status_t runCommandInNamespace(const std::string& command,
         if (command == "mount") {
             _exit(mountInNamespace(uid, device_fd, path));
         } else if (command == "unmount") {
-            android::vold::ForceUnmount(path);
+            // If it's just after all FD opened on mount point are closed, umount2 can fail with
+            // EBUSY. To avoid the case, specify MNT_DETACH.
+            if (umount2(path.c_str(), UMOUNT_NOFOLLOW | MNT_DETACH) != 0 &&
+                    errno != EINVAL && errno != ENOENT) {
+                PLOG(ERROR) << "Failed to unmount directory.";
+                _exit(-errno);
+            }
+            if (rmdir(path.c_str()) != 0) {
+                PLOG(ERROR) << "Failed to remove the mount directory.";
+                _exit(-errno);
+            }
             _exit(android::OK);
         } else {
             LOG(ERROR) << "Unknown appfuse command " << command;
