@@ -31,7 +31,8 @@ KeymasterOperation::~KeymasterOperation() {
 }
 
 bool KeymasterOperation::updateCompletely(const std::string& input, std::string* output) {
-    output->clear();
+    if (output)
+        output->clear();
     auto it = input.begin();
     uint32_t inputConsumed;
 
@@ -55,7 +56,7 @@ bool KeymasterOperation::updateCompletely(const std::string& input, std::string*
             return false;
         }
         if (km_error != ErrorCode::OK) {
-            LOG(ERROR) << "update failed, code " << uint32_t(km_error);
+            LOG(ERROR) << "update failed, code " << int32_t(km_error);
             mDevice = nullptr;
             return false;
         }
@@ -86,7 +87,7 @@ bool KeymasterOperation::finish(std::string* output) {
         return false;
     }
     if (km_error != ErrorCode::OK) {
-        LOG(ERROR) << "finish failed, code " << uint32_t(km_error);
+        LOG(ERROR) << "finish failed, code " << int32_t(km_error);
         return false;
     }
     return true;
@@ -177,11 +178,134 @@ KeymasterOperation Keymaster::begin(KeyPurpose purpose, const std::string& key,
         return KeymasterOperation(ErrorCode::UNKNOWN_ERROR);
     }
     if (km_error != ErrorCode::OK) {
-        LOG(ERROR) << "begin failed, code " << uint32_t(km_error);
+        LOG(ERROR) << "begin failed, code " << int32_t(km_error);
         return KeymasterOperation(km_error);
     }
     return KeymasterOperation(mDevice, mOpHandle);
 }
+bool Keymaster::isSecure() {
+    bool _isSecure = false;
+    auto rc = mDevice->getHardwareFeatures(
+            [&] (bool isSecure, bool, bool, bool) { _isSecure = isSecure; });
+    return rc.isOk() && _isSecure;
+}
 
 }  // namespace vold
 }  // namespace android
+
+using namespace ::android::vold;
+
+int keymaster_compatibility_cryptfs_scrypt() {
+    return Keymaster().isSecure();
+}
+
+int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size,
+                                            uint64_t rsa_exponent,
+                                            uint32_t ratelimit,
+                                            uint8_t* key_buffer,
+                                            uint32_t key_buffer_size,
+                                            uint32_t* key_out_size)
+{
+    Keymaster dev;
+    std::string key;
+    if (!dev) {
+        LOG(ERROR) << "Failed to initiate keymaster session";
+        return -1;
+    }
+    if (!key_buffer || !key_out_size) {
+        LOG(ERROR) << __FILE__ << ":" << __LINE__ << ":Invalid argument";
+        return -1;
+    }
+    if (key_out_size) {
+        *key_out_size = 0;
+    }
+
+    auto paramBuilder = AuthorizationSetBuilder()
+                            .Authorization(TAG_ALGORITHM, Algorithm::RSA)
+                            .Authorization(TAG_KEY_SIZE, rsa_key_size)
+                            .Authorization(TAG_RSA_PUBLIC_EXPONENT, rsa_exponent)
+                            .Authorization(TAG_PURPOSE, KeyPurpose::SIGN)
+                            .Authorization(TAG_PADDING, PaddingMode::NONE)
+                            .Authorization(TAG_DIGEST, Digest::NONE)
+                            .Authorization(TAG_BLOB_USAGE_REQUIREMENTS,
+                                    KeyBlobUsageRequirements::STANDALONE)
+                            .Authorization(TAG_NO_AUTH_REQUIRED)
+                            .Authorization(TAG_MIN_SECONDS_BETWEEN_OPS, ratelimit);
+
+    if (!dev.generateKey(paramBuilder, &key)) {
+        return -1;
+    }
+
+    if (key_out_size) {
+        *key_out_size = key.size();
+    }
+
+    if (key_buffer_size < key.size()) {
+        return -1;
+    }
+
+    std::copy(key.data(), key.data() + key.size(), key_buffer);
+    return 0;
+}
+
+int keymaster_sign_object_for_cryptfs_scrypt(const uint8_t* key_blob,
+                                             size_t key_blob_size,
+                                             uint32_t ratelimit,
+                                             const uint8_t* object,
+                                             const size_t object_size,
+                                             uint8_t** signature_buffer,
+                                             size_t* signature_buffer_size)
+{
+    Keymaster dev;
+    if (!dev) {
+        LOG(ERROR) << "Failed to initiate keymaster session";
+        return -1;
+    }
+    if (!key_blob || !object || !signature_buffer || !signature_buffer_size) {
+        LOG(ERROR) << __FILE__ << ":" << __LINE__ << ":Invalid argument";
+        return -1;
+    }
+
+    AuthorizationSet outParams;
+    std::string key(reinterpret_cast<const char*>(key_blob), key_blob_size);
+    std::string input(reinterpret_cast<const char*>(object), object_size);
+    std::string output;
+    KeymasterOperation op;
+
+    auto paramBuilder = AuthorizationSetBuilder()
+                            .Authorization(TAG_PADDING, PaddingMode::NONE)
+                            .Authorization(TAG_DIGEST, Digest::NONE);
+
+    while (true) {
+        op = dev.begin(KeyPurpose::SIGN, key, paramBuilder, &outParams);
+        if (op.error() == ErrorCode::KEY_RATE_LIMIT_EXCEEDED) {
+            sleep(ratelimit);
+            continue;
+        } else break;
+    }
+
+    if (op.error() != ErrorCode::OK) {
+        LOG(ERROR) << "Error starting keymaster signature transaction: " << int32_t(op.error());
+        return -1;
+    }
+
+    if (!op.updateCompletely(input, &output)) {
+        LOG(ERROR) << "Error sending data to keymaster signature transaction: "
+                   << uint32_t(op.error());
+        return -1;
+    }
+
+    if (!op.finish(&output)) {
+        LOG(ERROR) << "Error finalizing keymaster signature transaction: " << int32_t(op.error());
+        return -1;
+    }
+
+    *signature_buffer = reinterpret_cast<uint8_t*>(malloc(output.size()));
+    if (*signature_buffer == nullptr) {
+        LOG(ERROR) << "Error allocation buffer for keymaster signature";
+        return -1;
+    }
+    *signature_buffer_size = output.size();
+    std::copy(output.data(), output.data() + output.size(), *signature_buffer);
+    return 0;
+}
