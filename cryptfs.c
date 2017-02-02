@@ -3879,8 +3879,9 @@ int cryptfs_set_password(struct crypt_mnt_ftr* ftr, const char* password,
                               ftr);
 }
 
-const char* cryptfs_get_file_encryption_mode()
+void cryptfs_get_file_encryption_modes(const char **contents_mode_ret,
+                                       const char **filenames_mode_ret)
 {
     struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
-    return fs_mgr_get_file_encryption_mode(rec);
+    fs_mgr_get_file_encryption_modes(rec, contents_mode_ret, filenames_mode_ret);
 }
