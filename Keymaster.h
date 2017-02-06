@@ -113,9 +113,9 @@ class Keymaster {
 }  // namespace vold
 }  // namespace android
 
+#endif // __cplusplus
 
-extern "C" {
-#endif
+__BEGIN_DECLS
 
 int keymaster_compatibility_cryptfs_scrypt();
 int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size,
@@ -132,8 +132,7 @@ int keymaster_sign_object_for_cryptfs_scrypt(const uint8_t* key_blob,
                                              const size_t object_size,
                                              uint8_t** signature_buffer,
                                              size_t* signature_buffer_size);
-#ifdef __cplusplus
-}
-#endif
+
+__END_DECLS
 
 #endif
