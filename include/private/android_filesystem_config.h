@@ -104,9 +104,11 @@
  * used here */
 #define AID_OEM_RESERVED_START 2900
 
+#ifdef QCOM_HARDWARE
 #define AID_QCOM_DIAG          2950  /* access to QTI diagnostic resources */
 #define AID_RFS                2951  /* Remote Filesystem for peripheral processors */
 #define AID_RFS_SHARED         2952  /* Shared files for Remote Filesystem for peripheral processors  */
+#endif
 
 #define AID_OEM_RESERVED_END   2999
 
@@ -123,14 +125,18 @@
 #define AID_READPROC      3009  /* Allow /proc read access */
 #define AID_WAKELOCK      3010  /* Allow system wakelock read/write access */
 
+#ifdef QCOM_HARDWARE
 #define AID_RFS_OLD          3012  /* DEPRECATED OLD ID FOR RFS, DO NOT USE */
 #define AID_RFS_SHARED_OLD   3013  /* DEPRECATED OLD ID FOR RFS-SHARED  */
+#endif
 
 /* The range 5000-5999 is also reserved for OEM, and must never be used here. */
 #define AID_OEM_RESERVED_2_START 5000
 #define AID_OEM_RESERVED_2_END   5999
 
+#ifdef QCOM_HARDWARE
 #define AID_SENSORS       3011 /* access to /dev/socket/sensor_ctl_socket & QCCI/QCSI */
+#endif
 
 #define AID_EVERYBODY     9997  /* shared between all apps in the same profile */
 #define AID_MISC          9998  /* access to misc storage */
@@ -222,10 +228,12 @@ static const struct android_id_info android_ids[] = {
     { "cache",         AID_CACHE, },
     { "diag",          AID_DIAG, },
 
+#ifdef QCOM_HARDWARE
     { "qcom_diag",     AID_QCOM_DIAG, },
 
     { "rfs",           AID_RFS, },
     { "rfs_shared",    AID_RFS_SHARED, },
+#endif
 
     { "net_bt_admin",  AID_NET_BT_ADMIN, },
     { "net_bt",        AID_NET_BT, },
@@ -238,10 +246,12 @@ static const struct android_id_info android_ids[] = {
     { "readproc",      AID_READPROC, },
     { "wakelock",      AID_WAKELOCK, },
 
+#ifdef QCOM_HARDWARE
     { "sensors",       AID_SENSORS, },
 
     { "rfs_old",           AID_RFS_OLD, },
     { "rfs_shared_old",    AID_RFS_SHARED_OLD, },
+#endif
 
     { "everybody",     AID_EVERYBODY, },
     { "misc",          AID_MISC, },
