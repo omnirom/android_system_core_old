@@ -385,9 +385,14 @@ static bool lookup_key_ref(const std::map<userid_t, std::string>& key_map, useri
 }
 
 static bool ensure_policy(const std::string& raw_ref, const std::string& path) {
+    const char *contents_mode;
+    const char *filenames_mode;
+
+    cryptfs_get_file_encryption_modes(&contents_mode, &filenames_mode);
+
     if (e4crypt_policy_ensure(path.c_str(),
                               raw_ref.data(), raw_ref.size(),
-                              cryptfs_get_file_encryption_mode()) != 0) {
+                              contents_mode, filenames_mode) != 0) {
         LOG(ERROR) << "Failed to set policy on: " << path;
         return false;
     }
@@ -446,9 +451,13 @@ bool e4crypt_initialize_global_de() {
         return true;
     }
 
+    const char *contents_mode;
+    const char *filenames_mode;
+    cryptfs_get_file_encryption_modes(&contents_mode, &filenames_mode);
+    std::string modestring = std::string(contents_mode) + ":" + filenames_mode;
+
     std::string mode_filename = std::string("/data") + e4crypt_key_mode;
-    std::string mode = cryptfs_get_file_encryption_mode();
-    if (!android::base::WriteStringToFile(mode, mode_filename)) {
+    if (!android::base::WriteStringToFile(modestring, mode_filename)) {
         PLOG(ERROR) << "Cannot save type";
         return false;
     }

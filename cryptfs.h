@@ -252,7 +252,8 @@ extern "C" {
                              unsigned char* master_key);
   int cryptfs_set_password(struct crypt_mnt_ftr* ftr, const char* password,
                            const unsigned char* master_key);
-  const char* cryptfs_get_file_encryption_mode();
+  void cryptfs_get_file_encryption_modes(const char **contents_mode_ret,
+                                         const char **filenames_mode_ret);
 
 #ifdef __cplusplus
 }
