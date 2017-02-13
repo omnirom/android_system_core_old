@@ -130,7 +130,9 @@
 #define AID_OEM_RESERVED_2_START 5000
 #define AID_OEM_RESERVED_2_END   5999
 
+#ifdef QCOM_HARDWARE
 #define AID_SENSORS       3011 /* access to /dev/socket/sensor_ctl_socket & QCCI/QCSI */
+#endif
 
 #define AID_EVERYBODY     9997  /* shared between all apps in the same profile */
 #define AID_MISC          9998  /* access to misc storage */
@@ -238,8 +240,9 @@ static const struct android_id_info android_ids[] = {
     { "readproc",      AID_READPROC, },
     { "wakelock",      AID_WAKELOCK, },
 
+#ifdef QCOM_HARDWARE
     { "sensors",       AID_SENSORS, },
-
+#endif
     { "rfs_old",           AID_RFS_OLD, },
     { "rfs_shared_old",    AID_RFS_SHARED_OLD, },
 
