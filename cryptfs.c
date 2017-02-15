@@ -67,10 +67,6 @@
 
 #define UNUSED __attribute__((unused))
 
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-#include "cryptfs_hw.h"
-#endif
-
 #define DM_CRYPT_BUF_SIZE 4096
 
 #define HASH_COUNT 2000
@@ -839,16 +835,7 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
   tgt->status = 0;
   tgt->sector_start = 0;
   tgt->length = crypt_ftr->fs_size;
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-  if (!strcmp((char *)crypt_ftr->crypto_type_name, "aes-xts")) {
-    strlcpy(tgt->target_type, "req-crypt", DM_MAX_TYPE_NAME);
-  }
-  else {
-    strlcpy(tgt->target_type, "crypt", DM_MAX_TYPE_NAME);
-  }
-#else
   strlcpy(tgt->target_type, "crypt", DM_MAX_TYPE_NAME);
-#endif
 
   crypt_params = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);
   convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
@@ -896,11 +883,7 @@ static int get_dm_crypt_version(int fd, const char *name,  int *version)
      */
     v = (struct dm_target_versions *) &buffer[sizeof(struct dm_ioctl)];
     while (v->next) {
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-        if (! strcmp(v->name, "crypt") || ! strcmp(v->name, "req-crypt")) {
-#else
         if (! strcmp(v->name, "crypt")) {
-#endif
             /* We found the crypt driver, return the version, and get out */
             version[0] = v->version[0];
             version[1] = v->version[1];
@@ -1617,14 +1600,6 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
   fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-  if (!strcmp((char *)crypt_ftr->crypto_type_name, "aes-xts")) {
-    if(!set_hw_device_encryption_key(passwd, (char*) crypt_ftr->crypto_type_name)) {
-      SLOGE("Hardware encryption key does not match");
-    }
-  }
-#endif
-
   // Create crypto block device - all (non fatal) code paths
   // need it
   if (create_crypto_blk_dev(crypt_ftr, decrypted_master_key,
@@ -2019,11 +1994,7 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
 /* aligned 32K writes tends to make flash happy.
  * SD card association recommends it.
  */
-#ifndef CONFIG_HW_DISK_ENCRYPTION
 #define BLOCKS_AT_A_TIME 8
-#else
-#define BLOCKS_AT_A_TIME 1024
-#endif
 
 struct encryptGroupsData
 {
@@ -2890,23 +2861,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
         }
         crypt_ftr.crypt_type = crypt_type;
-#ifndef CONFIG_HW_DISK_ENCRYPTION
         strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
-#else
-        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
-
-        rc = clear_hw_device_encryption_key();
-        if (!rc) {
-          SLOGE("Error clearing device encryption hardware key. rc = %d", rc);
-        }
-
-        rc = set_hw_device_encryption_key(passwd,
-                                          (char*) crypt_ftr.crypto_type_name);
-        if (!rc) {
-          SLOGE("Error initializing device encryption hardware key. rc = %d", rc);
-          goto error_shutting_down;
-        }
-#endif
 
         /* Make an encrypted master key */
         if (create_encrypted_random_key(onlyCreateHeader ? DEFAULT_PASSWORD : passwd,
@@ -3140,21 +3095,6 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
     /* save the key */
     put_crypt_ftr_and_key(&crypt_ftr);
 
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-    if (!strcmp((char *)crypt_ftr.crypto_type_name, "aes-xts")) {
-        if (crypt_type == CRYPT_TYPE_DEFAULT) {
-            int rc = update_hw_device_encryption_key(DEFAULT_PASSWORD, (char*) crypt_ftr.crypto_type_name);
-            SLOGD("Update hardware encryption key to default for crypt_type: %d. rc = %d", crypt_type, rc);
-            if (!rc)
-                return -1;
-        } else {
-            int rc = update_hw_device_encryption_key(newpw, (char*) crypt_ftr.crypto_type_name);
-            SLOGD("Update hardware encryption key for crypt_type: %d. rc = %d", crypt_type, rc);
-            if (!rc)
-                return -1;
-        }
-    }
-#endif
     return 0;
 }
 
