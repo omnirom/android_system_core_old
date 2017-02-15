@@ -17,6 +17,8 @@
 #ifndef ANDROID_VOLD_KEYMASTER_H
 #define ANDROID_VOLD_KEYMASTER_H
 
+#ifdef __cplusplus
+
 #include <memory>
 #include <string>
 #include <utility>
@@ -59,8 +61,17 @@ class KeymasterOperation {
     }
     // Construct an object in an error state for error returns
     KeymasterOperation()
-        : mDevice{nullptr}, mOpHandle{static_cast<uint64_t>(0)},
+        : mDevice{nullptr}, mOpHandle{0},
           mError {ErrorCode::UNKNOWN_ERROR} {}
+    // Move Assignment
+    KeymasterOperation& operator= (KeymasterOperation&& rhs) {
+        mDevice = std::move(rhs.mDevice);
+        mOpHandle = std::move(rhs.mOpHandle);
+        mError = std::move(rhs.mError);
+        rhs.mError = ErrorCode::UNKNOWN_ERROR;
+        rhs.mOpHandle = 0;
+        return *this;
+    }
 
   private:
     KeymasterOperation(const sp<IKeymasterDevice>& d, uint64_t h)
@@ -92,6 +103,7 @@ class Keymaster {
     // Begin a new cryptographic operation, collecting output parameters if pointer is non-null
     KeymasterOperation begin(KeyPurpose purpose, const std::string& key,
                              const AuthorizationSet& inParams, AuthorizationSet* outParams);
+    bool isSecure();
 
   private:
     sp<hardware::keymaster::V3_0::IKeymasterDevice> mDevice;
@@ -100,5 +112,36 @@ class Keymaster {
 
 }  // namespace vold
 }  // namespace android
+
+#endif // __cplusplus
+
+
+/*
+ * The following functions provide C bindings to keymaster services
+ * needed by cryptfs scrypt. The compatibility check checks whether
+ * the keymaster implementation is considered secure, i.e., TEE backed.
+ * The create_key function generates an RSA key for signing.
+ * The sign_object function signes an object with the given keymaster
+ * key.
+ */
+__BEGIN_DECLS
+
+int keymaster_compatibility_cryptfs_scrypt();
+int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size,
+                                            uint64_t rsa_exponent,
+                                            uint32_t ratelimit,
+                                            uint8_t* key_buffer,
+                                            uint32_t key_buffer_size,
+                                            uint32_t* key_out_size);
+
+int keymaster_sign_object_for_cryptfs_scrypt(const uint8_t* key_blob,
+                                             size_t key_blob_size,
+                                             uint32_t ratelimit,
+                                             const uint8_t* object,
+                                             const size_t object_size,
+                                             uint8_t** signature_buffer,
+                                             size_t* signature_buffer_size);
+
+__END_DECLS
 
 #endif
