@@ -17,7 +17,7 @@ common_src_files := \
 	CheckBattery.cpp \
 	Ext4Crypt.cpp \
 	VoldUtil.c \
-	cryptfs.c \
+	cryptfs.cpp \
 	Disk.cpp \
 	VolumeBase.cpp \
 	PublicVolume.cpp \
