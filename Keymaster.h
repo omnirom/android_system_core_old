@@ -47,7 +47,7 @@ class KeymasterOperation {
     // Is this instance valid? This is false if creation fails, and becomes
     // false on finish or if an update fails.
     explicit operator bool() { return mError == ErrorCode::OK; }
-    ErrorCode error() { return mError; }
+    ErrorCode errorCode() { return mError; }
     // Call "update" repeatedly until all of the input is consumed, and
     // concatenate the output. Return true on success.
     bool updateCompletely(const std::string& input, std::string* output);

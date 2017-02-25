@@ -278,25 +278,25 @@ int keymaster_sign_object_for_cryptfs_scrypt(const uint8_t* key_blob,
 
     while (true) {
         op = dev.begin(KeyPurpose::SIGN, key, paramBuilder, &outParams);
-        if (op.error() == ErrorCode::KEY_RATE_LIMIT_EXCEEDED) {
+        if (op.errorCode() == ErrorCode::KEY_RATE_LIMIT_EXCEEDED) {
             sleep(ratelimit);
             continue;
         } else break;
     }
 
-    if (op.error() != ErrorCode::OK) {
-        LOG(ERROR) << "Error starting keymaster signature transaction: " << int32_t(op.error());
+    if (op.errorCode() != ErrorCode::OK) {
+        LOG(ERROR) << "Error starting keymaster signature transaction: " << int32_t(op.errorCode());
         return -1;
     }
 
     if (!op.updateCompletely(input, &output)) {
         LOG(ERROR) << "Error sending data to keymaster signature transaction: "
-                   << uint32_t(op.error());
+                   << uint32_t(op.errorCode());
         return -1;
     }
 
     if (!op.finish(&output)) {
-        LOG(ERROR) << "Error finalizing keymaster signature transaction: " << int32_t(op.error());
+        LOG(ERROR) << "Error finalizing keymaster signature transaction: " << int32_t(op.errorCode());
         return -1;
     }
 

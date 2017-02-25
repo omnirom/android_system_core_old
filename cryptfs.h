@@ -228,7 +228,7 @@ extern "C" {
                           unsigned char *ikey, void *params);
 
   int cryptfs_crypto_complete(void);
-  int cryptfs_check_passwd(char *pw);
+  int cryptfs_check_passwd(const char *pw);
   int cryptfs_verify_passwd(char *newpw);
   int cryptfs_restart(void);
   int cryptfs_enable(char *flag, int type, char *passwd, int no_ui);

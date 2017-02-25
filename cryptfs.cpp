@@ -56,14 +56,16 @@
 #include "ScryptParameters.h"
 #include "VolumeManager.h"
 #include "VoldUtil.h"
-#include "crypto_scrypt.h"
 #include "Ext4Crypt.h"
 #include "f2fs_sparseblock.h"
 #include "CheckBattery.h"
 #include "Process.h"
 #include "Keymaster.h"
-
+#include "android-base/properties.h"
 #include <bootloader_message/bootloader_message.h>
+extern "C" {
+#include <crypto_scrypt.h>
+}
 
 #define UNUSED __attribute__((unused))
 
@@ -93,8 +95,6 @@
 
 #define RETRY_MOUNT_ATTEMPTS 10
 #define RETRY_MOUNT_DELAY_SECONDS 1
-
-char *me = "cryptfs";
 
 static unsigned char saved_master_key[KEY_LEN_BYTES];
 static char *saved_mount_point;
@@ -162,7 +162,7 @@ static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
             // object size.  However, it's still broken (but not unusably
             // so) because we really should be using a proper deterministic
             // RSA padding function, such as PKCS1.
-            memcpy(to_sign + 1, object, min(RSA_KEY_SIZE_BYTES - 1, object_size));
+            memcpy(to_sign + 1, object, std::min((size_t)RSA_KEY_SIZE_BYTES - 1, object_size));
             SLOGI("Signing safely-padded object");
             break;
         default:
@@ -447,7 +447,7 @@ static void upgrade_crypt_ftr(int fd, struct crypt_mnt_ftr *crypt_ftr, off64_t o
 
         SLOGW("upgrading crypto footer to 1.1");
 
-        pdata = malloc(CRYPT_PERSIST_DATA_SIZE);
+        pdata = (crypt_persist_data *)malloc(CRYPT_PERSIST_DATA_SIZE);
         if (pdata == NULL) {
             SLOGE("Cannot allocate persisent data\n");
             return;
@@ -615,7 +615,7 @@ static int load_persistent_data(void)
     /* If not encrypted, just allocate an empty table and initialize it */
     property_get("ro.crypto.state", encrypted_state, "");
     if (strcmp(encrypted_state, "encrypted") ) {
-        pdata = malloc(CRYPT_PERSIST_DATA_SIZE);
+        pdata = (crypt_persist_data*)malloc(CRYPT_PERSIST_DATA_SIZE);
         if (pdata) {
             init_empty_persist_data(pdata, CRYPT_PERSIST_DATA_SIZE);
             persist_data = pdata;
@@ -649,7 +649,7 @@ static int load_persistent_data(void)
         return -1;
     }
 
-    pdata = malloc(crypt_ftr.persist_data_size);
+    pdata = (crypt_persist_data*)malloc(crypt_ftr.persist_data_size);
     if (pdata == NULL) {
         SLOGE("Cannot allocate memory for persistent data");
         goto err;
@@ -728,7 +728,7 @@ static int save_persistent_data(void)
         return -1;
     }
 
-    pdata = malloc(crypt_ftr.persist_data_size);
+    pdata = (crypt_persist_data*)malloc(crypt_ftr.persist_data_size);
     if (pdata == NULL) {
         SLOGE("Cannot allocate persistant data");
         goto err;
@@ -817,7 +817,7 @@ static void convert_key_to_hex_ascii(const unsigned char *master_key,
 static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
         const unsigned char *master_key, const char *real_blk_name,
         const char *name, int fd, const char *extra_params) {
-  _Alignas(struct dm_ioctl) char buffer[DM_CRYPT_BUF_SIZE];
+  alignas(struct dm_ioctl) char buffer[DM_CRYPT_BUF_SIZE];
   struct dm_ioctl *io;
   struct dm_target_spec *tgt;
   char *crypt_params;
@@ -906,7 +906,7 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr,
   int err;
   int retval = -1;
   int version[3];
-  char *extra_params;
+  const char *extra_params;
   int load_count;
 
   if ((fd = open("/dev/device-mapper", O_RDWR|O_CLOEXEC)) < 0 ) {
@@ -968,7 +968,7 @@ errout:
   return retval;
 }
 
-static int delete_crypto_blk_dev(char *name)
+static int delete_crypto_blk_dev(const char *name)
 {
   int fd;
   char buffer[DM_CRYPT_BUF_SIZE];
@@ -1240,7 +1240,7 @@ static int decrypt_master_key(const char *passwd, unsigned char *decrypted_maste
     return ret;
 }
 
-static int create_encrypted_random_key(char *passwd, unsigned char *master_key, unsigned char *salt,
+static int create_encrypted_random_key(const char *passwd, unsigned char *master_key, unsigned char *salt,
         struct crypt_mnt_ftr *crypt_ftr) {
     int fd;
     unsigned char key_buf[KEY_LEN_BYTES];
@@ -1301,7 +1301,6 @@ int wait_and_unmount(const char *mountpoint, bool kill)
     return rc;
 }
 
-#define DATA_PREP_TIMEOUT 1000
 static int prep_data_fs(void)
 {
     int i;
@@ -1315,17 +1314,9 @@ static int prep_data_fs(void)
     SLOGD("Just triggered post_fs_data\n");
 
     /* Wait a max of 50 seconds, hopefully it takes much less */
-    for (i=0; i<DATA_PREP_TIMEOUT; i++) {
-        char p[PROPERTY_VALUE_MAX];
-
-        property_get("vold.post_fs_data_done", p, "0");
-        if (*p == '1') {
-            break;
-        } else {
-            usleep(50000);
-        }
-    }
-    if (i == DATA_PREP_TIMEOUT) {
+    if (!android::base::WaitForProperty("vold.post_fs_data_done",
+                                        "1",
+                                        std::chrono::seconds(50))) {
         /* Ugh, we failed to prep /data in time.  Bail. */
         SLOGE("post_fs_data timed out!\n");
         return -1;
@@ -1515,7 +1506,7 @@ int cryptfs_restart(void)
     return cryptfs_restart_internal(1);
 }
 
-static int do_crypto_complete(char *mount_point)
+static int do_crypto_complete(const char *mount_point)
 {
   struct crypt_mnt_ftr crypt_ftr;
   char encrypted_state[PROPERTY_VALUE_MAX];
@@ -1572,7 +1563,7 @@ static int do_crypto_complete(char *mount_point)
 }
 
 static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
-                                   char *passwd, char *mount_point, char *label)
+                                   const char *passwd, const char *mount_point, const char *label)
 {
   /* Allocate enough space for a 256 bit key, but we may use less */
   unsigned char decrypted_master_key[32];
@@ -1585,6 +1576,9 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   int upgrade = 0;
   unsigned char* intermediate_key = 0;
   size_t intermediate_key_size = 0;
+  int N = 1 << crypt_ftr->N_factor;
+  int r = 1 << crypt_ftr->r_factor;
+  int p = 1 << crypt_ftr->p_factor;
 
   SLOGD("crypt_ftr->fs_size = %lld\n", crypt_ftr->fs_size);
   orig_failed_decrypt_count = crypt_ftr->failed_decrypt_count;
@@ -1612,9 +1606,6 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   /* Work out if the problem is the password or the data */
   unsigned char scrypted_intermediate_key[sizeof(crypt_ftr->
                                                  scrypted_intermediate_key)];
-  int N = 1 << crypt_ftr->N_factor;
-  int r = 1 << crypt_ftr->r_factor;
-  int p = 1 << crypt_ftr->p_factor;
 
   rc = crypto_scrypt(intermediate_key, intermediate_key_size,
                      crypt_ftr->salt, sizeof(crypt_ftr->salt),
@@ -1771,7 +1762,7 @@ int check_unmounted_and_get_ftr(struct crypt_mnt_ftr* crypt_ftr)
     return 0;
 }
 
-int cryptfs_check_passwd(char *passwd)
+int cryptfs_check_passwd(const char *passwd)
 {
     SLOGI("cryptfs_check_passwd");
     if (e4crypt_is_native()) {
@@ -2125,13 +2116,13 @@ static int encrypt_groups(struct encryptGroupsData* data)
     off64_t ret;
     int rc = -1;
 
-    data->buffer = malloc(info.block_size * BLOCKS_AT_A_TIME);
+    data->buffer = (char *)malloc(info.block_size * BLOCKS_AT_A_TIME);
     if (!data->buffer) {
         SLOGE("Failed to allocate crypto buffer");
         goto errout;
     }
 
-    block_bitmap = malloc(info.block_size);
+    block_bitmap = (u8 *)malloc(info.block_size);
     if (!block_bitmap) {
         SLOGE("failed to allocate block bitmap");
         goto errout;
@@ -2141,8 +2132,8 @@ static int encrypt_groups(struct encryptGroupsData* data)
         SLOGI("Encrypting group %d", i);
 
         u32 first_block = aux_info.first_data_block + i * info.blocks_per_group;
-        u32 block_count = min(info.blocks_per_group,
-                             aux_info.len_blocks - first_block);
+        u32 block_count = std::min(info.blocks_per_group,
+                                   (u32)(aux_info.len_blocks - first_block));
 
         off64_t offset = (u64)info.block_size
                          * aux_info.bg_desc[i].bg_block_bitmap;
@@ -2214,6 +2205,8 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     u32 i;
     struct encryptGroupsData data;
     int rc; // Can't initialize without causing warning -Wclobbered
+    struct timespec time_started = {0};
+    int retries = RETRY_MOUNT_ATTEMPTS;
 
     if (previously_encrypted_upto > *size_already_done) {
         SLOGD("Not fast encrypting since resuming part way through");
@@ -2232,7 +2225,6 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     }
 
     // Wait until the block device appears.  Re-use the mount retry values since it is reasonable.
-    int retries = RETRY_MOUNT_ATTEMPTS;
     while ((data.cryptofd = open(crypto_blkdev, O_WRONLY|O_CLOEXEC)) < 0) {
         if (--retries) {
             SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s), retrying\n",
@@ -2272,7 +2264,6 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     data.one_pct = data.tot_used_blocks / 100;
     data.cur_pct = 0;
 
-    struct timespec time_started = {0};
     if (clock_gettime(CLOCK_MONOTONIC, &time_started)) {
         SLOGW("Error getting time at start");
         // Note - continue anyway - we'll run with 0
@@ -2390,7 +2381,7 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
     data.time_started = time(NULL);
     data.remaining_time = -1;
 
-    data.buffer = malloc(f2fs_info->block_size);
+    data.buffer = (char *)malloc(f2fs_info->block_size);
     if (!data.buffer) {
         SLOGE("Failed to allocate crypto buffer");
         goto errout;
@@ -2686,7 +2677,7 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
     return rc;
 }
 
-int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
+int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
                             int no_ui)
 {
     int how = 0;
@@ -2701,6 +2692,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     int num_vols;
     off64_t previously_encrypted_upto = 0;
     bool rebootEncryption = false;
+    bool onlyCreateHeader = false;
+    int fd = -1;
 
     if (!strcmp(howarg, "wipe")) {
       how = CRYPTO_ENABLE_WIPE;
@@ -2751,7 +2744,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
     /* Get the size of the real block device */
-    int fd = open(real_blkdev, O_RDONLY|O_CLOEXEC);
+    fd = open(real_blkdev, O_RDONLY|O_CLOEXEC);
     if (fd == -1) {
         SLOGE("Cannot open block device %s\n", real_blkdev);
         goto error_unencrypted;
@@ -2800,7 +2793,6 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     /* no_ui means we are being called from init, not settings.
        Now we always reboot from settings, so !no_ui means reboot
      */
-    bool onlyCreateHeader = false;
     if (!no_ui) {
         /* Try fallback, which is to reboot and try there */
         onlyCreateHeader = true;
@@ -2886,7 +2878,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
          * If none, create a valid empty table and save that.
          */
         if (!persist_data) {
-           pdata = malloc(CRYPT_PERSIST_DATA_SIZE);
+            pdata = (crypt_persist_data *)malloc(CRYPT_PERSIST_DATA_SIZE);
            if (pdata) {
                init_empty_persist_data(pdata, CRYPT_PERSIST_DATA_SIZE);
                persist_data = pdata;
@@ -2999,8 +2991,12 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         if (!strcmp(value, "1")) {
             /* wipe data if encryption failed */
             SLOGE("encryption failed - rebooting into recovery to wipe data\n");
-            if (!write_bootloader_message("--wipe_data\n--reason=cryptfs_enable_internal\n")) {
-                SLOGE("could not write bootloader message\n");
+            std::string err;
+            const std::vector<std::string> options = {
+                "--wipe_data\n--reason=cryptfs_enable_internal\n"
+            };
+            if (!write_bootloader_message(options, &err)) {
+                SLOGE("could not write bootloader message: %s", err.c_str());
             }
             cryptfs_reboot(recovery);
         } else {

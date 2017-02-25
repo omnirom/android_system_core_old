@@ -175,7 +175,7 @@ static KeymasterOperation begin(Keymaster& keymaster, const std::string& dir,
         if (opHandle) {
             return opHandle;
         }
-        if (opHandle.error() != ErrorCode::KEY_REQUIRES_UPGRADE) return opHandle;
+        if (opHandle.errorCode() != ErrorCode::KEY_REQUIRES_UPGRADE) return opHandle;
         LOG(DEBUG) << "Upgrading key: " << dir;
         std::string newKey;
         if (!keymaster.upgradeKey(kmKey, keyParams, &newKey)) return KeymasterOperation();
