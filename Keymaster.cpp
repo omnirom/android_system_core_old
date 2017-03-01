@@ -22,6 +22,7 @@
 #include <keystore/keystore_hidl_support.h>
 
 using namespace ::keystore;
+using android::hardware::hidl_string;
 
 namespace android {
 namespace vold {
@@ -186,7 +187,8 @@ KeymasterOperation Keymaster::begin(KeyPurpose purpose, const std::string& key,
 bool Keymaster::isSecure() {
     bool _isSecure = false;
     auto rc = mDevice->getHardwareFeatures(
-            [&] (bool isSecure, bool, bool, bool) { _isSecure = isSecure; });
+            [&] (bool isSecure, bool, bool, bool, bool, const hidl_string&, const hidl_string&) {
+                _isSecure = isSecure; });
     return rc.isOk() && _isSecure;
 }
 
