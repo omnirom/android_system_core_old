@@ -758,7 +758,6 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
         auto system_legacy_path = android::vold::BuildDataSystemLegacyPath(user_id);
         auto misc_legacy_path = android::vold::BuildDataMiscLegacyPath(user_id);
         auto profiles_de_path = android::vold::BuildDataProfilesDePath(user_id);
-        auto foreign_de_path = android::vold::BuildDataProfilesForeignDexDePath(user_id);
 
         // DE_n key
         auto system_de_path = android::vold::BuildDataSystemDePath(user_id);
@@ -771,7 +770,6 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
                 multiuser_get_uid(user_id, AID_EVERYBODY))) return false;
 #endif
         if (!prepare_dir(profiles_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
-        if (!prepare_dir(foreign_de_path, 0773, AID_SYSTEM, AID_SYSTEM)) return false;
 
         if (!prepare_dir(system_de_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
         if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return false;
@@ -829,7 +827,6 @@ bool e4crypt_destroy_user_storage(const char* volume_uuid, userid_t user_id, int
         auto system_legacy_path = android::vold::BuildDataSystemLegacyPath(user_id);
         auto misc_legacy_path = android::vold::BuildDataMiscLegacyPath(user_id);
         auto profiles_de_path = android::vold::BuildDataProfilesDePath(user_id);
-        auto foreign_de_path = android::vold::BuildDataProfilesForeignDexDePath(user_id);
 
         // DE_n key
         auto system_de_path = android::vold::BuildDataSystemDePath(user_id);
@@ -842,7 +839,6 @@ bool e4crypt_destroy_user_storage(const char* volume_uuid, userid_t user_id, int
             res &= destroy_dir(misc_legacy_path);
 #endif
             res &= destroy_dir(profiles_de_path);
-            res &= destroy_dir(foreign_de_path);
             res &= destroy_dir(system_de_path);
             res &= destroy_dir(misc_de_path);
         }
