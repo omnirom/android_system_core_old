@@ -196,7 +196,12 @@ bool Keymaster::isSecure() {
 using namespace ::android::vold;
 
 int keymaster_compatibility_cryptfs_scrypt() {
-    return Keymaster().isSecure();
+    Keymaster dev;
+    if (!dev) {
+        LOG(ERROR) << "Failed to initiate keymaster session";
+        return -1;
+    }
+    return dev.isSecure();
 }
 
 int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size,
