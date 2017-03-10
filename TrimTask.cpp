@@ -65,10 +65,10 @@ TrimTask::~TrimTask() {
 }
 
 void TrimTask::addFromFstab() {
-    struct fstab *fstab;
+    std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)> fstab(fs_mgr_read_fstab_default(),
+                                                               fs_mgr_free_fstab);
     struct fstab_rec *prev_rec = NULL;
 
-    fstab = fs_mgr_read_fstab(android::vold::DefaultFstabPath().c_str());
     for (int i = 0; i < fstab->num_entries; i++) {
         /* Skip raw partitions */
         if (!strcmp(fstab->recs[i].fs_type, "emmc") ||
@@ -96,7 +96,6 @@ void TrimTask::addFromFstab() {
         mPaths.push_back(fstab->recs[i].mount_point);
         prev_rec = &fstab->recs[i];
     }
-    fs_mgr_free_fstab(fstab);
 }
 
 void TrimTask::start() {
