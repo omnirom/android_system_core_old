@@ -635,12 +635,6 @@ dev_t GetDevice(const std::string& path) {
     }
 }
 
-std::string DefaultFstabPath() {
-    char hardware[PROPERTY_VALUE_MAX];
-    property_get("ro.hardware", hardware, "");
-    return StringPrintf("/fstab.%s", hardware);
-}
-
 status_t RestoreconRecursive(const std::string& path) {
     LOG(VERBOSE) << "Starting restorecon of " << path;
 
