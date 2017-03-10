@@ -215,10 +215,9 @@ static void coldboot(const char *path) {
 }
 
 static int process_config(VolumeManager *vm, bool* has_adoptable) {
-    std::string path(android::vold::DefaultFstabPath());
-    fstab = fs_mgr_read_fstab(path.c_str());
+    fstab = fs_mgr_read_fstab_default();
     if (!fstab) {
-        PLOG(ERROR) << "Failed to open default fstab " << path;
+        PLOG(ERROR) << "Failed to open default fstab";
         return -1;
     }
 
