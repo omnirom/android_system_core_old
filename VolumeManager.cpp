@@ -639,8 +639,13 @@ int VolumeManager::reset() {
     return 0;
 }
 
+// Can be called twice (sequentially) during shutdown. should be safe for that.
 int VolumeManager::shutdown() {
+    if (mInternalEmulated == nullptr) {
+        return 0; // already shutdown
+    }
     mInternalEmulated->destroy();
+    mInternalEmulated = nullptr;
     for (const auto& disk : mDisks) {
         disk->destroy();
     }
