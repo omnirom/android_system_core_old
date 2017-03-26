@@ -88,7 +88,13 @@ const char *VolumeManager::ASECDIR           = "/mnt/asec";
  */
 const char *VolumeManager::LOOPDIR           = "/mnt/obb";
 
-static const char* kUserMountPath = "/mnt/user";
+static const char* kPathUserMount = "/mnt/user";
+static const char* kPathVirtualDisk = "/data/misc/vold/virtual_disk";
+
+static const char* kPropVirtualDisk = "persist.sys.virtual_disk";
+
+/* 512MiB is large enough for testing purposes */
+static const unsigned int kSizeVirtualDisk = 536870912;
 
 static const unsigned int kMajorBlockMmc = 179;
 static const unsigned int kMajorBlockExperimentalMin = 240;
@@ -249,6 +255,55 @@ char *VolumeManager::asecHash(const char *id, char *buffer, size_t len) {
     return buffer;
 }
 
+int VolumeManager::updateVirtualDisk() {
+    if (property_get_bool(kPropVirtualDisk, false)) {
+        if (access(kPathVirtualDisk, F_OK) != 0) {
+            Loop::createImageFile(kPathVirtualDisk, kSizeVirtualDisk / 512);
+        }
+
+        if (mVirtualDisk == nullptr) {
+            if (Loop::create(kPathVirtualDisk, mVirtualDiskPath) != 0) {
+                LOG(ERROR) << "Failed to create virtual disk";
+                return -1;
+            }
+
+            struct stat buf;
+            if (stat(mVirtualDiskPath.c_str(), &buf) < 0) {
+                PLOG(ERROR) << "Failed to stat " << mVirtualDiskPath;
+                return -1;
+            }
+
+            auto disk = new android::vold::Disk("virtual", buf.st_rdev, "virtual",
+                    android::vold::Disk::Flags::kAdoptable | android::vold::Disk::Flags::kSd);
+            disk->create();
+            mVirtualDisk = std::shared_ptr<android::vold::Disk>(disk);
+            mDisks.push_back(mVirtualDisk);
+        }
+    } else {
+        if (mVirtualDisk != nullptr) {
+            dev_t device = mVirtualDisk->getDevice();
+
+            auto i = mDisks.begin();
+            while (i != mDisks.end()) {
+                if ((*i)->getDevice() == device) {
+                    (*i)->destroy();
+                    i = mDisks.erase(i);
+                } else {
+                    ++i;
+                }
+            }
+
+            Loop::destroyByDevice(mVirtualDiskPath.c_str());
+            mVirtualDisk = nullptr;
+        }
+
+        if (access(kPathVirtualDisk, F_OK) == 0) {
+            unlink(kPathVirtualDisk);
+        }
+    }
+    return 0;
+}
+
 int VolumeManager::setDebug(bool enable) {
     mDebug = enable;
     return 0;
@@ -265,6 +320,9 @@ int VolumeManager::start() {
     mInternalEmulated = std::shared_ptr<android::vold::VolumeBase>(
             new android::vold::EmulatedVolume("/data/media"));
     mInternalEmulated->create();
+
+    // Consider creating a virtual disk
+    updateVirtualDisk();
 
     return 0;
 }
@@ -455,7 +513,7 @@ int VolumeManager::onUserStarted(userid_t userId) {
     // Note that sometimes the system will spin up processes from Zygote
     // before actually starting the user, so we're okay if Zygote
     // already created this directory.
-    std::string path(StringPrintf("%s/%d", kUserMountPath, userId));
+    std::string path(StringPrintf("%s/%d", kPathUserMount, userId));
     fs_prepare_dir(path.c_str(), 0755, AID_ROOT, AID_ROOT);
 
     mStartedUsers.insert(userId);
@@ -634,6 +692,7 @@ int VolumeManager::reset() {
         disk->destroy();
         disk->create();
     }
+    updateVirtualDisk();
     mAddedUsers.clear();
     mStartedUsers.clear();
     return 0;

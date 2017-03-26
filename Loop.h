@@ -17,6 +17,7 @@
 #ifndef _LOOP_H
 #define _LOOP_H
 
+#include <string>
 #include <unistd.h>
 #include <linux/loop.h>
 
@@ -29,6 +30,7 @@ public:
     static int lookupActive(const char *id, char *buffer, size_t len);
     static int lookupInfo(const char *loopDevice, struct asec_superblock *sb, unsigned long *nr_sec);
     static int create(const char *id, const char *loopFile, char *loopDeviceBuffer, size_t len);
+    static int create(const std::string& file, std::string& out_device);
     static int destroyByDevice(const char *loopDevice);
     static int destroyByFile(const char *loopFile);
     static int createImageFile(const char *file, unsigned long numSectors);
