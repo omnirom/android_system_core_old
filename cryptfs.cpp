@@ -1725,7 +1725,8 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
     memset(&ext_crypt_ftr, 0, sizeof(ext_crypt_ftr));
     ext_crypt_ftr.fs_size = nr_sec;
     ext_crypt_ftr.keysize = keysize;
-    strcpy((char*) ext_crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
+    strlcpy((char*) ext_crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256",
+            MAX_CRYPTO_TYPE_NAME_LEN);
 
     return create_crypto_blk_dev(&ext_crypt_ftr, key, real_blkdev,
             out_crypto_blkdev, label);
@@ -2238,7 +2239,7 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
         }
     }
 
-    if (setjmp(setjmp_env)) {
+    if (setjmp(setjmp_env)) { // NOLINT
         SLOGE("Reading ext4 extent caused an exception\n");
         rc = -1;
         goto errout;

@@ -28,9 +28,16 @@
 #include <signal.h>
 
 #define LOG_TAG "ProcessKiller"
+
+#include <android-base/file.h>
+#include <android-base/stringprintf.h>
+#include <android-base/logging.h>
 #include <cutils/log.h>
 
 #include "Process.h"
+
+using android::base::ReadFileToString;
+using android::base::StringPrintf;
 
 int Process::readSymLink(const char *path, char *link, size_t max) {
     struct stat s;
@@ -40,10 +47,10 @@ int Process::readSymLink(const char *path, char *link, size_t max) {
         return 0;
     if ((s.st_mode & S_IFMT) != S_IFLNK)
         return 0;
-   
-    // we have a symlink    
+
+    // we have a symlink
     length = readlink(path, link, max- 1);
-    if (length <= 0) 
+    if (length <= 0)
         return 0;
     link[length] = 0;
     return 1;
@@ -63,16 +70,9 @@ int Process::pathMatchesMountPoint(const char* path, const char* mountPoint) {
     return 0;
 }
 
-void Process::getProcessName(int pid, char *buffer, size_t max) {
-    int fd;
-    snprintf(buffer, max, "/proc/%d/cmdline", pid);
-    fd = open(buffer, O_RDONLY | O_CLOEXEC);
-    if (fd < 0) {
-        strcpy(buffer, "???");
-    } else {
-        int length = read(fd, buffer, max - 1);
-        buffer[length] = 0;
-        close(fd);
+void Process::getProcessName(int pid, std::string& out_name) {
+    if (!ReadFileToString(StringPrintf("/proc/%d/cmdline", pid), &out_name)) {
+        out_name = "???";
     }
 }
 
@@ -103,7 +103,7 @@ int Process::checkFileDescriptorSymLinks(int pid, const char *mountPoint, char *
         
         // append the file name, after truncating to parent directory
         path[parent_length] = 0;
-        strcat(path, de->d_name);
+        strlcat(path, de->d_name, PATH_MAX);
 
         char link[PATH_MAX];
 
@@ -189,24 +189,24 @@ int Process::killProcessesWithOpenFiles(const char *path, int signal) {
 
     while ((de = readdir(dir))) {
         int pid = getPid(de->d_name);
-        char name[PATH_MAX];
-
         if (pid == -1)
             continue;
-        getProcessName(pid, name, sizeof(name));
+
+        std::string name;
+        getProcessName(pid, name);
 
         char openfile[PATH_MAX];
 
         if (checkFileDescriptorSymLinks(pid, path, openfile, sizeof(openfile))) {
-            SLOGE("Process %s (%d) has open file %s", name, pid, openfile);
+            SLOGE("Process %s (%d) has open file %s", name.c_str(), pid, openfile);
         } else if (checkFileMaps(pid, path, openfile, sizeof(openfile))) {
-            SLOGE("Process %s (%d) has open filemap for %s", name, pid, openfile);
+            SLOGE("Process %s (%d) has open filemap for %s", name.c_str(), pid, openfile);
         } else if (checkSymLink(pid, path, "cwd")) {
-            SLOGE("Process %s (%d) has cwd within %s", name, pid, path);
+            SLOGE("Process %s (%d) has cwd within %s", name.c_str(), pid, path);
         } else if (checkSymLink(pid, path, "root")) {
-            SLOGE("Process %s (%d) has chroot within %s", name, pid, path);
+            SLOGE("Process %s (%d) has chroot within %s", name.c_str(), pid, path);
         } else if (checkSymLink(pid, path, "exe")) {
-            SLOGE("Process %s (%d) has executable path within %s", name, pid, path);
+            SLOGE("Process %s (%d) has executable path within %s", name.c_str(), pid, path);
         } else {
             continue;
         }

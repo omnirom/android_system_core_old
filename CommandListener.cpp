@@ -327,8 +327,8 @@ int CommandListener::StorageCmd::runCommand(SocketClient *cli,
                 continue;
             }
 
-            char processName[255];
-            Process::getProcessName(pid, processName, sizeof(processName));
+            std::string processName;
+            Process::getProcessName(pid, processName);
 
             if (Process::checkFileDescriptorSymLinks(pid, argv[2]) ||
                 Process::checkFileMaps(pid, argv[2]) ||
@@ -337,7 +337,7 @@ int CommandListener::StorageCmd::runCommand(SocketClient *cli,
                 Process::checkSymLink(pid, argv[2], "exe")) {
 
                 char msg[1024];
-                snprintf(msg, sizeof(msg), "%d %s", pid, processName);
+                snprintf(msg, sizeof(msg), "%d %s", pid, processName.c_str());
                 cli->sendMsg(ResponseCode::StorageUsersListResult, msg, false);
             }
         }

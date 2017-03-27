@@ -292,7 +292,7 @@ status_t ForkExecvp(const std::vector<std::string>& args,
         LOG(ERROR) << "Failed to setexeccon";
         abort();
     }
-    FILE* fp = popen(cmd.c_str(), "r");
+    FILE* fp = popen(cmd.c_str(), "r"); // NOLINT
     if (setexeccon(nullptr)) {
         LOG(ERROR) << "Failed to setexeccon";
         abort();
