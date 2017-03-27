@@ -192,7 +192,7 @@ static void do_coldboot(DIR *d, int lvl) {
         if (de->d_type != DT_DIR && lvl > 0)
             continue;
 
-        fd = openat(dfd, de->d_name, O_RDONLY | O_DIRECTORY);
+        fd = openat(dfd, de->d_name, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
         if(fd < 0)
             continue;
 

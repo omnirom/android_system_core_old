@@ -617,7 +617,7 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
         }
 
         // We purposefully leave the namespace open across the fork
-        nsFd = openat(pidFd, "ns/mnt", O_RDONLY);
+        nsFd = openat(pidFd, "ns/mnt", O_RDONLY); // not O_CLOEXEC
         if (nsFd < 0) {
             PLOG(WARNING) << "Failed to open namespace for " << de->d_name;
             goto next;

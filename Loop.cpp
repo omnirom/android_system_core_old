@@ -237,7 +237,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
 }
 
 int Loop::create(const std::string& target, std::string& out_device) {
-    unique_fd ctl_fd(open("/dev/loop-control", O_RDWR));
+    unique_fd ctl_fd(open("/dev/loop-control", O_RDWR | O_CLOEXEC));
     if (ctl_fd.get() == -1) {
         PLOG(ERROR) << "Failed to open loop-control";
         return -errno;
@@ -251,12 +251,12 @@ int Loop::create(const std::string& target, std::string& out_device) {
 
     out_device = StringPrintf("/dev/block/loop%d", num);
 
-    unique_fd target_fd(open(target.c_str(), O_RDWR));
+    unique_fd target_fd(open(target.c_str(), O_RDWR | O_CLOEXEC));
     if (target_fd.get() == -1) {
         PLOG(ERROR) << "Failed to open " << target;
         return -errno;
     }
-    unique_fd device_fd(open(out_device.c_str(), O_RDWR));
+    unique_fd device_fd(open(out_device.c_str(), O_RDWR | O_CLOEXEC));
     if (device_fd.get() == -1) {
         PLOG(ERROR) << "Failed to open " << out_device;
         return -errno;
@@ -295,37 +295,19 @@ int Loop::destroyByFile(const char * /*loopFile*/) {
 }
 
 int Loop::createImageFile(const char *file, unsigned long numSectors) {
-    int res = 0;
-
-    char* secontext = nullptr;
-    if (sehandle) {
-        if (!selabel_lookup(sehandle, &secontext, file, S_IFREG)) {
-            setfscreatecon(secontext);
-        }
-    }
-
-    unique_fd fd(creat(file, 0600));
+    unique_fd fd(open(file, O_CREAT | O_WRONLY | O_TRUNC | O_CLOEXEC, 0600));
     if (fd.get() == -1) {
         PLOG(ERROR) << "Failed to create image " << file;
-        res = -errno;
-        goto done;
+        return -errno;
     }
-
     if (fallocate(fd.get(), 0, 0, numSectors * 512) == -1) {
         PLOG(WARNING) << "Failed to fallocate; falling back to ftruncate";
         if (ftruncate(fd, numSectors * 512) == -1) {
             PLOG(ERROR) << "Failed to ftruncate";
-            res = -errno;
+            return -errno;
         }
     }
-
-done:
-    if (secontext) {
-        setfscreatecon(nullptr);
-        freecon(secontext);
-    }
-
-    return res;
+    return 0;
 }
 
 int Loop::resizeImageFile(const char *file, unsigned long numSectors) {

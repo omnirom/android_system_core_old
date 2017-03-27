@@ -115,26 +115,6 @@ status_t RestoreconRecursive(const std::string& path);
 
 status_t SaneReadLinkAt(int dirfd, const char* path, char* buf, size_t bufsiz);
 
-class ScopedFd {
-    const int fd_;
-public:
-    ScopedFd(int fd);
-    ~ScopedFd();
-    int get() const { return fd_; }
-
-    DISALLOW_COPY_AND_ASSIGN(ScopedFd);
-};
-
-class ScopedDir {
-    DIR* const dir_;
-public:
-    ScopedDir(DIR* dir);
-    ~ScopedDir();
-    DIR* get() const { return dir_; }
-
-    DISALLOW_COPY_AND_ASSIGN(ScopedDir);
-};
-
 /* Checks if Android is running in QEMU */
 bool IsRunningInEmulator();
 

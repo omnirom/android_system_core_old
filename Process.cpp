@@ -130,7 +130,7 @@ int Process::checkFileMaps(int pid, const char *mountPoint, char *openFilename, 
     char buffer[PATH_MAX + 100];
 
     snprintf(buffer, sizeof(buffer), "/proc/%d/maps", pid);
-    file = fopen(buffer, "r");
+    file = fopen(buffer, "re");
     if (!file)
         return 0;
     

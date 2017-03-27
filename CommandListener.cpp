@@ -36,6 +36,7 @@
 
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
+#include <android-base/unique_fd.h>
 #include <cutils/fs.h>
 
 #include <sysutils/SocketClient.h>
@@ -53,6 +54,8 @@
 
 #define DUMP_ARGS 0
 #define DEBUG_APPFUSE 0
+
+using android::base::unique_fd;
 
 CommandListener::CommandListener() :
                  FrameworkListener("vold", true) {
@@ -120,7 +123,7 @@ int CommandListener::DumpCmd::runCommand(SocketClient *cli,
         cli->sendMsg(ResponseCode::CommandOkay, "Devmapper dump failed", true);
     }
     cli->sendMsg(0, "Dumping mounted filesystems", false);
-    FILE *fp = fopen("/proc/mounts", "r");
+    FILE *fp = fopen("/proc/mounts", "re");
     if (fp) {
         char line[1024];
         while (fgets(line, sizeof(line), fp)) {
@@ -680,16 +683,16 @@ static android::status_t runCommandInNamespace(const std::string& command,
                    << " in namespace " << uid;
     }
 
-    const android::vold::ScopedDir dir(opendir("/proc"));
-    if (dir.get() == nullptr) {
+    unique_fd dir(open("/proc", O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    if (dir.get() == -1) {
         PLOG(ERROR) << "Failed to open /proc";
         return -errno;
     }
 
     // Obtains process file descriptor.
     const std::string pid_str = android::base::StringPrintf("%d", pid);
-    const android::vold::ScopedFd pid_fd(
-            openat(dirfd(dir.get()), pid_str.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    const unique_fd pid_fd(
+            openat(dir.get(), pid_str.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
     if (pid_fd.get() == -1) {
         PLOG(ERROR) << "Failed to open /proc/" << pid;
         return -errno;
@@ -715,7 +718,7 @@ static android::status_t runCommandInNamespace(const std::string& command,
         char rootName[PATH_MAX];
         char pidName[PATH_MAX];
         const int root_result =
-                android::vold::SaneReadLinkAt(dirfd(dir.get()), "1/ns/mnt", rootName, PATH_MAX);
+                android::vold::SaneReadLinkAt(dir.get(), "1/ns/mnt", rootName, PATH_MAX);
         const int pid_result =
                 android::vold::SaneReadLinkAt(pid_fd.get(), "ns/mnt", pidName, PATH_MAX);
         if (root_result == -1) {
@@ -733,7 +736,7 @@ static android::status_t runCommandInNamespace(const std::string& command,
     }
 
     // We purposefully leave the namespace open across the fork
-    android::vold::ScopedFd ns_fd(openat(pid_fd.get(), "ns/mnt", O_RDONLY));
+    unique_fd ns_fd(openat(pid_fd.get(), "ns/mnt", O_RDONLY)); // not O_CLOEXEC
     if (ns_fd.get() < 0) {
         PLOG(ERROR) << "Failed to open namespace for /proc/" << pid << "/ns/mnt";
         return -errno;
@@ -811,7 +814,7 @@ int CommandListener::AppFuseCmd::runCommand(SocketClient *cli, int argc, char **
         }
 
         // Open device FD.
-        android::vold::ScopedFd device_fd(open("/dev/fuse", O_RDWR));
+        unique_fd device_fd(open("/dev/fuse", O_RDWR)); // not O_CLOEXEC
         if (device_fd.get() == -1) {
             PLOG(ERROR) << "Failed to open /dev/fuse";
             return sendGenericOkFail(cli, -errno);

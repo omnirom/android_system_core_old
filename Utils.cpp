@@ -483,7 +483,7 @@ int64_t calculate_dir_size(int dfd) {
                     continue;
             }
 
-            subfd = openat(dfd, name, O_RDONLY | O_DIRECTORY);
+            subfd = openat(dfd, name, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
             if (subfd >= 0) {
                 size += calculate_dir_size(subfd);
             }
@@ -494,7 +494,7 @@ int64_t calculate_dir_size(int dfd) {
 }
 
 uint64_t GetTreeBytes(const std::string& path) {
-    int dirfd = open(path.c_str(), O_DIRECTORY, O_RDONLY);
+    int dirfd = open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (dirfd < 0) {
         PLOG(WARNING) << "Failed to open " << path;
         return -1;
@@ -665,20 +665,6 @@ status_t SaneReadLinkAt(int dirfd, const char* path, char* buf, size_t bufsiz) {
     } else {
         buf[len] = '\0';
         return 0;
-    }
-}
-
-ScopedFd::ScopedFd(int fd) : fd_(fd) {}
-
-ScopedFd::~ScopedFd() {
-    close(fd_);
-}
-
-ScopedDir::ScopedDir(DIR* dir) : dir_(dir) {}
-
-ScopedDir::~ScopedDir() {
-    if (dir_ != nullptr) {
-        closedir(dir_);
     }
 }
 
