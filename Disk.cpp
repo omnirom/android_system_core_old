@@ -47,8 +47,10 @@ namespace vold {
 static const char* kSgdiskPath = "/system/bin/sgdisk";
 static const char* kSgdiskToken = " \t\n";
 
+static const char* kSysfsLoopMaxMinors = "/sys/module/loop/parameters/max_part";
 static const char* kSysfsMmcMaxMinors = "/sys/module/mmcblk/parameters/perdev_minors";
 
+static const unsigned int kMajorBlockLoop = 7;
 static const unsigned int kMajorBlockScsiA = 8;
 static const unsigned int kMajorBlockScsiB = 65;
 static const unsigned int kMajorBlockScsiC = 66;
@@ -229,6 +231,10 @@ status_t Disk::readMetadata() {
 
     unsigned int majorId = major(mDevice);
     switch (majorId) {
+    case kMajorBlockLoop: {
+        mLabel = "Virtual";
+        break;
+    }
     case kMajorBlockScsiA: case kMajorBlockScsiB: case kMajorBlockScsiC: case kMajorBlockScsiD:
     case kMajorBlockScsiE: case kMajorBlockScsiF: case kMajorBlockScsiG: case kMajorBlockScsiH:
     case kMajorBlockScsiI: case kMajorBlockScsiJ: case kMajorBlockScsiK: case kMajorBlockScsiL:
@@ -534,6 +540,14 @@ int Disk::getMaxMinors() {
     // Figure out maximum partition devices supported
     unsigned int majorId = major(mDevice);
     switch (majorId) {
+    case kMajorBlockLoop: {
+        std::string tmp;
+        if (!ReadFileToString(kSysfsLoopMaxMinors, &tmp)) {
+            LOG(ERROR) << "Failed to read max minors";
+            return -errno;
+        }
+        return atoi(tmp.c_str());
+    }
     case kMajorBlockScsiA: case kMajorBlockScsiB: case kMajorBlockScsiC: case kMajorBlockScsiD:
     case kMajorBlockScsiE: case kMajorBlockScsiF: case kMajorBlockScsiG: case kMajorBlockScsiH:
     case kMajorBlockScsiI: case kMajorBlockScsiJ: case kMajorBlockScsiK: case kMajorBlockScsiL:
