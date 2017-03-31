@@ -30,6 +30,7 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 
 #include <cutils/sockets.h>
@@ -47,6 +48,13 @@ int main(int argc, char **argv) {
     char *progname;
 
     progname = argv[0];
+
+    if (getppid() == 1) {
+        // If init is calling us then it's during boot and we should log to kmsg
+        android::base::InitLogging(argv, &android::base::KernelLogger);
+    } else {
+        android::base::InitLogging(argv, &android::base::StderrLogger);
+    }
 
     wait_for_socket = argc > 1 && strcmp(argv[1], "--wait") == 0;
     if (wait_for_socket) {
@@ -68,7 +76,7 @@ int main(int argc, char **argv) {
                                  ANDROID_SOCKET_NAMESPACE_RESERVED,
                                  SOCK_STREAM)) < 0) {
         if (!wait_for_socket) {
-            fprintf(stdout, "Error connecting to %s: %s\n", sockname, strerror(errno));
+            PLOG(ERROR) << "Error connecting to " << sockname;
             exit(4);
         } else {
             usleep(10000);
@@ -101,7 +109,7 @@ static int do_cmd(int sock, int argc, char **argv) {
     }
 
     if (TEMP_FAILURE_RETRY(write(sock, cmd.c_str(), cmd.length() + 1)) < 0) {
-        fprintf(stderr, "Failed to write command: %s\n", strerror(errno));
+        PLOG(ERROR) << "Failed to write command";
         return errno;
     }
 
@@ -113,7 +121,7 @@ static int do_monitor(int sock, int stop_after_seq) {
     int timeout = kCommandTimeoutMs;
 
     if (stop_after_seq == 0) {
-        fprintf(stderr, "Connected to vold\n");
+        LOG(INFO) << "Connected to vold";
         timeout = -1;
     }
 
@@ -121,25 +129,25 @@ static int do_monitor(int sock, int stop_after_seq) {
         struct pollfd poll_sock = { sock, POLLIN, 0 };
         int rc = TEMP_FAILURE_RETRY(poll(&poll_sock, 1, timeout));
         if (rc == 0) {
-            fprintf(stderr, "Timeout waiting for %d\n", stop_after_seq);
+            LOG(ERROR) << "Timeout waiting for " << stop_after_seq;
             return ETIMEDOUT;
         } else if (rc < 0) {
-            fprintf(stderr, "Failed during poll: %s\n", strerror(errno));
+            PLOG(ERROR) << "Failed during poll";
             return errno;
         }
 
         if (!(poll_sock.revents & POLLIN)) {
-            fprintf(stderr, "No data; trying again\n");
+            LOG(INFO) << "No data; trying again";
             continue;
         }
 
         memset(buffer, 0, sizeof(buffer));
         rc = TEMP_FAILURE_RETRY(read(sock, buffer, sizeof(buffer)));
         if (rc == 0) {
-            fprintf(stderr, "Lost connection, did vold crash?\n");
+            LOG(ERROR) << "Lost connection, did vold crash?";
             return ECONNRESET;
         } else if (rc < 0) {
-            fprintf(stderr, "Error reading data: %s\n", strerror(errno));
+            PLOG(ERROR) << "Error reading data";
             return errno;
         }
 
@@ -169,6 +177,5 @@ static int do_monitor(int sock, int stop_after_seq) {
 }
 
 static void usage(char *progname) {
-    fprintf(stderr,
-            "Usage: %s [--wait] <monitor>|<cmd> [arg1] [arg2...]\n", progname);
+    LOG(INFO) << "Usage: " << progname << " [--wait] <monitor>|<cmd> [arg1] [arg2...]";
 }
