@@ -20,14 +20,11 @@
 #include "Utils.h"
 
 #include <algorithm>
-#include <chrono>
 #include <iomanip>
 #include <map>
-#include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
-#include <thread>
 
 #include <dirent.h>
 #include <errno.h>
@@ -63,7 +60,6 @@ static constexpr int FLAG_STORAGE_DE = 1 << 0;
 static constexpr int FLAG_STORAGE_CE = 1 << 1;
 
 namespace {
-const std::chrono::seconds s_key_eviction_sleep_time(20);
 
 const std::string device_key_dir = std::string() + DATA_MNT_POINT + e4crypt_unencrypted_folder;
 const std::string device_key_path = device_key_dir + "/key";
@@ -76,10 +72,6 @@ bool s_global_de_initialized = false;
 
 // Some users are ephemeral, don't try to wipe their keys from disk
 std::set<userid_t> s_ephemeral_users;
-
-// Allow evictions to be cancelled.
-std::map<std::string, std::thread::id> s_desired_eviction_threads;
-std::mutex s_desired_eviction_threads_mutex;
 
 // Map user ids to key references
 std::map<userid_t, std::string> s_de_key_raw_refs;
@@ -167,9 +159,6 @@ static bool install_key(const std::string& key, std::string* raw_ref) {
     ext4_encryption_key ext4_key;
     if (!fill_key(key, &ext4_key)) return false;
     *raw_ref = generate_key_ref(ext4_key.raw, ext4_key.size);
-    // Ensure that no thread is waiting to evict this ref
-    std::lock_guard<std::mutex> lock(s_desired_eviction_threads_mutex);
-    s_desired_eviction_threads.erase(*raw_ref);
     auto ref = keyname(*raw_ref);
     key_serial_t device_keyring;
     if (!e4crypt_keyring(&device_keyring)) return false;
@@ -537,43 +526,22 @@ bool e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) 
     return true;
 }
 
-static void evict_key_after_delay(const std::string raw_ref) {
-    LOG(DEBUG) << "Waiting to evict key in thread " << std::this_thread::get_id();
-    std::this_thread::sleep_for(s_key_eviction_sleep_time);
-    LOG(DEBUG) << "Done waiting to evict key in thread " << std::this_thread::get_id();
-
-    std::lock_guard<std::mutex> lock(s_desired_eviction_threads_mutex);
-    // Check the key should be evicted by this thread
-    auto search = s_desired_eviction_threads.find(raw_ref);
-    if (search == s_desired_eviction_threads.end()) {
-        LOG(DEBUG) << "Not evicting renewed-desirability key";
-        return;
-    }
-    if (search->second != std::this_thread::get_id()) {
-        LOG(DEBUG) << "We are not the thread to evict this key";
-        return;
-    }
-
-    // Remove the key from the keyring
+static bool evict_key(const std::string &raw_ref) {
     auto ref = keyname(raw_ref);
     key_serial_t device_keyring;
-    if (!e4crypt_keyring(&device_keyring)) return;
+    if (!e4crypt_keyring(&device_keyring)) return false;
     auto key_serial = keyctl_search(device_keyring, "logon", ref.c_str(), 0);
-    if (keyctl_revoke(key_serial) != 0) {
-        PLOG(ERROR) << "Failed to revoke key with serial " << key_serial;
-        return;
-    }
-    LOG(DEBUG) << "Revoked key with serial " << key_serial;
-}
 
-static bool evict_key(const std::string &raw_ref) {
-    // FIXME the use of a thread with delay is a work around for a kernel bug
-    std::lock_guard<std::mutex> lock(s_desired_eviction_threads_mutex);
-    std::thread t(evict_key_after_delay, raw_ref);
-    s_desired_eviction_threads[raw_ref] = t.get_id();
-    LOG(DEBUG) << "Scheduled key eviction in thread " << t.get_id();
-    t.detach();
-    return true; // Sadly no way to know if we were successful :(
+    // Unlink the key from the keyring.  Prefer unlinking to revoking or
+    // invalidating, since unlinking is actually no less secure currently, and
+    // it avoids bugs in certain kernel versions where the keyring key is
+    // referenced from places it shouldn't be.
+    if (keyctl_unlink(key_serial, device_keyring) != 0) {
+        PLOG(ERROR) << "Failed to unlink key with serial " << key_serial << " ref " << ref;
+        return false;
+    }
+    LOG(DEBUG) << "Unlinked key with serial " << key_serial << " ref " << ref;
+    return true;
 }
 
 static bool evict_ce_key(userid_t user_id) {
