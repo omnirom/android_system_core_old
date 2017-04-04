@@ -128,6 +128,12 @@ static status_t execCp(const std::string& fromPath, const std::string& toPath,
     uint64_t expectedBytes = GetTreeBytes(fromPath);
     uint64_t startFreeBytes = GetFreeBytes(toPath);
 
+    if (expectedBytes > startFreeBytes) {
+        LOG(ERROR) << "Data size " << expectedBytes << " is too large to fit in free space "
+                << startFreeBytes;
+        return -1;
+    }
+
     std::vector<std::string> cmd;
     cmd.push_back(kCpPath);
     cmd.push_back("-p"); /* preserve timestamps, ownership, and permissions */
