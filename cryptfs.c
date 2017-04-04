@@ -1716,11 +1716,11 @@ static int cryptfs_restart_internal(int restart_main)
             return -1;
         }
 
-        property_set("vold.decrypt", "trigger_load_persist_props");
         /* Create necessary paths on /data */
         if (prep_data_fs()) {
             return -1;
         }
+        property_set("vold.decrypt", "trigger_load_persist_props");
 
         /* startup service classes main and late_start */
         property_set("vold.decrypt", "trigger_restart_framework");
