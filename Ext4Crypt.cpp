@@ -137,7 +137,7 @@ static bool fill_key(const std::string& key, ext4_encryption_key* ext4_key) {
 static std::string keyname(const std::string& raw_ref) {
     std::ostringstream o;
     o << "ext4:";
-    for (auto i : raw_ref) {
+    for (unsigned char i : raw_ref) {
         o << std::hex << std::setw(2) << std::setfill('0') << (int)i;
     }
     return o.str();
