@@ -31,6 +31,7 @@
 
 #include <android-base/file.h>
 #include <android-base/strings.h>
+#include <android-base/unique_fd.h>
 #include <cutils/properties.h>
 #include <logwrap/logwrap.h>
 
@@ -71,6 +72,8 @@
 
 #define VERITY_KMSG_RESTART "dm-verity device corrupted"
 #define VERITY_KMSG_BUFSIZE 1024
+
+#define READ_BUF_SIZE 4096
 
 #define __STRINGIFY(x) #x
 #define STRINGIFY(x) __STRINGIFY(x)
@@ -208,6 +211,16 @@ static int create_verity_device(struct dm_ioctl *io, char *name, int fd)
     verity_ioctl_init(io, name, 1);
     if (ioctl(fd, DM_DEV_CREATE, io)) {
         ERROR("Error creating device mapping (%s)", strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+static int destroy_verity_device(struct dm_ioctl *io, char *name, int fd)
+{
+    verity_ioctl_init(io, name, 0);
+    if (ioctl(fd, DM_DEV_REMOVE, io)) {
+        ERROR("Error removing device mapping (%s)", strerror(errno));
         return -1;
     }
     return 0;
@@ -614,6 +627,30 @@ out:
     return rc;
 }
 
+static int read_partition(const char *path, uint64_t size)
+{
+    char buf[READ_BUF_SIZE];
+    ssize_t size_read;
+    android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(path, O_RDONLY | O_CLOEXEC)));
+
+    if (fd == -1) {
+        ERROR("Failed to open %s: %s\n", path, strerror(errno));
+        return -errno;
+    }
+
+    while (size) {
+        size_read = TEMP_FAILURE_RETRY(read(fd, buf, READ_BUF_SIZE));
+        if (size_read == -1) {
+            ERROR("Error in reading partition %s: %s\n", path,
+                  strerror(errno));
+            return -errno;
+        }
+        size -= size_read;
+    }
+
+    return 0;
+}
+
 static int compare_last_signature(struct fstab_rec *fstab, int *match)
 {
     char tag[METADATA_TAG_MAX_LENGTH + 1];
@@ -796,7 +833,7 @@ int fs_mgr_update_verity_state(fs_mgr_verity_state_callback callback)
     char fstab_filename[PROPERTY_VALUE_MAX + sizeof(FSTAB_PREFIX)];
     const char *mount_point;
     char propbuf[PROPERTY_VALUE_MAX];
-    char *status;
+    const char *status;
     int fd = -1;
     int i;
     int mode;
@@ -846,9 +883,13 @@ int fs_mgr_update_verity_state(fs_mgr_verity_state_callback callback)
         verity_ioctl_init(io, mount_point, 0);
 
         if (ioctl(fd, DM_TABLE_STATUS, io)) {
-            ERROR("Failed to query DM_TABLE_STATUS for %s (%s)\n", mount_point,
-                strerror(errno));
-            continue;
+            if (fstab->recs[i].fs_mgr_flags & MF_VERIFYATBOOT) {
+                status = "V";
+            } else {
+                ERROR("Failed to query DM_TABLE_STATUS for %s (%s)\n", mount_point,
+                      strerror(errno));
+                continue;
+            }
         }
 
         status = &buffer[io->data_start + sizeof(struct dm_target_spec)];
@@ -912,6 +953,7 @@ int fs_mgr_setup_verity(struct fstab_rec *fstab)
     alignas(dm_ioctl) char buffer[DM_BUF_SIZE];
     struct dm_ioctl *io = (struct dm_ioctl *) buffer;
     char *mount_point = basename(fstab->mount_point);
+    bool verified_at_boot = false;
 
     if (fec_open(&f, fstab->blk_device, O_RDONLY, FEC_VERITY_DISABLE,
             FEC_DEFAULT_ROOTS) < 0) {
@@ -1045,10 +1087,26 @@ loaded:
     // mark the underlying block device as read-only
     fs_mgr_set_blk_ro(fstab->blk_device);
 
+    // Verify the entire partition in one go
+    // If there is an error, allow it to mount as a normal verity partition.
+    if (fstab->fs_mgr_flags & MF_VERIFYATBOOT) {
+        INFO("Verifying partition %s at boot\n", fstab->blk_device);
+        int err = read_partition(verity_blk_name, verity.data_size);
+        if (!err) {
+            INFO("Verified verity partition %s at boot\n", fstab->blk_device);
+            verified_at_boot = true;
+        }
+    }
+
     // assign the new verity block device as the block device
-    free(fstab->blk_device);
-    fstab->blk_device = verity_blk_name;
-    verity_blk_name = 0;
+    if (!verified_at_boot) {
+        free(fstab->blk_device);
+        fstab->blk_device = verity_blk_name;
+        verity_blk_name = 0;
+    } else if (destroy_verity_device(io, mount_point, fd) < 0) {
+        ERROR("Failed to remove verity device %s\n", mount_point);
+        goto out;
+    }
 
     // make sure we've set everything up properly
     if (test_access(fstab->blk_device) < 0) {
