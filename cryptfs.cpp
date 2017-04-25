@@ -2826,6 +2826,7 @@ int cryptfs_mount_default_encrypted(void)
     } else if (crypt_type != CRYPT_TYPE_DEFAULT) {
         SLOGD("Password is not default - "
               "starting min framework to prompt");
+        property_set("vold.decrypt", "trigger_post_fs_data");
         property_set("vold.decrypt", "trigger_restart_min_framework");
         return 0;
     } else if (cryptfs_check_passwd(DEFAULT_PASSWORD) == 0) {
