@@ -61,6 +61,7 @@ bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, std::str
 // Securely destroy the key stored in the named directory and delete the directory.
 bool destroyKey(const std::string& dir);
 
+bool runSecdiscardSingle(const std::string& file);
 }  // namespace vold
 }  // namespace android
 

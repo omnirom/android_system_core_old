@@ -512,6 +512,16 @@ static bool runSecdiscard(const std::string& dir) {
     return true;
 }
 
+bool runSecdiscardSingle(const std::string& file) {
+    if (ForkExecvp(
+            std::vector<std::string>{kSecdiscardPath, "--",
+                file}) != 0) {
+        LOG(ERROR) << "secdiscard failed";
+        return false;
+    }
+    return true;
+}
+
 static bool recursiveDeleteKey(const std::string& dir) {
     if (ForkExecvp(std::vector<std::string>{kRmPath, "-rf", dir}) != 0) {
         LOG(ERROR) << "recursive delete failed";
