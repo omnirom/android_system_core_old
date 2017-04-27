@@ -830,3 +830,7 @@ bool e4crypt_destroy_user_storage(const char* volume_uuid, userid_t user_id, int
 
     return res;
 }
+
+bool e4crypt_secdiscard(const char* path) {
+    return android::vold::runSecdiscardSingle(std::string(path));
+}
