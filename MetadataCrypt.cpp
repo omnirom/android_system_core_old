@@ -212,14 +212,34 @@ static bool prep_data_fs(void)
     // callers to this method must be async
 
     /* Do the prep of the /data filesystem */
+    property_set("vold.post_fs_data_done", "0");
     property_set("vold.decrypt", "trigger_post_fs_data");
-    property_set("vold.decrypt", "trigger_restart_framework");
-    return true;
+    LOG(DEBUG) << "Waiting for post_fs_data_done";
+
+    /* Wait a max of 50 seconds, hopefully it takes much less */
+    for (int i = 0; ; i++) {
+        char p[PROPERTY_VALUE_MAX];
+
+        property_get("vold.post_fs_data_done", p, "0");
+        if (*p == '1') {
+            LOG(INFO) << "Successful data prep";
+            return true;
+        }
+        if (i + 1 == DATA_PREP_TIMEOUT) {
+            LOG(ERROR) << "post_fs_data timed out";
+            return false;
+        }
+        usleep(50000);
+    }
 }
 
 static void async_kick_off() {
     LOG(DEBUG) << "Asynchronously restarting framework";
+    sleep(2); // TODO: this mirrors cryptfs, but can it be made shorter?
+    property_set("vold.decrypt", "trigger_load_persist_props");
     if (!prep_data_fs()) return;
+    /* startup service classes main and late_start */
+    property_set("vold.decrypt", "trigger_restart_framework");
 }
 
 bool e4crypt_mount_metadata_encrypted() {
@@ -286,6 +306,7 @@ bool e4crypt_enable_crypto() {
     property_set("ro.crypto.type", "file");
 
     mount_via_fs_mgr(data_rec->mount_point, crypto_blkdev.c_str());
+    property_set("vold.decrypt", "trigger_reset_main");
     std::thread(&async_kick_off).detach();
     return true;
 }
