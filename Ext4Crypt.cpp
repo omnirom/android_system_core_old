@@ -46,7 +46,7 @@
 
 #include <cutils/fs.h>
 #include <ext4_utils/ext4_crypt.h>
-#include <ext4_utils/key_control.h>
+#include <keyutils.h>
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
