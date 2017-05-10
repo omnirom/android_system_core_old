@@ -20,12 +20,11 @@
 #include <sstream>
 #include <string>
 
-#include <ext4_utils/key_control.h>
-
 #include <openssl/sha.h>
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <keyutils.h>
 
 #include "KeyStorage.h"
 #include "Utils.h"
