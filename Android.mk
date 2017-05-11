@@ -46,6 +46,7 @@ common_shared_libraries := \
 	libsysutils \
 	libbinder \
 	libcutils \
+	libkeyutils \
 	liblog \
 	libdiskconfig \
 	libhardware_legacy \
