@@ -27,6 +27,7 @@
 #include <sys/poll.h>
 
 #include <memory>
+#include <queue>
 
 #include <cutils/misc.h>
 #include <cutils/sockets.h>
@@ -176,16 +177,6 @@ static int property_set_impl(const char* name, const char* value) {
     if (!is_legal_property_name(name, namelen)) return -1;
     if (valuelen >= PROP_VALUE_MAX) return -1;
 
-    if (strcmp("selinux.reload_policy", name) == 0 && strcmp("1", value) == 0) {
-        if (selinux_reload_policy() != 0) {
-            ERROR("Failed to reload policy\n");
-        }
-    } else if (strcmp("selinux.restorecon_recursive", name) == 0 && valuelen > 0) {
-        if (restorecon_recursive(value) != 0) {
-            ERROR("Failed to restorecon_recursive %s\n", value);
-        }
-    }
-
     prop_info* pi = (prop_info*) __system_property_find(name);
 
     if(pi != 0) {
@@ -222,7 +213,108 @@ static int property_set_impl(const char* name, const char* value) {
     return 0;
 }
 
+typedef int (*property_async_func_t)(const char* name, const char* value);
+
+struct property_child_info {
+    pid_t                       pid;
+    property_async_func_t       func;
+    char*                       name;
+    char*                       value;
+};
+
+static std::queue<property_child_info> property_children;
+
+static void property_child_launch(void)
+{
+    auto& info = property_children.front();
+    pid_t pid = fork();
+    if (pid < 0) {
+        ERROR("Failed to fork property child process\n");
+        while (!property_children.empty()) {
+            info = property_children.front();
+            free(info.name);
+            free(info.value);
+            property_children.pop();
+        }
+        return;
+    }
+    if (pid != 0) {
+        info.pid = pid;
+    }
+    else {
+        if (info.func(info.name, info.value) != 0) {
+            ERROR("Failed to set async property %s\n", info.name);
+        }
+
+        exit(0);
+    }
+}
+
+bool property_child_reap(pid_t pid)
+{
+    if (property_children.empty()) {
+        return false;
+    }
+    auto& info = property_children.front();
+    if (info.pid != pid) {
+        return false;
+    }
+    int rc = property_set_impl(info.name, info.value);
+    if (rc != 0) {
+        ERROR("property_set(\"%s\", \"%s\") failed\n", info.name, info.value);
+    }
+    free(info.name);
+    free(info.value);
+    property_children.pop();
+    if (property_children.size() > 0) {
+        property_child_launch();
+    }
+    return true;
+}
+
+static bool property_set_async(const char* name,
+                               const char* value,
+                               property_async_func_t func)
+{
+    if (!*value) {
+        int rc = property_set_impl(name, value);
+        return (rc == 0);
+    }
+
+    property_child_info info;
+    memset(&info, 0, sizeof(info));
+    info.func = func;
+    info.name = strdup(name);
+    info.value = strdup(value);
+    property_children.push(info);
+    if (property_children.size() == 1) {
+        ERROR("property_set_async: launch child\n");
+        property_child_launch();
+    }
+    return true;
+}
+
+static int restorecon_recursive_async(const char* name, const char* value)
+{
+    return restorecon_recursive(value);
+}
+
 int property_set(const char* name, const char* value) {
+
+    // Handle magic properties
+    if (strcmp("selinux.reload_policy", name) == 0 && strcmp("1", value) == 0) {
+        if (selinux_reload_policy() != 0) {
+            ERROR("Failed to reload policy\n");
+        }
+    } else if (strcmp("selinux.restorecon_recursive", name) == 0 ||
+               strncmp("selinux.restorecon_recursive.", name,
+                       strlen("selinux.restorecon_recursive.")) == 0) {
+        if (!property_set_async(name, value, restorecon_recursive_async)) {
+            ERROR("property_set(\"%s\", \"%s\") failed\n", name, value);
+        }
+        return 0;
+    }
+
     int rc = property_set_impl(name, value);
     if (rc == -1) {
         ERROR("property_set(\"%s\", \"%s\") failed\n", name, value);
