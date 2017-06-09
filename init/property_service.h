@@ -27,6 +27,8 @@ struct property_audit_data {
     const char* name;
 };
 
+extern bool property_child_reap(pid_t pid);
+
 extern void property_init(void);
 extern void property_load_boot_defaults(void);
 extern void load_persist_props(void);
