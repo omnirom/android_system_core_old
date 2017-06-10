@@ -494,6 +494,16 @@ static int queue_fs_event(int code) {
     return ret;
 }
 
+static int do_install_keyring(const std::vector<std::string>& args) {
+    if (e4crypt_install_keyring()) {
+        LOG(ERROR) << "failed to install keyring";
+        return -1;
+    }
+    property_set("ro.crypto.state", "encrypted");
+    property_set("ro.crypto.type", "file");
+    return 0;
+}
+
 /* mount_all <fstab> [ <path> ]* [--<options>]*
  *
  * This function might request a reboot, in which case it will
@@ -986,6 +996,7 @@ BuiltinFunctionMap::Map& BuiltinFunctionMap::map() const {
         {"ifup",                    {1,     1,    do_ifup}},
         {"init_user0",              {0,     0,    do_init_user0}},
         {"insmod",                  {1,     kMax, do_insmod}},
+        {"install_keyring",         {0,     0,    do_install_keyring}},
         {"installkey",              {1,     1,    do_installkey}},
         {"load_persist_props",      {0,     0,    do_load_persist_props}},
         {"load_system_props",       {0,     0,    do_load_system_props}},
