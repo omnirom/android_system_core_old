@@ -51,6 +51,7 @@ public:
     binder::Status format(const std::string& volId, const std::string& fsType);
     binder::Status benchmark(const std::string& volId,
             const android::sp<android::os::IVoldTaskListener>& listener);
+    binder::Status checkEncryption(const std::string& volId);
 
     binder::Status moveStorage(const std::string& fromVolId, const std::string& toVolId,
             const android::sp<android::os::IVoldTaskListener>& listener);

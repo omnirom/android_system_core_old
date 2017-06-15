@@ -100,6 +100,8 @@ int main(int argc, char** argv) {
         checkStatus(vold->mountDefaultEncrypted());
     } else if (args[0] == "volume" && args[1] == "shutdown") {
         checkStatus(vold->shutdown());
+    } else if (args[0] == "cryptfs" && args[1] == "checkEncryption" && args.size() == 3) {
+        checkStatus(vold->checkEncryption(args[2]));
     } else {
         LOG(ERROR) << "Raw commands are no longer supported";
         exit(EINVAL);

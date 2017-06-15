@@ -91,9 +91,11 @@ cc_library_static {
 
     srcs: [
         "Benchmark.cpp",
+        "CheckEncryption.cpp",
         "Devmapper.cpp",
         "EncryptInplace.cpp",
         "Ext4Crypt.cpp",
+        "FileDeviceUtils.cpp",
         "IdleMaint.cpp",
         "KeyBuffer.cpp",
         "KeyStorage.cpp",

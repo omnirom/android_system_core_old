@@ -40,6 +40,7 @@ interface IVold {
     void unmount(@utf8InCpp String volId);
     void format(@utf8InCpp String volId, @utf8InCpp String fsType);
     void benchmark(@utf8InCpp String volId, IVoldTaskListener listener);
+    void checkEncryption(@utf8InCpp String volId);
 
     void moveStorage(@utf8InCpp String fromVolId, @utf8InCpp String toVolId,
             IVoldTaskListener listener);
