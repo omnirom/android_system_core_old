@@ -29,10 +29,10 @@
 #include <linux/dm-ioctl.h>
 
 #include <android-base/logging.h>
+#include <android-base/unique_fd.h>
 #include <cutils/properties.h>
 #include <fs_mgr.h>
 
-#include "AutoCloseFD.h"
 #include "EncryptInplace.h"
 #include "KeyStorage.h"
 #include "KeyUtil.h"
@@ -105,8 +105,9 @@ static std::string default_key_params(const std::string& real_blkdev, const std:
 }
 
 static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t *nr_sec) {
-    AutoCloseFD dev_fd(real_blkdev, O_RDONLY);
-    if (!dev_fd) {
+    android::base::unique_fd dev_fd(TEMP_FAILURE_RETRY(open(
+        real_blkdev.c_str(), O_RDONLY | O_CLOEXEC, 0)));
+    if (dev_fd == -1) {
         PLOG(ERROR) << "Unable to open " << real_blkdev << " to measure size";
         return false;
     }
@@ -143,8 +144,9 @@ static struct dm_ioctl* dm_ioctl_init(char *buffer, size_t buffer_size,
 static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
                                   const std::string& target_type, const std::string& crypt_params,
                                   std::string* crypto_blkdev) {
-    AutoCloseFD dm_fd("/dev/device-mapper", O_RDWR);
-    if (!dm_fd) {
+    android::base::unique_fd dm_fd(TEMP_FAILURE_RETRY(open(
+        "/dev/device-mapper", O_RDWR | O_CLOEXEC, 0)));
+    if (dm_fd == -1) {
         PLOG(ERROR) << "Cannot open device-mapper";
         return false;
     }

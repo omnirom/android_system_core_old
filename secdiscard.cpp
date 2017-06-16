@@ -29,8 +29,7 @@
 #include <mntent.h>
 
 #include <android-base/logging.h>
-
-#include <AutoCloseFD.h>
+#include <android-base/unique_fd.h>
 
 namespace {
 
@@ -107,8 +106,9 @@ bool secdiscard_path(const std::string &path) {
     if (block_device.empty()) {
         return false;
     }
-    AutoCloseFD fs_fd(block_device, O_RDWR | O_LARGEFILE);
-    if (!fs_fd) {
+    android::base::unique_fd fs_fd(TEMP_FAILURE_RETRY(open(
+        block_device.c_str(), O_RDWR | O_LARGEFILE | O_CLOEXEC, 0)));
+    if (fs_fd == -1) {
         PLOG(ERROR) << "Failed to open device " << block_device;
         return false;
     }
@@ -128,8 +128,9 @@ bool secdiscard_path(const std::string &path) {
 // Read the file's FIEMAP
 std::unique_ptr<struct fiemap> path_fiemap(const std::string &path, uint32_t extent_count)
 {
-    AutoCloseFD fd(path);
-    if (!fd) {
+    android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(
+        path.c_str(), O_RDONLY | O_CLOEXEC, 0)));
+    if (fd == -1) {
         if (errno == ENOENT) {
             PLOG(DEBUG) << "Unable to open " << path;
         } else {
