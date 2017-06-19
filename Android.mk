@@ -158,7 +158,10 @@ LOCAL_CLANG := true
 LOCAL_TIDY := true
 LOCAL_TIDY_FLAGS := $(common_local_tidy_flags)
 LOCAL_TIDY_CHECKS := $(common_local_tidy_checks)
-LOCAL_SRC_FILES:= secdiscard.cpp
+LOCAL_SRC_FILES:= \
+    FileDeviceUtils.cpp \
+    secdiscard.cpp \
+
 LOCAL_MODULE:= secdiscard
 LOCAL_SHARED_LIBRARIES := libbase
 LOCAL_CFLAGS := $(vold_cflags)
