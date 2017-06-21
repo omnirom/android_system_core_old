@@ -78,6 +78,7 @@ status_t ForkExecvp(const std::vector<std::string>& args,
 pid_t ForkExecvpAsync(const std::vector<std::string>& args);
 
 status_t ReadRandomBytes(size_t bytes, std::string& out);
+status_t GenerateRandomUuid(std::string& out);
 
 /* Converts hex string to raw bytes, ignoring [ :-] */
 status_t HexToStr(const std::string& hex, std::string& str);

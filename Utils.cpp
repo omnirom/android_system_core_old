@@ -372,6 +372,17 @@ status_t ReadRandomBytes(size_t bytes, std::string& out) {
     }
 }
 
+status_t GenerateRandomUuid(std::string& out) {
+    status_t res = ReadRandomBytes(16, out);
+    if (res == OK) {
+        out[6] &= 0x0f;  /* clear version        */
+        out[6] |= 0x40;  /* set to version 4     */
+        out[8] &= 0x3f;  /* clear variant        */
+        out[8] |= 0x80;  /* set to IETF variant  */
+    }
+    return res;
+}
+
 status_t HexToStr(const std::string& hex, std::string& str) {
     str.clear();
     bool even = true;

@@ -45,6 +45,7 @@
 #include <selinux/selinux.h>
 
 #include "Ext4.h"
+#include "Ext4Crypt.h"
 #include "Utils.h"
 #include "VoldUtil.h"
 
@@ -180,8 +181,13 @@ status_t Format(const std::string& source, unsigned long numSectors,
     cmd.push_back("-M");
     cmd.push_back(target);
 
+    std::string options("has_journal,quota");
+    if (e4crypt_is_native()) {
+        options += ",encrypt";
+    }
+
     cmd.push_back("-O");
-    cmd.push_back("^has_journal");
+    cmd.push_back(options);
 
     cmd.push_back(source);
 
