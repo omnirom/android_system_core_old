@@ -73,9 +73,16 @@ static bool fillKey(const std::string& key, ext4_encryption_key* ext4_key) {
     return true;
 }
 
-std::string keyname(const std::string& raw_ref) {
+static char const* const NAME_PREFIXES[] = {
+    "ext4",
+    "f2fs",
+    "fscrypt",
+    nullptr
+};
+
+static std::string keyname(const std::string& prefix, const std::string& raw_ref) {
     std::ostringstream o;
-    o << "ext4:";
+    o << prefix << ":";
     for (auto i : raw_ref) {
         o << std::hex << std::setw(2) << std::setfill('0') << (int)i;
     }
@@ -98,37 +105,42 @@ bool installKey(const std::string& key, std::string* raw_ref) {
     ext4_encryption_key ext4_key;
     if (!fillKey(key, &ext4_key)) return false;
     *raw_ref = generateKeyRef(ext4_key.raw, ext4_key.size);
-    auto ref = keyname(*raw_ref);
     key_serial_t device_keyring;
     if (!e4cryptKeyring(&device_keyring)) return false;
-    key_serial_t key_id =
-        add_key("logon", ref.c_str(), (void*)&ext4_key, sizeof(ext4_key), device_keyring);
-    if (key_id == -1) {
-        PLOG(ERROR) << "Failed to insert key into keyring " << device_keyring;
-        return false;
+    for (char const* const* name_prefix = NAME_PREFIXES; *name_prefix != nullptr; name_prefix++) {
+        auto ref = keyname(*name_prefix, *raw_ref);
+        key_serial_t key_id =
+            add_key("logon", ref.c_str(), (void*)&ext4_key, sizeof(ext4_key), device_keyring);
+        if (key_id == -1) {
+            PLOG(ERROR) << "Failed to insert key into keyring " << device_keyring;
+            return false;
+        }
+        LOG(DEBUG) << "Added key " << key_id << " (" << ref << ") to keyring " << device_keyring
+                   << " in process " << getpid();
     }
-    LOG(DEBUG) << "Added key " << key_id << " (" << ref << ") to keyring " << device_keyring
-               << " in process " << getpid();
-
     return true;
 }
 
 bool evictKey(const std::string& raw_ref) {
-    auto ref = keyname(raw_ref);
     key_serial_t device_keyring;
     if (!e4cryptKeyring(&device_keyring)) return false;
-    auto key_serial = keyctl_search(device_keyring, "logon", ref.c_str(), 0);
+    bool success = true;
+    for (char const* const* name_prefix = NAME_PREFIXES; *name_prefix != nullptr; name_prefix++) {
+        auto ref = keyname(*name_prefix, raw_ref);
+        auto key_serial = keyctl_search(device_keyring, "logon", ref.c_str(), 0);
 
-    // Unlink the key from the keyring.  Prefer unlinking to revoking or
-    // invalidating, since unlinking is actually no less secure currently, and
-    // it avoids bugs in certain kernel versions where the keyring key is
-    // referenced from places it shouldn't be.
-    if (keyctl_unlink(key_serial, device_keyring) != 0) {
-        PLOG(ERROR) << "Failed to unlink key with serial " << key_serial << " ref " << ref;
-        return false;
+        // Unlink the key from the keyring.  Prefer unlinking to revoking or
+        // invalidating, since unlinking is actually no less secure currently, and
+        // it avoids bugs in certain kernel versions where the keyring key is
+        // referenced from places it shouldn't be.
+        if (keyctl_unlink(key_serial, device_keyring) != 0) {
+            PLOG(ERROR) << "Failed to unlink key with serial " << key_serial << " ref " << ref;
+            success = false;
+        } else {
+            LOG(DEBUG) << "Unlinked key with serial " << key_serial << " ref " << ref;
+        }
     }
-    LOG(DEBUG) << "Unlinked key with serial " << key_serial << " ref " << ref;
-    return true;
+    return success;
 }
 
 bool retrieveAndInstallKey(bool create_if_absent, const std::string& key_path,
