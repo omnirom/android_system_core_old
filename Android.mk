@@ -88,6 +88,8 @@ ifeq ($(TARGET_USERIMAGES_USE_EXT4), true)
     vold_cflags += -DTARGET_USES_MKE2FS
     required_modules += mke2fs
   else
+    # Adoptable storage has fully moved to mke2fs, so we need both tools
+    required_modules += mke2fs
     required_modules += make_ext4fs
   endif
 endif

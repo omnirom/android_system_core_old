@@ -599,8 +599,7 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
         if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return false;
         if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
-        // For now, FBE is only supported on internal storage
-        if (e4crypt_is_native() && volume_uuid == nullptr) {
+        if (e4crypt_is_native()) {
             std::string de_raw_ref;
             if (!lookup_key_ref(s_de_key_raw_refs, user_id, &de_raw_ref)) return false;
             if (!ensure_policy(de_raw_ref, system_de_path)) return false;
@@ -621,8 +620,7 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
         if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return false;
         if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
-        // For now, FBE is only supported on internal storage
-        if (e4crypt_is_native() && volume_uuid == nullptr) {
+        if (e4crypt_is_native()) {
             std::string ce_raw_ref;
             if (!lookup_key_ref(s_ce_key_raw_refs, user_id, &ce_raw_ref)) return false;
             if (!ensure_policy(ce_raw_ref, system_ce_path)) return false;
