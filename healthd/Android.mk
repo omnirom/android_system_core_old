@@ -80,7 +80,7 @@ LOCAL_CFLAGS += -DBOARD_PERIODIC_CHORES_INTERVAL_SLOW=$(BOARD_PERIODIC_CHORES_IN
 endif
 LOCAL_C_INCLUDES := bootable/recovery
 
-LOCAL_STATIC_LIBRARIES := libbatterymonitor libbatteryservice libbinder libminui libpng libz libutils libcutils liblog libm libc
+LOCAL_STATIC_LIBRARIES := libbatterymonitor libbatteryservice libbinder libminui libpng libz libutils libcutils liblog libm libc libbase
 
 ifeq ($(strip $(BOARD_CHARGER_ENABLE_SUSPEND)),true)
 LOCAL_STATIC_LIBRARIES += libsuspend
