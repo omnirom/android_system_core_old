@@ -36,7 +36,6 @@ struct ext4_encryption_key {
     uint32_t size;
 };
 
-std::string keyname(const std::string& raw_ref);
 bool randomKey(std::string* key);
 bool installKey(const std::string& key, std::string* raw_ref);
 bool evictKey(const std::string& raw_ref);
