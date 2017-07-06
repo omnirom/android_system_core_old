@@ -304,10 +304,16 @@ validate(struct disk_info *dinfo)
             goto fail;
         }
 
-        if (!sect_sz || sect_sz != dinfo->sect_size) {
-            ALOGE("Device sector size is zero or sector sizes do not match!");
+        if (!sect_sz) {
+            ALOGE("Device sector size is zero!");
             goto fail;
         }
+
+        if ((sect_sz != 512) && (sect_sz != 4096)) {
+            ALOGE("Device sector size %d is not supported", sect_sz);
+            goto fail;
+        }
+        dinfo->sect_size = sect_sz;
 
         /* allow the user override the "disk size" if they provided num_lba */
         if (!dinfo->num_lba) {
