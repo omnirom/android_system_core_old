@@ -164,6 +164,7 @@ BatteryMonitor::PowerSupplyType BatteryMonitor::readPowerSupplyType(const String
             { "USB_CDP", ANDROID_POWER_SUPPLY_TYPE_AC },
             { "USB_ACA", ANDROID_POWER_SUPPLY_TYPE_AC },
             { "DASH", ANDROID_POWER_SUPPLY_TYPE_AC },
+            { "LE_AB", ANDROID_POWER_SUPPLY_TYPE_AC },
             { "USB_C", ANDROID_POWER_SUPPLY_TYPE_AC },
             { "USB_PD", ANDROID_POWER_SUPPLY_TYPE_AC },
             { "USB_PD_DRP", ANDROID_POWER_SUPPLY_TYPE_USB },
