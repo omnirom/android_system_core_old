@@ -38,6 +38,7 @@
 #define LOG_TAG "Vold"
 
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <cutils/log.h>
 #include <cutils/properties.h>
@@ -176,7 +177,10 @@ status_t Format(const std::string& source, unsigned long numSectors,
     cmd.push_back("-M");
     cmd.push_back(target);
 
-    std::string options("has_journal,quota");
+    std::string options("has_journal");
+    if (android::base::GetBoolProperty("vold.has_quota", false)) {
+        options += ",quota";
+    }
     if (e4crypt_is_native()) {
         options += ",encrypt";
     }
