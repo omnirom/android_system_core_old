@@ -1081,6 +1081,7 @@ int fs_mgr_do_mount(struct fstab *fstab, const char *n_name, char *n_blk_device,
             if (!__mount(n_blk_device, m, &fstab->recs[i])) {
                 ret = 0;
                 fs_stat &= ~FS_STAT_FULL_MOUNT_FAILED;
+                log_fs_stat(fstab->recs[i].blk_device, fs_stat);
                 goto out;
             } else {
                 if (retry_count <= 0) break;  // run check_fs only once
