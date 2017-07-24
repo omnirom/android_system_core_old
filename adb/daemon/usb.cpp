@@ -234,6 +234,136 @@ static const struct {
     },
 };
 
+static void usb_adb_open_thread(void* x) {
+    struct usb_handle *usb = (struct usb_handle *)x;
+    int fd;
+
+    adb_thread_setname("usb open");
+
+    while (true) {
+        // wait until the USB device needs opening
+        std::unique_lock<std::mutex> lock(usb->lock);
+        while (!usb->open_new_connection) {
+            usb->notify.wait(lock);
+        }
+        usb->open_new_connection = false;
+        lock.unlock();
+
+        D("[ usb_thread - opening device ]");
+        do {
+            /* XXX use inotify? */
+            fd = unix_open("/dev/android_adb", O_RDWR);
+            if (fd < 0) {
+                // to support older kernels
+                fd = unix_open("/dev/android", O_RDWR);
+            }
+            if (fd < 0) {
+                std::this_thread::sleep_for(1s);
+            }
+        } while (fd < 0);
+        D("[ opening device succeeded ]");
+
+        close_on_exec(fd);
+        usb->fd = fd;
+
+        D("[ usb_thread - registering device ]");
+        register_usb_transport(usb, 0, 0, 1);
+    }
+
+    // never gets here
+    abort();
+}
+
+static int usb_adb_write(usb_handle *h, const void *data, int len)
+{
+    int n;
+
+    D("about to write (fd=%d, len=%d)", h->fd, len);
+    n = unix_write(h->fd, data, len);
+    if(n != len) {
+        D("ERROR: fd = %d, n = %d, errno = %d (%s)",
+            h->fd, n, errno, strerror(errno));
+        return -1;
+    }
+    if (h->kicked) {
+        D("usb_adb_write finished due to kicked");
+        return -1;
+    }
+    D("[ done fd=%d ]", h->fd);
+    return 0;
+}
+
+static int usb_adb_read(usb_handle *h, void *data, int len)
+{
+    D("about to read (fd=%d, len=%d)", h->fd, len);
+    while (len > 0) {
+        // The kernel implementation of adb_read in f_adb.c doesn't support
+        // reads larger then 4096 bytes. Read the data in 4096 byte chunks to
+        // avoid the issue. (The ffs implementation doesn't have this limit.)
+        int bytes_to_read = len < 4096 ? len : 4096;
+        int n = unix_read(h->fd, data, bytes_to_read);
+        if (n != bytes_to_read) {
+            D("ERROR: fd = %d, n = %d, errno = %d (%s)",
+                h->fd, n, errno, strerror(errno));
+            return -1;
+        }
+        if (h->kicked) {
+            D("usb_adb_read finished due to kicked");
+            return -1;
+        }
+        len -= n;
+        data = ((char*)data) + n;
+    }
+    D("[ done fd=%d ]", h->fd);
+    return 0;
+}
+
+static void usb_adb_kick(usb_handle *h) {
+    D("usb_kick");
+    // Other threads may be calling usb_adb_read/usb_adb_write at the same time.
+    // If we close h->fd, the file descriptor will be reused to open other files,
+    // and the read/write thread may operate on the wrong file. So instead
+    // we set the kicked flag and reopen h->fd to a dummy file here. After read/write
+    // threads finish, we close h->fd in usb_adb_close().
+    h->kicked = true;
+    TEMP_FAILURE_RETRY(dup2(dummy_fd, h->fd));
+}
+
+static void usb_adb_close(usb_handle *h) {
+    h->kicked = false;
+    adb_close(h->fd);
+    // Notify usb_adb_open_thread to open a new connection.
+    h->lock.lock();
+    h->open_new_connection = true;
+    h->lock.unlock();
+    h->notify.notify_one();
+}
+
+static void usb_adb_init()
+{
+    usb_handle* h = new usb_handle();
+
+    h->write = usb_adb_write;
+    h->read = usb_adb_read;
+    h->kick = usb_adb_kick;
+    h->close = usb_adb_close;
+
+    // Open the file /dev/android_adb_enable to trigger
+    // the enabling of the adb USB function in the kernel.
+    // We never touch this file again - just leave it open
+    // indefinitely so the kernel will know when we are running
+    // and when we are not.
+    int fd = unix_open("/dev/android_adb_enable", O_RDWR);
+    if (fd < 0) {
+       D("failed to open /dev/android_adb_enable");
+    } else {
+        close_on_exec(fd);
+    }
+
+    D("[ usb_init - starting thread ]");
+    std::thread(usb_adb_open_thread, h).detach();
+}
+
 bool init_functionfs(struct usb_handle* h) {
     ssize_t ret;
     struct desc_v1 v1_descriptor;
@@ -459,7 +589,10 @@ static void usb_ffs_init() {
 void usb_init() {
     dummy_fd = adb_open("/dev/null", O_WRONLY);
     CHECK_NE(dummy_fd, -1);
-    usb_ffs_init();
+    if (access(USB_FFS_ADB_EP0, F_OK) == 0)
+        usb_ffs_init();
+    else
+        usb_adb_init();
 }
 
 int usb_write(usb_handle* h, const void* data, int len) {

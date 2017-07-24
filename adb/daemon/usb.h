@@ -34,6 +34,9 @@ struct usb_handle {
     void (*kick)(usb_handle* h);
     void (*close)(usb_handle* h);
 
+    // Legacy f_adb
+    int fd = -1;
+
     // FunctionFS
     int control = -1;
     int bulk_out = -1; /* "out" from the host's perspective => source for adbd */
