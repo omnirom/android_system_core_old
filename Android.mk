@@ -27,6 +27,7 @@ common_src_files := \
 	MoveTask.cpp \
 	Benchmark.cpp \
 	TrimTask.cpp \
+	KeyBuffer.cpp \
 	Keymaster.cpp \
 	KeyStorage.cpp \
 	KeyUtil.cpp \
