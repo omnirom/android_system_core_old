@@ -361,18 +361,8 @@ void CommandListener::AsecCmd::listAsecsInDirectory(SocketClient *cli, const cha
         return;
     }
 
-    size_t dirent_len = offsetof(struct dirent, d_name) +
-            fpathconf(dirfd(d), _PC_NAME_MAX) + 1;
-
-    struct dirent *dent = (struct dirent *) malloc(dirent_len);
-    if (dent == NULL) {
-        cli->sendMsg(ResponseCode::OperationFailed, "Failed to allocate memory", true);
-        return;
-    }
-
-    struct dirent *result;
-
-    while (!readdir_r(d, dent, &result) && result != NULL) {
+    dirent* dent;
+    while ((dent = readdir(d)) != NULL) {
         if (dent->d_name[0] == '.')
             continue;
         if (dent->d_type != DT_REG)
@@ -387,8 +377,6 @@ void CommandListener::AsecCmd::listAsecsInDirectory(SocketClient *cli, const cha
         }
     }
     closedir(d);
-
-    free(dent);
 }
 
 int CommandListener::AsecCmd::runCommand(SocketClient *cli,
