@@ -17,6 +17,7 @@
 #include "sehandle.h"
 #include "Utils.h"
 #include "Process.h"
+#include "VolumeManager.h"
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
@@ -126,22 +127,22 @@ status_t ForceUnmount(const std::string& path) {
     }
     // Apps might still be handling eject request, so wait before
     // we start sending signals
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
 
     Process::killProcessesWithOpenFiles(cpath, SIGINT);
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
 
     Process::killProcessesWithOpenFiles(cpath, SIGTERM);
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
 
     Process::killProcessesWithOpenFiles(cpath, SIGKILL);
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
@@ -154,17 +155,17 @@ status_t KillProcessesUsingPath(const std::string& path) {
     if (Process::killProcessesWithOpenFiles(cpath, SIGINT) == 0) {
         return OK;
     }
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
 
     if (Process::killProcessesWithOpenFiles(cpath, SIGTERM) == 0) {
         return OK;
     }
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
 
     if (Process::killProcessesWithOpenFiles(cpath, SIGKILL) == 0) {
         return OK;
     }
-    sleep(5);
+    if (!VolumeManager::shutting_down) sleep(5);
 
     // Send SIGKILL a second time to determine if we've
     // actually killed everyone with open files
