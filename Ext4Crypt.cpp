@@ -30,6 +30,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <limits.h>
 #include <selinux/android.h>
 #include <sys/mount.h>
@@ -54,6 +55,7 @@
 #include <android-base/stringprintf.h>
 
 using android::base::StringPrintf;
+using android::base::WriteStringToFile;
 using android::vold::kEmptyAuthentication;
 
 // NOTE: keep in sync with StorageManager
@@ -399,6 +401,15 @@ bool e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) 
     return true;
 }
 
+static void drop_caches() {
+    // Clean any dirty pages (otherwise they won't be dropped).
+    sync();
+    // Drop inode and page caches.
+    if (!WriteStringToFile("3", "/proc/sys/vm/drop_caches")) {
+        PLOG(ERROR) << "Failed to drop caches during key eviction";
+    }
+}
+
 static bool evict_ce_key(userid_t user_id) {
    s_ce_keys.erase(user_id);
     bool success = true;
@@ -406,6 +417,7 @@ static bool evict_ce_key(userid_t user_id) {
     // If we haven't loaded the CE key, no need to evict it.
     if (lookup_key_ref(s_ce_key_raw_refs, user_id, &raw_ref)) {
         success &= android::vold::evictKey(raw_ref);
+        drop_caches();
     }
     s_ce_key_raw_refs.erase(user_id);
     return success;
