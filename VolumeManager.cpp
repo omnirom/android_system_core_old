@@ -89,6 +89,8 @@ const char *VolumeManager::ASECDIR           = "/mnt/asec";
  */
 const char *VolumeManager::LOOPDIR           = "/mnt/obb";
 
+bool VolumeManager::shutting_down = false;
+
 static const char* kPathUserMount = "/mnt/user";
 static const char* kPathVirtualDisk = "/data/misc/vold/virtual_disk";
 
@@ -704,12 +706,14 @@ int VolumeManager::shutdown() {
     if (mInternalEmulated == nullptr) {
         return 0; // already shutdown
     }
+    shutting_down = true;
     mInternalEmulated->destroy();
     mInternalEmulated = nullptr;
     for (const auto& disk : mDisks) {
         disk->destroy();
     }
     mDisks.clear();
+    shutting_down = false;
     return 0;
 }
 
