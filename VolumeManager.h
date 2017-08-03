@@ -70,6 +70,9 @@ public:
     static const char *ASECDIR;
     static const char *LOOPDIR;
 
+    //TODO remove this with better solution, b/64143519
+    static bool shutting_down;
+
 private:
     static VolumeManager *sInstance;
 
