@@ -57,6 +57,7 @@
 using android::base::StringPrintf;
 using android::base::WriteStringToFile;
 using android::vold::kEmptyAuthentication;
+using android::vold::KeyBuffer;
 
 // NOTE: keep in sync with StorageManager
 static constexpr int FLAG_STORAGE_DE = 1 << 0;
@@ -80,7 +81,7 @@ std::set<userid_t> s_ephemeral_users;
 std::map<userid_t, std::string> s_de_key_raw_refs;
 std::map<userid_t, std::string> s_ce_key_raw_refs;
 // TODO abolish this map, per b/26948053
-std::map<userid_t, std::string> s_ce_keys;
+std::map<userid_t, KeyBuffer> s_ce_keys;
 
 }
 
@@ -170,7 +171,7 @@ static void fixate_user_ce_key(const std::string& directory_path, const std::str
 
 static bool read_and_fixate_user_ce_key(userid_t user_id,
                                         const android::vold::KeyAuthentication& auth,
-                                        std::string *ce_key) {
+                                        KeyBuffer *ce_key) {
     auto const directory_path = get_ce_key_directory_path(user_id);
     auto const paths = get_ce_key_paths(directory_path);
     for (auto const ce_key_path: paths) {
@@ -188,11 +189,11 @@ static bool read_and_fixate_user_ce_key(userid_t user_id,
 static bool read_and_install_user_ce_key(userid_t user_id,
                                          const android::vold::KeyAuthentication& auth) {
     if (s_ce_key_raw_refs.count(user_id) != 0) return true;
-    std::string ce_key;
+    KeyBuffer ce_key;
     if (!read_and_fixate_user_ce_key(user_id, auth, &ce_key)) return false;
     std::string ce_raw_ref;
     if (!android::vold::installKey(ce_key, &ce_raw_ref)) return false;
-    s_ce_keys[user_id] = ce_key;
+    s_ce_keys[user_id] = std::move(ce_key);
     s_ce_key_raw_refs[user_id] = ce_raw_ref;
     LOG(DEBUG) << "Installed ce key for user " << user_id;
     return true;
@@ -219,7 +220,7 @@ static bool destroy_dir(const std::string& dir) {
 // NB this assumes that there is only one thread listening for crypt commands, because
 // it creates keys in a fixed location.
 static bool create_and_install_user_keys(userid_t user_id, bool create_ephemeral) {
-    std::string de_key, ce_key;
+    KeyBuffer de_key, ce_key;
     if (!android::vold::randomKey(&de_key)) return false;
     if (!android::vold::randomKey(&ce_key)) return false;
     if (create_ephemeral) {
@@ -306,7 +307,7 @@ static bool load_all_de_keys() {
         userid_t user_id = atoi(entry->d_name);
         if (s_de_key_raw_refs.count(user_id) == 0) {
             auto key_path = de_dir + "/" + entry->d_name;
-            std::string key;
+            KeyBuffer key;
             if (!android::vold::retrieveKey(key_path, kEmptyAuthentication, &key)) return false;
             std::string raw_ref;
             if (!android::vold::installKey(key, &raw_ref)) return false;
@@ -411,7 +412,7 @@ static void drop_caches() {
 }
 
 static bool evict_ce_key(userid_t user_id) {
-   s_ce_keys.erase(user_id);
+    s_ce_keys.erase(user_id);
     bool success = true;
     std::string raw_ref;
     // If we haven't loaded the CE key, no need to evict it.
@@ -509,7 +510,7 @@ bool e4crypt_add_user_key_auth(userid_t user_id, int serial, const char* token_h
         LOG(ERROR) << "Key not loaded into memory, can't change for user " << user_id;
         return false;
     }
-    auto ce_key = it->second;
+    const auto &ce_key = it->second;
     auto const directory_path = get_ce_key_directory_path(user_id);
     auto const paths = get_ce_key_paths(directory_path);
     std::string ce_key_path;
