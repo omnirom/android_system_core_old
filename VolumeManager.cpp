@@ -425,7 +425,10 @@ std::shared_ptr<android::vold::Disk> VolumeManager::findDisk(const std::string& 
 }
 
 std::shared_ptr<android::vold::VolumeBase> VolumeManager::findVolume(const std::string& id) {
-    if (mInternalEmulated->getId() == id) {
+    // Vold could receive "mount" after "shutdown" command in the extreme case.
+    // If this happens, mInternalEmulated will equal nullptr and
+    // we need to deal with it in order to avoid null pointer crash.
+    if (mInternalEmulated != nullptr && mInternalEmulated->getId() == id) {
         return mInternalEmulated;
     }
     for (const auto& disk : mDisks) {
@@ -689,8 +692,10 @@ next:
 int VolumeManager::reset() {
     // Tear down all existing disks/volumes and start from a blank slate so
     // newly connected framework hears all events.
-    mInternalEmulated->destroy();
-    mInternalEmulated->create();
+    if (mInternalEmulated != nullptr) {
+        mInternalEmulated->destroy();
+        mInternalEmulated->create();
+    }
     for (const auto& disk : mDisks) {
         disk->destroy();
         disk->create();
