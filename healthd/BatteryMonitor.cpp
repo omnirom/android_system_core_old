@@ -307,6 +307,17 @@ bool BatteryMonitor::update(void) {
                                              name);
                             }
                             path.clear();
+#ifdef USE_FASTCHG_STATUS
+                            path.appendFormat("%s/battery/fastchg_status", POWER_SUPPLY_SYSFS_PATH);
+                            if (access(path.string(), R_OK) == 0) {
+                                int maxChargingCurrent = getIntField(path);
+                                if (maxChargingCurrent == 1) {
+                                    props.maxChargingCurrent = 4000000;
+                                } else {
+                                    props.maxChargingCurrent = 500000;
+                                }
+                            }
+#else
                             path.appendFormat("%s/%s/current_max", POWER_SUPPLY_SYSFS_PATH,
                                               name);
                             if (access(path.string(), R_OK) == 0) {
@@ -315,6 +326,7 @@ bool BatteryMonitor::update(void) {
                                     props.maxChargingCurrent = maxChargingCurrent;
                                 }
                             }
+#endif
                         }
                     }
                 }
