@@ -29,9 +29,14 @@
 #include <private/android_filesystem_config.h>
 #include <selinux/android.h>
 #include <selinux/selinux.h>
+#include <string.h>
 
 #include "ueventd.h"
 #include "util.h"
+
+static std::string boot_device;
+static bool is_cmdline_parsed = false;
+static bool bootdevice_symlink_done = false;
 
 #ifdef _INIT_INIT_H
 #error "Do not include init.h in files used by ueventd or watchdogd; it will expose init's globals"
@@ -296,11 +301,36 @@ void SanitizePartitionName(std::string* string) {
     }
 }
 
+static bool make_link_init(const char* oldpath, const char* newpath) {
+  const char* slash = strrchr(newpath, '/');
+  if (!slash) return false;
+
+  if (mkdir_recursive(Dirname(newpath), 0755, selinux_android_file_context_handle())) {
+    PLOG(ERROR) << "Failed to create directory " << Dirname(newpath);
+    return false;
+  }
+
+  if (symlink(oldpath, newpath) && errno != EEXIST) {
+    PLOG(ERROR) << "Failed to symlink " << oldpath << " to " << newpath;
+    return false;
+  }
+  return true;
+}
+
+static void get_bootdevice_from_cmdline(const std::string& key, const std::string& value,
+        bool for_emulator)
+{
+    is_cmdline_parsed = true;
+    if (android::base::EndsWith(key, "bootdevice")) {
+        boot_device = value;
+    }
+}
+
 std::vector<std::string> DeviceHandler::GetBlockDeviceSymlinks(const Uevent& uevent) const {
     std::string device;
     std::string type;
-
-    if (FindPlatformDevice(uevent.path, &device)) {
+    bool foundPlatformDevice = FindPlatformDevice(uevent.path, &device);
+    if (foundPlatformDevice) {
         // Skip /devices/platform or /devices/ if present
         static const std::string devices_platform_prefix = "/devices/platform/";
         static const std::string devices_prefix = "/devices/";
@@ -342,6 +372,16 @@ std::vector<std::string> DeviceHandler::GetBlockDeviceSymlinks(const Uevent& uev
 
     auto last_slash = uevent.path.rfind('/');
     links.emplace_back(link_path + "/" + uevent.path.substr(last_slash + 1));
+
+    if (!is_cmdline_parsed) {
+        // Parse the kernel cmdline only once, and get the bootdevice that we use to create
+        // the bootdevice symlink to support early mount.
+        import_kernel_cmdline(false, get_bootdevice_from_cmdline);
+    }
+
+    if (foundPlatformDevice && !boot_device.empty() && strstr(device.c_str(), boot_device.c_str()) && !bootdevice_symlink_done) {
+        bootdevice_symlink_done = make_link_init(link_path.c_str(), "/dev/block/bootdevice");
+    }
 
     return links;
 }
