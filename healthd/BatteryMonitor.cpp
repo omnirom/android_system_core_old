@@ -313,8 +313,6 @@ bool BatteryMonitor::update(void) {
                                 int maxChargingCurrent = getIntField(path);
                                 if (maxChargingCurrent == 1) {
                                     props.maxChargingCurrent = 4000000;
-                                } else {
-                                    props.maxChargingCurrent = 500000;
                                 }
                             }
 #else
