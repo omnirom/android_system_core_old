@@ -314,7 +314,11 @@ bool BatteryMonitor::update(void) {
                                 if (maxChargingCurrent == 1) {
                                     props.maxChargingCurrent = 4000000;
                                 } else {
-                                    props.maxChargingCurrent = 500000;
+                                    if (props.chargerUsbOnline) {
+                                        props.maxChargingCurrent = 500000;
+                                    } else if (props.chargerAcOnline) {
+                                        props.maxChargingCurrent = 1200000;
+                                    }
                                 }
                             }
 #else
