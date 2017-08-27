@@ -11,11 +11,6 @@ LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/include
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
-
-ifeq ($(strip $(HEALTHD_USE_FASTCHG_STATUS)),true)
-LOCAL_CFLAGS += -DUSE_FASTCHG_STATUS
-endif
-
 LOCAL_SRC_FILES := BatteryMonitor.cpp
 LOCAL_MODULE := libbatterymonitor
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/include
