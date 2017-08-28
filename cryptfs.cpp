@@ -193,19 +193,19 @@ static const int password_max_age_seconds = 60;
 
 extern struct fstab *fstab;
 
-enum RebootType {reboot, recovery, shutdown};
-static void cryptfs_reboot(enum RebootType rt)
+enum class RebootType {reboot, recovery, shutdown};
+static void cryptfs_reboot(RebootType rt)
 {
-  switch(rt) {
-      case reboot:
+  switch (rt) {
+      case RebootType::reboot:
           property_set(ANDROID_RB_PROPERTY, "reboot");
           break;
 
-      case recovery:
+      case RebootType::recovery:
           property_set(ANDROID_RB_PROPERTY, "reboot,recovery");
           break;
 
-      case shutdown:
+      case RebootType::shutdown:
           property_set(ANDROID_RB_PROPERTY, "shutdown");
           break;
     }
@@ -1455,7 +1455,7 @@ static int cryptfs_restart_internal(int restart_main)
                 } else {
                     /* Let's hope that a reboot clears away whatever is keeping
                        the mount busy */
-                    cryptfs_reboot(reboot);
+                    cryptfs_reboot(RebootType::reboot);
                 }
             } else {
                 SLOGE("Failed to mount decrypted data");
@@ -2656,7 +2656,7 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
         if (rc == ENABLE_INPLACE_ERR_DEV) {
             /* Hack for b/17898962 */
             SLOGE("cryptfs_enable: crypto block dev failure. Must reboot...\n");
-            cryptfs_reboot(reboot);
+            cryptfs_reboot(RebootType::reboot);
         }
 
         if (!rc) {
@@ -2891,7 +2891,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
 
     if (onlyCreateHeader) {
         sleep(2);
-        cryptfs_reboot(reboot);
+        cryptfs_reboot(RebootType::reboot);
     }
 
     if (how == CRYPTO_ENABLE_INPLACE && (!no_ui || rebootEncryption)) {
@@ -2978,11 +2978,11 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
             return 0;
           } else {
             sleep(2); /* Give the UI a chance to show 100% progress */
-            cryptfs_reboot(reboot);
+            cryptfs_reboot(RebootType::reboot);
           }
         } else {
             sleep(2); /* Partially encrypted, ensure writes flushed to ssd */
-            cryptfs_reboot(shutdown);
+            cryptfs_reboot(RebootType::shutdown);
         }
     } else {
         char value[PROPERTY_VALUE_MAX];
@@ -2998,7 +2998,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
             if (!write_bootloader_message(options, &err)) {
                 SLOGE("could not write bootloader message: %s", err.c_str());
             }
-            cryptfs_reboot(recovery);
+            cryptfs_reboot(RebootType::recovery);
         } else {
             /* set property to trigger dialog */
             property_set("vold.encrypt_progress", "error_partially_encrypted");
@@ -3028,7 +3028,7 @@ error_shutting_down:
      * vold to restart the system.
      */
     SLOGE("Error enabling encryption after framework is shutdown, no data changed, restarting system");
-    cryptfs_reboot(reboot);
+    cryptfs_reboot(RebootType::reboot);
 
     /* shouldn't get here */
     property_set("vold.encrypt_progress", "error_shutting_down");
