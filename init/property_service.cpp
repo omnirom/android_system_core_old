@@ -640,10 +640,6 @@ void load_persist_props(void) {
     load_persistent_properties();
     property_set("ro.persistent_properties.ready", "true");
 
-    /* vendor-specific properties
-     */
-    vendor_load_properties();
-
     /*check for coredump*/
     check_rlim_action();
 }
