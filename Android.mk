@@ -35,6 +35,8 @@ common_src_files := \
 	secontext.cpp \
 	EncryptInplace.cpp \
 	MetadataCrypt.cpp \
+	binder/android/os/IVold.aidl \
+	VoldNativeService.cpp \
 
 common_c_includes := \
 	system/extras/f2fs_utils \
@@ -128,6 +130,8 @@ LOCAL_CONLYFLAGS := $(vold_conlyflags)
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
 LOCAL_REQUIRED_MODULES := $(required_modules)
+
+LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/binder
 
 include $(BUILD_EXECUTABLE)
 
