@@ -173,8 +173,8 @@ static void fixup_sys_perms(const char* upath, const char* subsystem) {
         }
 
         std::string attr_file = path + "/" + dp->attr;
-        LOG(INFO) << "fixup " << attr_file
-                  << " " << dp->uid << " " << dp->gid << " " << std::oct << dp->perm;
+        /*LOG(INFO) << "fixup " << attr_file
+                  << " " << dp->uid << " " << dp->gid << " " << std::oct << dp->perm;*/
         chown(attr_file.c_str(), dp->uid, dp->gid);
         chmod(attr_file.c_str(), dp->perm);
     }
