@@ -196,7 +196,7 @@ public:
      * is treated as filename and ignored, unless the path ends with "/".  Also
      * ensures that path belongs to a volume managed by vold.
      */
-    int mkdirs(char* path);
+    int mkdirs(const char* path);
 
 private:
     VolumeManager();

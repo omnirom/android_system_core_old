@@ -19,4 +19,54 @@ package android.os;
 /** {@hide} */
 interface IVold {
     void reset();
+    void shutdown();
+
+    void setDebug(boolean debug);
+
+    void onUserAdded(int userId, int userSerial);
+    void onUserRemoved(int userId);
+    void onUserStarted(int userId);
+    void onUserStopped(int userId);
+
+    void partition(@utf8InCpp String diskId, int partitionType, int ratio);
+    void forgetPartition(@utf8InCpp String partGuid);
+
+    void mount(@utf8InCpp String volId, int mountFlags, int mountUserId);
+    void unmount(@utf8InCpp String volId);
+    void format(@utf8InCpp String volId, @utf8InCpp String fsType);
+    long benchmark(@utf8InCpp String volId);
+
+    void moveStorage(@utf8InCpp String fromVolId, @utf8InCpp String toVolId);
+
+    void remountUid(int uid, int remountMode);
+
+    void mkdirs(@utf8InCpp String path);
+
+    const int MOUNT_FLAG_PRIMARY = 1;
+    const int MOUNT_FLAG_VISIBLE = 2;
+
+    const int PARTITION_TYPE_PUBLIC = 0;
+    const int PARTITION_TYPE_PRIVATE = 1;
+    const int PARTITION_TYPE_MIXED = 2;
+
+    const int REMOUNT_MODE_NONE = 0;
+    const int REMOUNT_MODE_DEFAULT = 1;
+    const int REMOUNT_MODE_READ = 2;
+    const int REMOUNT_MODE_WRITE = 3;
+
+    const int STATE_UNMOUNTED = 0;
+    const int STATE_CHECKING = 1;
+    const int STATE_MOUNTED = 2;
+    const int STATE_MOUNTED_READ_ONLY = 3;
+    const int STATE_FORMATTING = 4;
+    const int STATE_EJECTING = 5;
+    const int STATE_UNMOUNTABLE = 6;
+    const int STATE_REMOVED = 7;
+    const int STATE_BAD_REMOVAL = 8;
+
+    const int TYPE_PUBLIC = 0;
+    const int TYPE_PRIVATE = 1;
+    const int TYPE_EMULATED = 2;
+    const int TYPE_ASEC = 3;
+    const int TYPE_OBB = 4;
 }
