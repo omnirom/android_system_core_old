@@ -19,6 +19,7 @@
 #include "CommandListener.h"
 #include "CryptCommandListener.h"
 #include "NetlinkManager.h"
+#include "VoldNativeService.h"
 #include "cryptfs.h"
 #include "sehandle.h"
 
@@ -103,6 +104,11 @@ int main(int argc, char** argv) {
 
     if (vm->start()) {
         PLOG(ERROR) << "Unable to start VolumeManager";
+        exit(1);
+    }
+
+    if (android::vold::VoldNativeService::start() != android::OK) {
+        LOG(ERROR) << "Unable to start VoldNativeService";
         exit(1);
     }
 
