@@ -18,7 +18,6 @@
 
 #include <stdio.h>
 #include <stdint.h>
-#include <stdbool.h>
 #include <inttypes.h>
 #include <time.h>
 #include <sys/types.h>
