@@ -1952,7 +1952,7 @@ bool VolumeManager::isMountpointMounted(const char *mp)
     return found_mp;
 }
 
-int VolumeManager::mkdirs(char* path) {
+int VolumeManager::mkdirs(const char* path) {
     // Only offer to create directories for paths managed by vold
     if (strncmp(path, "/storage/", 9) == 0) {
         // fs_mkdirs() does symlink checking and relative path enforcement

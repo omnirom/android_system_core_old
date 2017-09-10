@@ -31,6 +31,28 @@ public:
     virtual status_t dump(int fd, const Vector<String16> &args) override;
 
     binder::Status reset();
+    binder::Status shutdown();
+
+    binder::Status setDebug(bool debug);
+
+    binder::Status onUserAdded(int32_t userId, int32_t userSerial);
+    binder::Status onUserRemoved(int32_t userId);
+    binder::Status onUserStarted(int32_t userId);
+    binder::Status onUserStopped(int32_t userId);
+
+    binder::Status partition(const std::string& diskId, int32_t partitionType, int32_t ratio);
+    binder::Status forgetPartition(const std::string& partGuid);
+
+    binder::Status mount(const std::string& volId, int32_t mountFlags, int32_t mountUserId);
+    binder::Status unmount(const std::string& volId);
+    binder::Status format(const std::string& volId, const std::string& fsType);
+    binder::Status benchmark(const std::string& volId, int64_t* _aidl_return);
+
+    binder::Status moveStorage(const std::string& fromVolId, const std::string& toVolId);
+
+    binder::Status remountUid(int32_t uid, int32_t remountMode);
+
+    binder::Status mkdirs(const std::string& path);
 };
 
 }  // namespace vold
