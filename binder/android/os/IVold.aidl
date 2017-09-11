@@ -20,8 +20,7 @@ package android.os;
 interface IVold {
     void reset();
     void shutdown();
-
-    void setDebug(boolean debug);
+    void mountAll();
 
     void onUserAdded(int userId, int userSerial);
     void onUserRemoved(int userId);
@@ -41,6 +40,18 @@ interface IVold {
     void remountUid(int uid, int remountMode);
 
     void mkdirs(@utf8InCpp String path);
+
+    @utf8InCpp String createObb(@utf8InCpp String sourcePath,
+            @utf8InCpp String sourceKey, int ownerGid);
+    void destroyObb(@utf8InCpp String volId);
+
+    void fstrim(int fstrimFlags);
+
+    FileDescriptor mountAppFuse(int uid, int pid, int mountId);
+    void unmountAppFuse(int uid, int pid, int mountId);
+
+    const int FSTRIM_FLAG_DEEP_TRIM = 1;
+    const int FSTRIM_FLAG_BENCHMARK_AFTER = 2;
 
     const int MOUNT_FLAG_PRIMARY = 1;
     const int MOUNT_FLAG_VISIBLE = 2;

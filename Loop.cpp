@@ -45,6 +45,8 @@
 using android::base::StringPrintf;
 using android::base::unique_fd;
 
+static const char* kVoldPrefix = "vold:";
+
 int Loop::dumpState(SocketClient *c) {
     int i;
     int fd;
@@ -87,7 +89,10 @@ int Loop::dumpState(SocketClient *c) {
     return 0;
 }
 
-int Loop::lookupActive(const char *id, char *buffer, size_t len) {
+int Loop::lookupActive(const char *id_raw, char *buffer, size_t len) {
+    auto id_string = StringPrintf("%s%s", kVoldPrefix, id_raw);
+    const char* id = id_string.c_str();
+
     int i;
     int fd;
     char filename[256];
@@ -134,7 +139,10 @@ int Loop::lookupActive(const char *id, char *buffer, size_t len) {
     return 0;
 }
 
-int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, size_t len) {
+int Loop::create(const char *id_raw, const char *loopFile, char *loopDeviceBuffer, size_t len) {
+    auto id_string = StringPrintf("%s%s", kVoldPrefix, id_raw);
+    const char* id = id_string.c_str();
+
     int i;
     int fd;
     char filename[256];
@@ -267,6 +275,14 @@ int Loop::create(const std::string& target, std::string& out_device) {
         return -errno;
     }
 
+    struct loop_info64 li;
+    memset(&li, 0, sizeof(li));
+    strlcpy((char*) li.lo_crypt_name, kVoldPrefix, LO_NAME_SIZE);
+    if (ioctl(device_fd.get(), LOOP_SET_STATUS64, &li) == -1) {
+        PLOG(ERROR) << "Failed to LOOP_SET_STATUS64";
+        return -errno;
+    }
+
     return 0;
 }
 
@@ -289,9 +305,36 @@ int Loop::destroyByDevice(const char *loopDevice) {
     return 0;
 }
 
-int Loop::destroyByFile(const char * /*loopFile*/) {
-    errno = ENOSYS;
-    return -1;
+int Loop::destroyAll() {
+    for (int i = 0; i < LOOP_MAX; i++) {
+        auto path = StringPrintf("/dev/block/loop%d", i);
+
+        unique_fd fd(open(path.c_str(), O_RDWR | O_CLOEXEC));
+        if (fd.get() == -1) {
+            if (errno != ENOENT) {
+                PLOG(WARNING) << "Failed to open " << path;
+            }
+            continue;
+        }
+
+        struct loop_info64 li;
+        if (ioctl(fd.get(), LOOP_GET_STATUS64, &li) < 0) {
+            PLOG(WARNING) << "Failed to LOOP_GET_STATUS64 " << path;
+            continue;
+        }
+
+        char* id = (char*) li.lo_crypt_name;
+        if (strncmp(id, kVoldPrefix, strlen(kVoldPrefix)) == 0) {
+            LOG(DEBUG) << "Tearing down stale loop device at " << path << " named " << id;
+
+            if (ioctl(fd.get(), LOOP_CLR_FD, 0) < 0) {
+                PLOG(WARNING) << "Failed to LOOP_CLR_FD " << path;
+            }
+        } else {
+            LOG(VERBOSE) << "Found unmanaged loop device at " << path << " named " << id;
+        }
+    }
+    return 0;
 }
 
 int Loop::createImageFile(const char *file, unsigned long numSectors) {

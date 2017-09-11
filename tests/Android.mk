@@ -5,9 +5,10 @@ include $(CLEAR_VARS)
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 
 LOCAL_C_INCLUDES := \
-    system/core/fs_mgr/include
+    system/core/fs_mgr/include \
+    system/vold/
 
-LOCAL_STATIC_LIBRARIES := libselinux libvold liblog libcrypto
+LOCAL_STATIC_LIBRARIES := libbase libselinux libvold liblog libcrypto
 
 LOCAL_SRC_FILES := VolumeManager_test.cpp
 LOCAL_MODULE := vold_tests

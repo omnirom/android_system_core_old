@@ -32,7 +32,7 @@ public:
     static int create(const char *id, const char *loopFile, char *loopDeviceBuffer, size_t len);
     static int create(const std::string& file, std::string& out_device);
     static int destroyByDevice(const char *loopDevice);
-    static int destroyByFile(const char *loopFile);
+    static int destroyAll();
     static int createImageFile(const char *file, unsigned long numSectors);
     static int resizeImageFile(const char *file, unsigned long numSectors);
 

@@ -29,17 +29,20 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <android-base/unique_fd.h>
 #include <cutils/multiuser.h>
 #include <utils/List.h>
 #include <utils/Timers.h>
 #include <sysutils/SocketListener.h>
 #include <sysutils/NetlinkEvent.h>
 
-#include "Disk.h"
-#include "VolumeBase.h"
+#include "model/Disk.h"
+#include "model/VolumeBase.h"
 
 /* The length of an MD5 hash when encoded into ASCII hex characters */
 #define MD5_ASCII_LENGTH_PLUS_NULL ((MD5_DIGEST_LENGTH*2)+1)
+
+#define DEBUG_APPFUSE 0
 
 typedef enum { ASEC, OBB } container_type_t;
 
@@ -198,6 +201,13 @@ public:
      */
     int mkdirs(const char* path);
 
+    int createObb(const std::string& path, const std::string& key, int32_t ownerGid,
+            std::string* outVolId);
+    int destroyObb(const std::string& volId);
+
+    int mountAppFuse(uid_t uid, pid_t pid, int mountId, android::base::unique_fd* device_fd);
+    int unmountAppFuse(uid_t uid, pid_t pid, int mountId);
+
 private:
     VolumeManager();
     void readInitialState();
@@ -211,6 +221,7 @@ private:
 
     std::list<std::shared_ptr<DiskSource>> mDiskSources;
     std::list<std::shared_ptr<android::vold::Disk>> mDisks;
+    std::list<std::shared_ptr<android::vold::VolumeBase>> mObbVolumes;
 
     std::unordered_map<userid_t, int> mAddedUsers;
     std::unordered_set<userid_t> mStartedUsers;
@@ -219,6 +230,8 @@ private:
     std::shared_ptr<android::vold::Disk> mVirtualDisk;
     std::shared_ptr<android::vold::VolumeBase> mInternalEmulated;
     std::shared_ptr<android::vold::VolumeBase> mPrimary;
+
+    int mNextObbId;
 };
 
 extern "C" {

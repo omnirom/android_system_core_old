@@ -32,11 +32,17 @@
 
 #include <cutils/log.h>
 
+#include <android-base/logging.h>
+#include <android-base/stringprintf.h>
 #include <sysutils/SocketClient.h>
 
 #include "Devmapper.h"
 
 #define DEVMAPPER_BUFFER_SIZE 4096
+
+using android::base::StringPrintf;
+
+static const char* kVoldPrefix = "vold:";
 
 int Devmapper::dumpState(SocketClient *c) {
 
@@ -130,7 +136,10 @@ void Devmapper::ioctlInit(struct dm_ioctl *io, size_t dataSize,
     }
 }
 
-int Devmapper::lookupActive(const char *name, char *ubuffer, size_t len) {
+int Devmapper::lookupActive(const char *name_raw, char *ubuffer, size_t len) {
+    auto name_string = StringPrintf("%s%s", kVoldPrefix, name_raw);
+    const char* name = name_string.c_str();
+
     char *buffer = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
     if (!buffer) {
         SLOGE("Error allocating memory (%s)", strerror(errno));
@@ -163,8 +172,11 @@ int Devmapper::lookupActive(const char *name, char *ubuffer, size_t len) {
     return 0;
 }
 
-int Devmapper::create(const char *name, const char *loopFile, const char *key,
+int Devmapper::create(const char *name_raw, const char *loopFile, const char *key,
                       unsigned long numSectors, char *ubuffer, size_t len) {
+    auto name_string = StringPrintf("%s%s", kVoldPrefix, name_raw);
+    const char* name = name_string.c_str();
+
     char *buffer = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
     if (!buffer) {
         SLOGE("Error allocating memory (%s)", strerror(errno));
@@ -261,7 +273,10 @@ int Devmapper::create(const char *name, const char *loopFile, const char *key,
     return 0;
 }
 
-int Devmapper::destroy(const char *name) {
+int Devmapper::destroy(const char *name_raw) {
+    auto name_string = StringPrintf("%s%s", kVoldPrefix, name_raw);
+    const char* name = name_string.c_str();
+
     char *buffer = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
     if (!buffer) {
         SLOGE("Error allocating memory (%s)", strerror(errno));
@@ -290,6 +305,74 @@ int Devmapper::destroy(const char *name) {
     }
 
     free(buffer);
+    close(fd);
+    return 0;
+}
+
+int Devmapper::destroyAll() {
+    char *buffer = (char *) malloc(1024 * 64);
+    if (!buffer) {
+        SLOGE("Error allocating memory (%s)", strerror(errno));
+        return -1;
+    }
+    memset(buffer, 0, (1024 * 64));
+
+    char *buffer2 = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
+    if (!buffer2) {
+        SLOGE("Error allocating memory (%s)", strerror(errno));
+        free(buffer);
+        return -1;
+    }
+
+    int fd;
+    if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
+        SLOGE("Error opening devmapper (%s)", strerror(errno));
+        free(buffer);
+        free(buffer2);
+        return -1;
+    }
+
+    struct dm_ioctl *io = (struct dm_ioctl *) buffer;
+    ioctlInit(io, (1024 * 64), NULL, 0);
+
+    if (ioctl(fd, DM_LIST_DEVICES, io)) {
+        SLOGE("DM_LIST_DEVICES ioctl failed (%s)", strerror(errno));
+        free(buffer);
+        free(buffer2);
+        close(fd);
+        return -1;
+    }
+
+    struct dm_name_list *n = (struct dm_name_list *) (((char *) buffer) + io->data_start);
+    if (!n->dev) {
+        free(buffer);
+        free(buffer2);
+        close(fd);
+        return 0;
+    }
+
+    unsigned nxt = 0;
+    do {
+        n = (struct dm_name_list *) (((char *) n) + nxt);
+        if (strncmp(n->name, kVoldPrefix, strlen(kVoldPrefix)) == 0) {
+            LOG(DEBUG) << "Tearing down stale dm device named " << n->name;
+
+            memset(buffer2, 0, DEVMAPPER_BUFFER_SIZE);
+            struct dm_ioctl *io2 = (struct dm_ioctl *) buffer2;
+            ioctlInit(io2, DEVMAPPER_BUFFER_SIZE, n->name, 0);
+            if (ioctl(fd, DM_DEV_REMOVE, io2)) {
+                if (errno != ENXIO) {
+                    PLOG(WARNING) << "Failed to destroy dm device named " << n->name;
+                }
+            }
+        } else {
+            LOG(VERBOSE) << "Found unmanaged dm device named " << n->name;
+        }
+        nxt = n->next;
+    } while (nxt);
+
+    free(buffer);
+    free(buffer2);
     close(fd);
     return 0;
 }

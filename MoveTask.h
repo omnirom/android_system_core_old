@@ -18,7 +18,7 @@
 #define ANDROID_VOLD_MOVE_TASK_H
 
 #include "Utils.h"
-#include "VolumeBase.h"
+#include "model/VolumeBase.h"
 
 #include <thread>
 

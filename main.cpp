@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "Disk.h"
+#include "model/Disk.h"
 #include "VolumeManager.h"
 #include "CommandListener.h"
 #include "CryptCommandListener.h"

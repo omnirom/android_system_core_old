@@ -18,11 +18,12 @@ common_src_files := \
 	Ext4Crypt.cpp \
 	VoldUtil.c \
 	cryptfs.cpp \
-	Disk.cpp \
-	VolumeBase.cpp \
-	PublicVolume.cpp \
-	PrivateVolume.cpp \
-	EmulatedVolume.cpp \
+	model/Disk.cpp \
+	model/VolumeBase.cpp \
+	model/PublicVolume.cpp \
+	model/PrivateVolume.cpp \
+	model/EmulatedVolume.cpp \
+	model/ObbVolume.cpp \
 	Utils.cpp \
 	MoveTask.cpp \
 	Benchmark.cpp \

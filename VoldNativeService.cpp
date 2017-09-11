@@ -17,12 +17,14 @@
 #include "VoldNativeService.h"
 #include "VolumeManager.h"
 #include "MoveTask.h"
+#include "TrimTask.h"
 
 #include <fstream>
 
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
+#include <fs_mgr.h>
 #include <private/android_filesystem_config.h>
 
 #ifndef LOG_TAG
@@ -56,7 +58,7 @@ static binder::Status translate(uint32_t status) {
     if (status == 0) {
         return binder::Status::ok();
     } else {
-        return binder::Status::fromExceptionCode(status);
+        return binder::Status::fromServiceSpecificError(status);
     }
 }
 
@@ -134,11 +136,14 @@ binder::Status VoldNativeService::shutdown() {
     return translate(VolumeManager::Instance()->shutdown());
 }
 
-binder::Status VoldNativeService::setDebug(bool debug) {
+binder::Status VoldNativeService::mountAll() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->setDebug(debug));
+    struct fstab* fstab = fs_mgr_read_fstab_default();
+    int res = fs_mgr_mount_all(fstab, MOUNT_MODE_DEFAULT);
+    fs_mgr_free_fstab(fstab);
+    return translate(res);
 }
 
 binder::Status VoldNativeService::onUserAdded(int32_t userId, int32_t userSerial) {
@@ -169,7 +174,8 @@ binder::Status VoldNativeService::onUserStopped(int32_t userId) {
     return translate(VolumeManager::Instance()->onUserStopped(userId));
 }
 
-binder::Status VoldNativeService::partition(const std::string& diskId, int32_t partitionType, int32_t ratio) {
+binder::Status VoldNativeService::partition(const std::string& diskId, int32_t partitionType,
+        int32_t ratio) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
@@ -192,7 +198,8 @@ binder::Status VoldNativeService::forgetPartition(const std::string& partGuid) {
     return translate(VolumeManager::Instance()->forgetPartition(partGuid));
 }
 
-binder::Status VoldNativeService::mount(const std::string& volId, int32_t mountFlags, int32_t mountUserId) {
+binder::Status VoldNativeService::mount(const std::string& volId, int32_t mountFlags,
+        int32_t mountUserId) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
@@ -241,7 +248,8 @@ binder::Status VoldNativeService::benchmark(const std::string& volId, int64_t* _
     return ok();
 }
 
-binder::Status VoldNativeService::moveStorage(const std::string& fromVolId, const std::string& toVolId) {
+binder::Status VoldNativeService::moveStorage(const std::string& fromVolId,
+        const std::string& toVolId) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
@@ -276,6 +284,45 @@ binder::Status VoldNativeService::mkdirs(const std::string& path) {
     ACQUIRE_LOCK;
 
     return translate(VolumeManager::Instance()->mkdirs(path.c_str()));
+}
+
+binder::Status VoldNativeService::createObb(const std::string& sourcePath,
+        const std::string& sourceKey, int32_t ownerGid, std::string* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return translate(
+            VolumeManager::Instance()->createObb(sourcePath, sourceKey, ownerGid, _aidl_return));
+}
+
+binder::Status VoldNativeService::destroyObb(const std::string& volId) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->destroyObb(volId));
+}
+
+binder::Status VoldNativeService::fstrim(int32_t fstrimFlags) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    (new android::vold::TrimTask(fstrimFlags))->start();
+    return ok();
+}
+
+binder::Status VoldNativeService::mountAppFuse(int32_t uid, int32_t pid, int32_t mountId,
+        android::base::unique_fd* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->mountAppFuse(uid, pid, mountId, _aidl_return));
+}
+
+binder::Status VoldNativeService::unmountAppFuse(int32_t uid, int32_t pid, int32_t mountId) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->unmountAppFuse(uid, pid, mountId));
 }
 
 }  // namespace vold
