@@ -17,7 +17,12 @@
 #include "VoldNativeService.h"
 #include "VolumeManager.h"
 #include "MoveTask.h"
+#include "Process.h"
 #include "TrimTask.h"
+
+#include "cryptfs.h"
+#include "Ext4Crypt.h"
+#include "MetadataCrypt.h"
 
 #include <fstream>
 
@@ -54,8 +59,16 @@ static binder::Status error(const std::string& msg) {
     return binder::Status::fromServiceSpecificError(errno, String8(msg.c_str()));
 }
 
-static binder::Status translate(uint32_t status) {
+static binder::Status translate(int status) {
     if (status == 0) {
+        return binder::Status::ok();
+    } else {
+        return binder::Status::fromServiceSpecificError(status);
+    }
+}
+
+static binder::Status translateBool(bool status) {
+    if (status) {
         return binder::Status::ok();
     } else {
         return binder::Status::fromServiceSpecificError(status);
@@ -154,7 +167,11 @@ binder::Status checkArgumentHex(const std::string& hex) {
     }                                                       \
 }
 
-#define ACQUIRE_LOCK std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock());
+#define ACQUIRE_LOCK \
+    std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock());
+
+#define ACQUIRE_CRYPT_LOCK \
+    std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getCryptLock());
 
 }  // namespace
 
@@ -277,7 +294,7 @@ binder::Status VoldNativeService::mount(const std::string& volId, int32_t mountF
     vol->setMountUserId(mountUserId);
 
     int res = vol->mount();
-    if (mountFlags & MOUNT_FLAG_PRIMARY) {
+    if ((mountFlags & MOUNT_FLAG_PRIMARY) != 0) {
         VolumeManager::Instance()->setPrimary(vol);
     }
     return translate(res);
@@ -397,6 +414,254 @@ binder::Status VoldNativeService::unmountAppFuse(int32_t uid, int32_t pid, int32
     ACQUIRE_LOCK;
 
     return translate(VolumeManager::Instance()->unmountAppFuse(uid, pid, mountId));
+}
+
+binder::Status VoldNativeService::fdeCheckPassword(const std::string& password) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translate(cryptfs_check_passwd(password.c_str()));
+}
+
+binder::Status VoldNativeService::fdeRestart() {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    // Spawn as thread so init can issue commands back to vold without
+    // causing deadlock, usually as a result of prep_data_fs.
+    std::thread(&cryptfs_restart).detach();
+    return ok();
+}
+
+binder::Status VoldNativeService::fdeComplete(int32_t* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    *_aidl_return = cryptfs_crypto_complete();
+    return ok();
+}
+
+static int fdeEnableInternal(int32_t passwordType, const std::string& password,
+        int32_t encryptionFlags) {
+    bool noUi = (encryptionFlags & VoldNativeService::ENCRYPTION_FLAG_NO_UI) != 0;
+
+    std::string how;
+    if ((encryptionFlags & VoldNativeService::ENCRYPTION_FLAG_IN_PLACE) != 0) {
+        how = "inplace";
+    } else if ((encryptionFlags & VoldNativeService::ENCRYPTION_FLAG_WIPE) != 0) {
+        how = "wipe";
+    } else {
+        LOG(ERROR) << "Missing encryption flag";
+        return -1;
+    }
+
+    for (int tries = 0; tries < 2; ++tries) {
+        int rc;
+        if (passwordType == VoldNativeService::PASSWORD_TYPE_DEFAULT) {
+            rc = cryptfs_enable_default(how.c_str(), noUi);
+        } else {
+            rc = cryptfs_enable(how.c_str(), passwordType, password.c_str(), noUi);
+        }
+
+        if (rc == 0) {
+            return 0;
+        } else if (tries == 0) {
+            Process::killProcessesWithOpenFiles(DATA_MNT_POINT, SIGKILL);
+        }
+    }
+
+    return -1;
+}
+
+binder::Status VoldNativeService::fdeEnable(int32_t passwordType,
+        const std::string& password, int32_t encryptionFlags) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    if (e4crypt_is_native()) {
+        if (passwordType != PASSWORD_TYPE_DEFAULT) {
+            return error("Unexpected password type");
+        }
+        if (encryptionFlags != (ENCRYPTION_FLAG_IN_PLACE | ENCRYPTION_FLAG_NO_UI)) {
+            return error("Unexpected flags");
+        }
+        return translateBool(e4crypt_enable_crypto());
+    }
+
+    // Spawn as thread so init can issue commands back to vold without
+    // causing deadlock, usually as a result of prep_data_fs.
+    std::thread(&fdeEnableInternal, passwordType, password, encryptionFlags).detach();
+    return ok();
+}
+
+binder::Status VoldNativeService::fdeChangePassword(int32_t passwordType,
+        const std::string& password) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translate(cryptfs_changepw(passwordType, password.c_str()));
+}
+
+binder::Status VoldNativeService::fdeVerifyPassword(const std::string& password) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translate(cryptfs_verify_passwd(password.c_str()));
+}
+
+binder::Status VoldNativeService::fdeGetField(const std::string& key,
+        std::string* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    char buf[PROPERTY_VALUE_MAX];
+    if (cryptfs_getfield(key.c_str(), buf, sizeof(buf)) != CRYPTO_GETFIELD_OK) {
+        return error(StringPrintf("Failed to read field %s", key.c_str()));
+    } else {
+        *_aidl_return = buf;
+        return ok();
+    }
+}
+
+binder::Status VoldNativeService::fdeSetField(const std::string& key,
+        const std::string& value) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translate(cryptfs_setfield(key.c_str(), value.c_str()));
+}
+
+binder::Status VoldNativeService::fdeGetPasswordType(int32_t* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    *_aidl_return = cryptfs_get_password_type();
+    return ok();
+}
+
+binder::Status VoldNativeService::fdeGetPassword(std::string* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    const char* res = cryptfs_get_password();
+    if (res != nullptr) {
+        *_aidl_return = res;
+    }
+    return ok();
+}
+
+binder::Status VoldNativeService::fdeClearPassword() {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    cryptfs_clear_password();
+    return ok();
+}
+
+binder::Status VoldNativeService::fbeEnable() {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translateBool(e4crypt_initialize_global_de());
+}
+
+binder::Status VoldNativeService::mountDefaultEncrypted() {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    if (e4crypt_is_native()) {
+        return translateBool(e4crypt_mount_metadata_encrypted());
+    } else {
+        // Spawn as thread so init can issue commands back to vold without
+        // causing deadlock, usually as a result of prep_data_fs.
+        std::thread(&cryptfs_mount_default_encrypted).detach();
+        return ok();
+    }
+}
+
+binder::Status VoldNativeService::initUser0() {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translateBool(e4crypt_init_user0());
+}
+
+binder::Status VoldNativeService::isConvertibleToFbe(bool* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    *_aidl_return = cryptfs_isConvertibleToFBE() != 0;
+    return ok();
+}
+
+binder::Status VoldNativeService::createUserKey(int32_t userId, int32_t userSerial,
+        bool ephemeral) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translateBool(e4crypt_vold_create_user_key(userId, userSerial, ephemeral));
+}
+
+binder::Status VoldNativeService::destroyUserKey(int32_t userId) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translateBool(e4crypt_destroy_user_key(userId));
+}
+
+binder::Status VoldNativeService::addUserKeyAuth(int32_t userId, int32_t userSerial,
+        const std::string& token, const std::string& secret) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translateBool(e4crypt_add_user_key_auth(userId, userSerial, token.c_str(), secret.c_str()));
+}
+
+binder::Status VoldNativeService::fixateNewestUserKeyAuth(int32_t userId) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translateBool(e4crypt_fixate_newest_user_key_auth(userId));
+}
+
+binder::Status VoldNativeService::unlockUserKey(int32_t userId, int32_t userSerial,
+        const std::string& token, const std::string& secret) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translateBool(e4crypt_unlock_user_key(userId, userSerial, token.c_str(), secret.c_str()));
+}
+
+binder::Status VoldNativeService::lockUserKey(int32_t userId) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translateBool(e4crypt_lock_user_key(userId));
+}
+
+binder::Status VoldNativeService::prepareUserStorage(const std::unique_ptr<std::string>& uuid,
+        int32_t userId, int32_t userSerial, int32_t flags) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    const char* uuid_ = uuid ? uuid->c_str() : nullptr;
+    return translateBool(e4crypt_prepare_user_storage(uuid_, userId, userSerial, flags));
+}
+
+binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::string>& uuid,
+        int32_t userId, int32_t flags) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    const char* uuid_ = uuid ? uuid->c_str() : nullptr;
+    return translateBool(e4crypt_destroy_user_storage(uuid_, userId, flags));
+}
+
+binder::Status VoldNativeService::secdiscard(const std::string& path) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_CRYPT_LOCK;
+
+    return translateBool(e4crypt_secdiscard(path.c_str()));
 }
 
 }  // namespace vold

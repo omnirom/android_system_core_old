@@ -63,6 +63,44 @@ public:
     binder::Status mountAppFuse(int32_t uid, int32_t pid, int32_t mountId,
             android::base::unique_fd* _aidl_return);
     binder::Status unmountAppFuse(int32_t uid, int32_t pid, int32_t mountId);
+
+    binder::Status fdeCheckPassword(const std::string& password);
+    binder::Status fdeRestart();
+    binder::Status fdeComplete(int32_t* _aidl_return);
+    binder::Status fdeEnable(int32_t passwordType,
+            const std::string& password, int32_t encryptionFlags);
+    binder::Status fdeChangePassword(int32_t passwordType,
+            const std::string& password);
+    binder::Status fdeVerifyPassword(const std::string& password);
+    binder::Status fdeGetField(const std::string& key, std::string* _aidl_return);
+    binder::Status fdeSetField(const std::string& key, const std::string& value);
+    binder::Status fdeGetPasswordType(int32_t* _aidl_return);
+    binder::Status fdeGetPassword(std::string* _aidl_return);
+    binder::Status fdeClearPassword();
+
+    binder::Status fbeEnable();
+
+    binder::Status mountDefaultEncrypted();
+    binder::Status initUser0();
+    binder::Status isConvertibleToFbe(bool* _aidl_return);
+
+    binder::Status createUserKey(int32_t userId, int32_t userSerial, bool ephemeral);
+    binder::Status destroyUserKey(int32_t userId);
+
+    binder::Status addUserKeyAuth(int32_t userId, int32_t userSerial,
+            const std::string& token, const std::string& secret);
+    binder::Status fixateNewestUserKeyAuth(int32_t userId);
+
+    binder::Status unlockUserKey(int32_t userId, int32_t userSerial,
+            const std::string& token, const std::string& secret);
+    binder::Status lockUserKey(int32_t userId);
+
+    binder::Status prepareUserStorage(const std::unique_ptr<std::string>& uuid,
+            int32_t userId, int32_t userSerial, int32_t flags);
+    binder::Status destroyUserStorage(const std::unique_ptr<std::string>& uuid,
+            int32_t userId, int32_t flags);
+
+    binder::Status secdiscard(const std::string& path);
 };
 
 }  // namespace vold
