@@ -85,8 +85,70 @@ binder::Status checkUid(uid_t expectedUid) {
     }
 }
 
+binder::Status checkArgumentId(const std::string& id) {
+    if (id.empty()) {
+        return exception(binder::Status::EX_ILLEGAL_ARGUMENT, "Missing ID");
+    }
+    for (const char& c : id) {
+        if (!std::isalnum(c) && c != ':' && c != ',') {
+            return exception(binder::Status::EX_ILLEGAL_ARGUMENT,
+                    StringPrintf("ID %s is malformed", id.c_str()));
+        }
+    }
+    return ok();
+}
+
+binder::Status checkArgumentPath(const std::string& path) {
+    if (path.empty()) {
+        return exception(binder::Status::EX_ILLEGAL_ARGUMENT, "Missing path");
+    }
+    if (path[0] != '/') {
+        return exception(binder::Status::EX_ILLEGAL_ARGUMENT,
+                StringPrintf("Path %s is relative", path.c_str()));
+    }
+    for (const char& c : path) {
+        if (c == '\0' || c == '\n') {
+            return exception(binder::Status::EX_ILLEGAL_ARGUMENT,
+                    StringPrintf("Path %s is malformed", path.c_str()));
+        }
+    }
+    return ok();
+}
+
+binder::Status checkArgumentHex(const std::string& hex) {
+    // Empty hex strings are allowed
+    for (const char& c : hex) {
+        if (!std::isxdigit(c) && c != ':' && c != '-') {
+            return exception(binder::Status::EX_ILLEGAL_ARGUMENT,
+                    StringPrintf("Hex %s is malformed", hex.c_str()));
+        }
+    }
+    return ok();
+}
+
 #define ENFORCE_UID(uid) {                                  \
     binder::Status status = checkUid((uid));                \
+    if (!status.isOk()) {                                   \
+        return status;                                      \
+    }                                                       \
+}
+
+#define CHECK_ARGUMENT_ID(id) {                             \
+    binder::Status status = checkArgumentId((id));          \
+    if (!status.isOk()) {                                   \
+        return status;                                      \
+    }                                                       \
+}
+
+#define CHECK_ARGUMENT_PATH(path) {                         \
+    binder::Status status = checkArgumentPath((path));      \
+    if (!status.isOk()) {                                   \
+        return status;                                      \
+    }                                                       \
+}
+
+#define CHECK_ARGUMENT_HEX(hex) {                           \
+    binder::Status status = checkArgumentHex((hex));        \
     if (!status.isOk()) {                                   \
         return status;                                      \
     }                                                       \
@@ -177,6 +239,7 @@ binder::Status VoldNativeService::onUserStopped(int32_t userId) {
 binder::Status VoldNativeService::partition(const std::string& diskId, int32_t partitionType,
         int32_t ratio) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_ID(diskId);
     ACQUIRE_LOCK;
 
     auto disk = VolumeManager::Instance()->findDisk(diskId);
@@ -193,6 +256,7 @@ binder::Status VoldNativeService::partition(const std::string& diskId, int32_t p
 
 binder::Status VoldNativeService::forgetPartition(const std::string& partGuid) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_HEX(partGuid);
     ACQUIRE_LOCK;
 
     return translate(VolumeManager::Instance()->forgetPartition(partGuid));
@@ -201,6 +265,7 @@ binder::Status VoldNativeService::forgetPartition(const std::string& partGuid) {
 binder::Status VoldNativeService::mount(const std::string& volId, int32_t mountFlags,
         int32_t mountUserId) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_ID(volId);
     ACQUIRE_LOCK;
 
     auto vol = VolumeManager::Instance()->findVolume(volId);
@@ -220,6 +285,7 @@ binder::Status VoldNativeService::mount(const std::string& volId, int32_t mountF
 
 binder::Status VoldNativeService::unmount(const std::string& volId) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_ID(volId);
     ACQUIRE_LOCK;
 
     auto vol = VolumeManager::Instance()->findVolume(volId);
@@ -231,6 +297,7 @@ binder::Status VoldNativeService::unmount(const std::string& volId) {
 
 binder::Status VoldNativeService::format(const std::string& volId, const std::string& fsType) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_ID(volId);
     ACQUIRE_LOCK;
 
     auto vol = VolumeManager::Instance()->findVolume(volId);
@@ -242,6 +309,7 @@ binder::Status VoldNativeService::format(const std::string& volId, const std::st
 
 binder::Status VoldNativeService::benchmark(const std::string& volId, int64_t* _aidl_return) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_ID(volId);
     ACQUIRE_LOCK;
 
     *_aidl_return = VolumeManager::Instance()->benchmarkPrivate(volId);
@@ -251,6 +319,8 @@ binder::Status VoldNativeService::benchmark(const std::string& volId, int64_t* _
 binder::Status VoldNativeService::moveStorage(const std::string& fromVolId,
         const std::string& toVolId) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_ID(fromVolId);
+    CHECK_ARGUMENT_ID(toVolId);
     ACQUIRE_LOCK;
 
     auto fromVol = VolumeManager::Instance()->findVolume(fromVolId);
@@ -281,6 +351,7 @@ binder::Status VoldNativeService::remountUid(int32_t uid, int32_t remountMode) {
 
 binder::Status VoldNativeService::mkdirs(const std::string& path) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PATH(path);
     ACQUIRE_LOCK;
 
     return translate(VolumeManager::Instance()->mkdirs(path.c_str()));
@@ -289,6 +360,8 @@ binder::Status VoldNativeService::mkdirs(const std::string& path) {
 binder::Status VoldNativeService::createObb(const std::string& sourcePath,
         const std::string& sourceKey, int32_t ownerGid, std::string* _aidl_return) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PATH(sourcePath);
+    CHECK_ARGUMENT_HEX(sourceKey);
     ACQUIRE_LOCK;
 
     return translate(
@@ -297,6 +370,7 @@ binder::Status VoldNativeService::createObb(const std::string& sourcePath,
 
 binder::Status VoldNativeService::destroyObb(const std::string& volId) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_ID(volId);
     ACQUIRE_LOCK;
 
     return translate(VolumeManager::Instance()->destroyObb(volId));
