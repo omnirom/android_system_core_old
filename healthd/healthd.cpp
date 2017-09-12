@@ -98,7 +98,7 @@ void healthd_board_init(struct healthd_config *config) {
 }
 
 int healthd_board_battery_update(struct android::BatteryProperties *props) {
-    int logthis = 0;
+    int logthis = 1;
 
     if (gHealth == nullptr) {
         return logthis;
