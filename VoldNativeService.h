@@ -31,6 +31,8 @@ public:
     static char const* getServiceName() { return "vold"; }
     virtual status_t dump(int fd, const Vector<String16> &args) override;
 
+    binder::Status setListener(const android::sp<android::os::IVoldListener>& listener);
+
     binder::Status reset();
     binder::Status shutdown();
     binder::Status mountAll();

@@ -201,6 +201,15 @@ status_t VoldNativeService::dump(int fd, const Vector<String16> & /* args */) {
     return NO_ERROR;
 }
 
+binder::Status VoldNativeService::setListener(
+        const android::sp<android::os::IVoldListener>& listener) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    VolumeManager::Instance()->setListener(listener);
+    return ok();
+}
+
 binder::Status VoldNativeService::reset() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
