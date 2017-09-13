@@ -17,6 +17,7 @@
 #ifndef _VOLD_NATIVE_SERVICE_H_
 #define _VOLD_NATIVE_SERVICE_H_
 
+#include <android-base/unique_fd.h>
 #include <binder/BinderService.h>
 
 #include "android/os/BnVold.h"
@@ -32,8 +33,7 @@ public:
 
     binder::Status reset();
     binder::Status shutdown();
-
-    binder::Status setDebug(bool debug);
+    binder::Status mountAll();
 
     binder::Status onUserAdded(int32_t userId, int32_t userSerial);
     binder::Status onUserRemoved(int32_t userId);
@@ -53,6 +53,16 @@ public:
     binder::Status remountUid(int32_t uid, int32_t remountMode);
 
     binder::Status mkdirs(const std::string& path);
+
+    binder::Status createObb(const std::string& sourcePath, const std::string& sourceKey,
+            int32_t ownerGid, std::string* _aidl_return);
+    binder::Status destroyObb(const std::string& volId);
+
+    binder::Status fstrim(int32_t fstrimFlags);
+
+    binder::Status mountAppFuse(int32_t uid, int32_t pid, int32_t mountId,
+            android::base::unique_fd* _aidl_return);
+    binder::Status unmountAppFuse(int32_t uid, int32_t pid, int32_t mountId);
 };
 
 }  // namespace vold
