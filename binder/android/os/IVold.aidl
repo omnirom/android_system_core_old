@@ -16,8 +16,12 @@
 
 package android.os;
 
+import android.os.IVoldListener;
+
 /** {@hide} */
 interface IVold {
+    void setListener(IVoldListener listener);
+
     void reset();
     void shutdown();
     void mountAll();
@@ -116,19 +120,19 @@ interface IVold {
     const int REMOUNT_MODE_READ = 2;
     const int REMOUNT_MODE_WRITE = 3;
 
-    const int STATE_UNMOUNTED = 0;
-    const int STATE_CHECKING = 1;
-    const int STATE_MOUNTED = 2;
-    const int STATE_MOUNTED_READ_ONLY = 3;
-    const int STATE_FORMATTING = 4;
-    const int STATE_EJECTING = 5;
-    const int STATE_UNMOUNTABLE = 6;
-    const int STATE_REMOVED = 7;
-    const int STATE_BAD_REMOVAL = 8;
+    const int VOLUME_STATE_UNMOUNTED = 0;
+    const int VOLUME_STATE_CHECKING = 1;
+    const int VOLUME_STATE_MOUNTED = 2;
+    const int VOLUME_STATE_MOUNTED_READ_ONLY = 3;
+    const int VOLUME_STATE_FORMATTING = 4;
+    const int VOLUME_STATE_EJECTING = 5;
+    const int VOLUME_STATE_UNMOUNTABLE = 6;
+    const int VOLUME_STATE_REMOVED = 7;
+    const int VOLUME_STATE_BAD_REMOVAL = 8;
 
-    const int TYPE_PUBLIC = 0;
-    const int TYPE_PRIVATE = 1;
-    const int TYPE_EMULATED = 2;
-    const int TYPE_ASEC = 3;
-    const int TYPE_OBB = 4;
+    const int VOLUME_TYPE_PUBLIC = 0;
+    const int VOLUME_TYPE_PRIVATE = 1;
+    const int VOLUME_TYPE_EMULATED = 2;
+    const int VOLUME_TYPE_ASEC = 3;
+    const int VOLUME_TYPE_OBB = 4;
 }

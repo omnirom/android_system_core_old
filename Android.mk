@@ -37,6 +37,7 @@ common_src_files := \
 	EncryptInplace.cpp \
 	MetadataCrypt.cpp \
 	binder/android/os/IVold.aidl \
+	binder/android/os/IVoldListener.aidl \
 	VoldNativeService.cpp \
 
 common_c_includes := \
@@ -108,6 +109,8 @@ LOCAL_MODULE_TAGS := eng tests
 LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
 LOCAL_REQUIRED_MODULES := $(required_modules)
+
+LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/binder
 
 include $(BUILD_STATIC_LIBRARY)
 

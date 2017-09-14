@@ -44,7 +44,12 @@ VolumeBase::~VolumeBase() {
 
 void VolumeBase::setState(State state) {
     mState = state;
+#if ENABLE_BINDER
+    auto listener = getListener();
+    if (listener) listener->onVolumeStateChanged(getId(), static_cast<int32_t>(mState));
+#else
     notifyEvent(ResponseCode::VolumeStateChanged, StringPrintf("%d", mState));
+#endif
 }
 
 status_t VolumeBase::setDiskId(const std::string& diskId) {
@@ -114,7 +119,12 @@ status_t VolumeBase::setPath(const std::string& path) {
     }
 
     mPath = path;
+#if ENABLE_BINDER
+    auto listener = getListener();
+    if (listener) listener->onVolumePathChanged(getId(), mPath);
+#else
     notifyEvent(ResponseCode::VolumePathChanged, mPath);
+#endif
     return OK;
 }
 
@@ -125,7 +135,12 @@ status_t VolumeBase::setInternalPath(const std::string& internalPath) {
     }
 
     mInternalPath = internalPath;
+#if ENABLE_BINDER
+    auto listener = getListener();
+    if (listener) listener->onVolumeInternalPathChanged(getId(), mInternalPath);
+#else
     notifyEvent(ResponseCode::VolumeInternalPathChanged, mInternalPath);
+#endif
     return OK;
 }
 
@@ -139,6 +154,14 @@ void VolumeBase::notifyEvent(int event, const std::string& value) {
     if (mSilent) return;
     VolumeManager::Instance()->getBroadcaster()->sendBroadcast(event,
             StringPrintf("%s %s", getId().c_str(), value.c_str()).c_str(), false);
+}
+
+android::sp<android::os::IVoldListener> VolumeBase::getListener() {
+    if (mSilent) {
+        return nullptr;
+    } else {
+        return VolumeManager::Instance()->getListener();
+    }
 }
 
 void VolumeBase::addVolume(const std::shared_ptr<VolumeBase>& volume) {
@@ -163,8 +186,14 @@ status_t VolumeBase::create() {
 
     mCreated = true;
     status_t res = doCreate();
+#if ENABLE_BINDER
+    auto listener = getListener();
+    if (listener) listener->onVolumeCreated(getId(),
+            static_cast<int32_t>(mType), mDiskId, mPartGuid);
+#else
     notifyEvent(ResponseCode::VolumeCreated,
             StringPrintf("%d \"%s\" \"%s\"", mType, mDiskId.c_str(), mPartGuid.c_str()));
+#endif
     setState(State::kUnmounted);
     return res;
 }
@@ -183,7 +212,12 @@ status_t VolumeBase::destroy() {
         setState(State::kRemoved);
     }
 
+#if ENABLE_BINDER
+    auto listener = getListener();
+    if (listener) listener->onVolumeDestroyed(getId());
+#else
     notifyEvent(ResponseCode::VolumeDestroyed);
+#endif
     status_t res = doDestroy();
     mCreated = false;
     return res;

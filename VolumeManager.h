@@ -36,6 +36,8 @@
 #include <sysutils/SocketListener.h>
 #include <sysutils/NetlinkEvent.h>
 
+#include "android/os/IVoldListener.h"
+
 #include "model/Disk.h"
 #include "model/VolumeBase.h"
 
@@ -95,6 +97,9 @@ public:
     // TODO: pipe all requests through VM to avoid exposing this lock
     std::mutex& getLock() { return mLock; }
     std::mutex& getCryptLock() { return mCryptLock; }
+
+    void setListener(android::sp<android::os::IVoldListener> listener) { mListener = listener; }
+    android::sp<android::os::IVoldListener> getListener() { return mListener; }
 
     int start();
     int stop();
@@ -220,6 +225,8 @@ private:
 
     std::mutex mLock;
     std::mutex mCryptLock;
+
+    android::sp<android::os::IVoldListener> mListener;
 
     std::list<std::shared_ptr<DiskSource>> mDiskSources;
     std::list<std::shared_ptr<android::vold::Disk>> mDisks;

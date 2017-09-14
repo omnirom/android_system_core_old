@@ -19,6 +19,7 @@
 
 #include "KeyBuffer.h"
 
+#include <android-base/macros.h>
 #include <utils/Errors.h>
 #include <cutils/multiuser.h>
 #include <selinux/selinux.h>
@@ -26,15 +27,9 @@
 #include <vector>
 #include <string>
 
-// DISALLOW_COPY_AND_ASSIGN disallows the copy and operator= functions. It goes in the private:
-// declarations in a class.
-#if !defined(DISALLOW_COPY_AND_ASSIGN)
-#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
-    TypeName(const TypeName&) = delete;  \
-    void operator=(const TypeName&) = delete
-#endif
-
 struct DIR;
+
+#define ENABLE_BINDER 1
 
 namespace android {
 namespace vold {
