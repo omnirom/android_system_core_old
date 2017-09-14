@@ -94,6 +94,7 @@ public:
 
     // TODO: pipe all requests through VM to avoid exposing this lock
     std::mutex& getLock() { return mLock; }
+    std::mutex& getCryptLock() { return mCryptLock; }
 
     int start();
     int stop();
@@ -218,6 +219,7 @@ private:
     int linkPrimary(userid_t userId);
 
     std::mutex mLock;
+    std::mutex mCryptLock;
 
     std::list<std::shared_ptr<DiskSource>> mDiskSources;
     std::list<std::shared_ptr<android::vold::Disk>> mDisks;

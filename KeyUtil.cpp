@@ -98,7 +98,7 @@ static char const* const NAME_PREFIXES[] = {
 static std::string keyname(const std::string& prefix, const std::string& raw_ref) {
     std::ostringstream o;
     o << prefix << ":";
-    for (auto i : raw_ref) {
+    for (unsigned char i : raw_ref) {
         o << std::hex << std::setw(2) << std::setfill('0') << (int)i;
     }
     return o.str();

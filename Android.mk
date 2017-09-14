@@ -80,6 +80,7 @@ common_static_libraries := \
 
 # TODO: include "cert-err34-c" once we move to Binder
 # TODO: include "cert-err58-cpp" once 36656327 is fixed
+common_local_tidy_enabled := true
 common_local_tidy_flags := -warnings-as-errors=clang-analyzer-security*,cert-*
 common_local_tidy_checks := -*,clang-analyzer-security*,cert-*,-cert-err34-c,-cert-err58-cpp
 
@@ -96,7 +97,7 @@ include $(CLEAR_VARS)
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MODULE := libvold
 LOCAL_CLANG := true
-LOCAL_TIDY := true
+LOCAL_TIDY := $(common_local_tidy_enabled)
 LOCAL_TIDY_FLAGS := $(common_local_tidy_flags)
 LOCAL_TIDY_CHECKS := $(common_local_tidy_checks)
 LOCAL_SRC_FILES := $(common_src_files)
@@ -115,7 +116,7 @@ include $(CLEAR_VARS)
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MODULE := vold
 LOCAL_CLANG := true
-LOCAL_TIDY := true
+LOCAL_TIDY := $(common_local_tidy_enabled)
 LOCAL_TIDY_FLAGS := $(common_local_tidy_flags)
 LOCAL_TIDY_CHECKS := $(common_local_tidy_checks)
 LOCAL_SRC_FILES := \
@@ -140,7 +141,7 @@ include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_CLANG := true
-LOCAL_TIDY := true
+LOCAL_TIDY := $(common_local_tidy_enabled)
 LOCAL_TIDY_FLAGS := $(common_local_tidy_flags)
 LOCAL_TIDY_CHECKS := $(common_local_tidy_checks)
 LOCAL_SRC_FILES := vdc.cpp
@@ -156,7 +157,7 @@ include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_CLANG := true
-LOCAL_TIDY := true
+LOCAL_TIDY := $(common_local_tidy_enabled)
 LOCAL_TIDY_FLAGS := $(common_local_tidy_flags)
 LOCAL_TIDY_CHECKS := $(common_local_tidy_checks)
 LOCAL_SRC_FILES:= \

@@ -1813,7 +1813,7 @@ int cryptfs_check_passwd(const char *passwd)
     return rc;
 }
 
-int cryptfs_verify_passwd(char *passwd)
+int cryptfs_verify_passwd(const char *passwd)
 {
     struct crypt_mnt_ftr crypt_ftr;
     /* Allocate enough space for a 256 bit key, but we may use less */
@@ -2058,7 +2058,7 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
     return rc;
 }
 
-int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
+int cryptfs_enable_internal(const char *howarg, int crypt_type, const char *passwd,
                             int no_ui)
 {
     int how = 0;
@@ -2417,12 +2417,12 @@ error_shutting_down:
     return -1;
 }
 
-int cryptfs_enable(char *howarg, int type, char *passwd, int no_ui)
+int cryptfs_enable(const char *howarg, int type, const char *passwd, int no_ui)
 {
     return cryptfs_enable_internal(howarg, type, passwd, no_ui);
 }
 
-int cryptfs_enable_default(char *howarg, int no_ui)
+int cryptfs_enable_default(const char *howarg, int no_ui)
 {
     return cryptfs_enable_internal(howarg, CRYPT_TYPE_DEFAULT,
                           DEFAULT_PASSWORD, no_ui);

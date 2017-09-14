@@ -50,6 +50,49 @@ interface IVold {
     FileDescriptor mountAppFuse(int uid, int pid, int mountId);
     void unmountAppFuse(int uid, int pid, int mountId);
 
+    void fdeCheckPassword(@utf8InCpp String password);
+    void fdeRestart();
+    int fdeComplete();
+    void fdeEnable(int passwordType, @utf8InCpp String password, int encryptionFlags);
+    void fdeChangePassword(int passwordType, @utf8InCpp String password);
+    void fdeVerifyPassword(@utf8InCpp String password);
+    @utf8InCpp String fdeGetField(@utf8InCpp String key);
+    void fdeSetField(@utf8InCpp String key, @utf8InCpp String value);
+    int fdeGetPasswordType();
+    @utf8InCpp String fdeGetPassword();
+    void fdeClearPassword();
+
+    void fbeEnable();
+
+    void mountDefaultEncrypted();
+    void initUser0();
+    boolean isConvertibleToFbe();
+
+    void createUserKey(int userId, int userSerial, boolean ephemeral);
+    void destroyUserKey(int userId);
+
+    void addUserKeyAuth(int userId, int userSerial, @utf8InCpp String token, @utf8InCpp String secret);
+    void fixateNewestUserKeyAuth(int userId);
+
+    void unlockUserKey(int userId, int userSerial, @utf8InCpp String token, @utf8InCpp String secret);
+    void lockUserKey(int userId);
+
+    void prepareUserStorage(@nullable @utf8InCpp String uuid, int userId, int userSerial, int storageFlags);
+    void destroyUserStorage(@nullable @utf8InCpp String uuid, int userId, int storageFlags);
+
+    void secdiscard(@utf8InCpp String path);
+
+    const int ENCRYPTION_FLAG_WIPE = 1;
+    const int ENCRYPTION_FLAG_IN_PLACE = 2;
+    const int ENCRYPTION_FLAG_NO_UI = 4;
+
+    const int ENCRYPTION_STATE_NONE = 1;
+    const int ENCRYPTION_STATE_OK = 0;
+    const int ENCRYPTION_STATE_ERROR_UNKNOWN = -1;
+    const int ENCRYPTION_STATE_ERROR_INCOMPLETE = -2;
+    const int ENCRYPTION_STATE_ERROR_INCONSISTENT = -3;
+    const int ENCRYPTION_STATE_ERROR_CORRUPT = -4;
+
     const int FSTRIM_FLAG_DEEP_TRIM = 1;
     const int FSTRIM_FLAG_BENCHMARK_AFTER = 2;
 
@@ -59,6 +102,14 @@ interface IVold {
     const int PARTITION_TYPE_PUBLIC = 0;
     const int PARTITION_TYPE_PRIVATE = 1;
     const int PARTITION_TYPE_MIXED = 2;
+
+    const int PASSWORD_TYPE_PASSWORD = 0;
+    const int PASSWORD_TYPE_DEFAULT = 1;
+    const int PASSWORD_TYPE_PIN = 2;
+    const int PASSWORD_TYPE_PATTERN = 3;
+
+    const int STORAGE_FLAG_DE = 1;
+    const int STORAGE_FLAG_CE = 2;
 
     const int REMOUNT_MODE_NONE = 0;
     const int REMOUNT_MODE_DEFAULT = 1;
