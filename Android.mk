@@ -147,7 +147,12 @@ LOCAL_CLANG := true
 LOCAL_TIDY := $(common_local_tidy_enabled)
 LOCAL_TIDY_FLAGS := $(common_local_tidy_flags)
 LOCAL_TIDY_CHECKS := $(common_local_tidy_checks)
-LOCAL_SRC_FILES := vdc.cpp binder/android/os/IVold.aidl
+
+LOCAL_SRC_FILES := \
+	vdc.cpp \
+	binder/android/os/IVold.aidl \
+	binder/android/os/IVoldListener.aidl \
+
 LOCAL_MODULE := vdc
 LOCAL_SHARED_LIBRARIES := libbase libbinder libcutils libutils
 LOCAL_CFLAGS := $(vold_cflags)
