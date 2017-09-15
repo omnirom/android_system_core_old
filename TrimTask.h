@@ -17,6 +17,7 @@
 #ifndef ANDROID_VOLD_TRIM_TASK_H
 #define ANDROID_VOLD_TRIM_TASK_H
 
+#include "android/os/IVoldTaskListener.h"
 #include "Utils.h"
 
 #include <thread>
@@ -27,18 +28,18 @@ namespace vold {
 
 class TrimTask {
 public:
-    explicit TrimTask(int flags);
+    explicit TrimTask(int flags, const android::sp<android::os::IVoldTaskListener>& listener);
     virtual ~TrimTask();
 
     enum Flags {
         kDeepTrim = 1 << 0,
-        kBenchmarkAfter = 1 << 1,
     };
 
     void start();
 
 private:
     int mFlags;
+    android::sp<android::os::IVoldTaskListener> mListener;
     std::list<std::string> mPaths;
     std::thread mThread;
 

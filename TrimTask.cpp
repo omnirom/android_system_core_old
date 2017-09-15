@@ -15,7 +15,6 @@
  */
 
 #include "TrimTask.h"
-#include "Benchmark.h"
 #include "Utils.h"
 #include "VolumeManager.h"
 #include "ResponseCode.h"
@@ -37,8 +36,6 @@
 /* From a would-be kernel header */
 #define FIDTRIM         _IOWR('f', 128, struct fstrim_range)    /* Deep discard trim */
 
-#define BENCHMARK_ENABLED 1
-
 using android::base::StringPrintf;
 
 namespace android {
@@ -46,7 +43,8 @@ namespace vold {
 
 static const char* kWakeLock = "TrimTask";
 
-TrimTask::TrimTask(int flags) : mFlags(flags) {
+TrimTask::TrimTask(int flags, const android::sp<android::os::IVoldTaskListener>& listener) :
+        mFlags(flags), mListener(listener) {
     // Collect both fstab and vold volumes
     addFromFstab();
 
@@ -102,23 +100,21 @@ void TrimTask::start() {
     mThread = std::thread(&TrimTask::run, this);
 }
 
-static void notifyResult(const std::string& path, int64_t bytes, int64_t delta) {
-    std::string res(path
-            + " " + std::to_string(bytes)
-            + " " + std::to_string(delta));
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::TrimResult, res.c_str(), false);
-}
-
 void TrimTask::run() {
     acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
 
     for (const auto& path : mPaths) {
         LOG(DEBUG) << "Starting trim of " << path;
 
+        android::os::PersistableBundle extras;
+        extras.putString(String16("path"), String16(path.c_str()));
+
         int fd = open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
         if (fd < 0) {
             PLOG(WARNING) << "Failed to open " << path;
+            if (mListener) {
+                mListener->onStatus(-1, extras);
+            }
             continue;
         }
 
@@ -129,22 +125,25 @@ void TrimTask::run() {
         nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
         if (ioctl(fd, (mFlags & Flags::kDeepTrim) ? FIDTRIM : FITRIM, &range)) {
             PLOG(WARNING) << "Trim failed on " << path;
-            notifyResult(path, -1, -1);
+            if (mListener) {
+                mListener->onStatus(-1, extras);
+            }
         } else {
-            nsecs_t delta = systemTime(SYSTEM_TIME_BOOTTIME) - start;
+            nsecs_t time = systemTime(SYSTEM_TIME_BOOTTIME) - start;
             LOG(INFO) << "Trimmed " << range.len << " bytes on " << path
-                    << " in " << nanoseconds_to_milliseconds(delta) << "ms";
-            notifyResult(path, range.len, delta);
+                    << " in " << nanoseconds_to_milliseconds(time) << "ms";
+            extras.putLong(String16("bytes"), range.len);
+            extras.putLong(String16("time"), time);
+            if (mListener) {
+                mListener->onStatus(0, extras);
+            }
         }
         close(fd);
+    }
 
-        if (mFlags & Flags::kBenchmarkAfter) {
-#if BENCHMARK_ENABLED
-            BenchmarkPrivate(path);
-#else
-            LOG(DEBUG) << "Benchmark disabled";
-#endif
-        }
+    if (mListener) {
+        android::os::PersistableBundle extras;
+        mListener->onFinished(0, extras);
     }
 
     release_wake_lock(kWakeLock);

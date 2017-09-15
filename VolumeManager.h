@@ -132,8 +132,6 @@ public:
 
     void listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list);
 
-    nsecs_t benchmarkPrivate(const std::string& id);
-
     int forgetPartition(const std::string& partGuid);
 
     int onUserAdded(userid_t userId, int userSerialNumber);
