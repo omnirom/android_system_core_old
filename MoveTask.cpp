@@ -17,7 +17,6 @@
 #include "MoveTask.h"
 #include "Utils.h"
 #include "VolumeManager.h"
-#include "ResponseCode.h"
 
 #include <android-base/stringprintf.h>
 #include <android-base/logging.h>

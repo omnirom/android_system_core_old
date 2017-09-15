@@ -211,6 +211,20 @@ binder::Status VoldNativeService::setListener(
     return ok();
 }
 
+binder::Status VoldNativeService::monitor() {
+    ENFORCE_UID(AID_SYSTEM);
+
+    // Simply acquire/release each lock for watchdog
+    {
+        ACQUIRE_LOCK;
+    }
+    {
+        ACQUIRE_CRYPT_LOCK;
+    }
+
+    return ok();
+}
+
 binder::Status VoldNativeService::reset() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;

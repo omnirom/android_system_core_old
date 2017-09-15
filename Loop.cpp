@@ -36,9 +36,7 @@
 #include <android-base/stringprintf.h>
 #include <android-base/unique_fd.h>
 
-#include <sysutils/SocketClient.h>
 #include "Loop.h"
-#include "Asec.h"
 #include "VoldUtil.h"
 #include "sehandle.h"
 
@@ -46,48 +44,6 @@ using android::base::StringPrintf;
 using android::base::unique_fd;
 
 static const char* kVoldPrefix = "vold:";
-
-int Loop::dumpState(SocketClient *c) {
-    int i;
-    int fd;
-    char filename[256];
-
-    for (i = 0; i < LOOP_MAX; i++) {
-        struct loop_info64 li;
-        int rc;
-
-        snprintf(filename, sizeof(filename), "/dev/block/loop%d", i);
-
-        if ((fd = open(filename, O_RDWR | O_CLOEXEC)) < 0) {
-            if (errno != ENOENT) {
-                SLOGE("Unable to open %s (%s)", filename, strerror(errno));
-            } else {
-                continue;
-            }
-            return -1;
-        }
-
-        rc = ioctl(fd, LOOP_GET_STATUS64, &li);
-        close(fd);
-        if (rc < 0 && errno == ENXIO) {
-            continue;
-        }
-
-        if (rc < 0) {
-            SLOGE("Unable to get loop status for %s (%s)", filename,
-                 strerror(errno));
-            return -1;
-        }
-        char *tmp = NULL;
-        asprintf(&tmp, "%s %d %lld:%lld %llu %lld:%lld %lld 0x%x {%s} {%s}", filename, li.lo_number,
-                MAJOR(li.lo_device), MINOR(li.lo_device), li.lo_inode, MAJOR(li.lo_rdevice),
-                        MINOR(li.lo_rdevice), li.lo_offset, li.lo_flags, li.lo_crypt_name,
-                        li.lo_file_name);
-        c->sendMsg(0, tmp, false);
-        free(tmp);
-    }
-    return 0;
-}
 
 int Loop::lookupActive(const char *id_raw, char *buffer, size_t len) {
     auto id_string = StringPrintf("%s%s", kVoldPrefix, id_raw);
@@ -378,48 +334,5 @@ int Loop::resizeImageFile(const char *file, unsigned long numSectors) {
         }
     }
     close(fd);
-    return 0;
-}
-
-int Loop::lookupInfo(const char *loopDevice, struct asec_superblock *sb, unsigned long *nr_sec) {
-    int fd;
-    struct asec_superblock buffer;
-
-    if ((fd = open(loopDevice, O_RDONLY | O_CLOEXEC)) < 0) {
-        SLOGE("Failed to open loopdevice (%s)", strerror(errno));
-        destroyByDevice(loopDevice);
-        return -1;
-    }
-
-    get_blkdev_size(fd, nr_sec);
-    if (*nr_sec == 0) {
-        SLOGE("Failed to get loop size (%s)", strerror(errno));
-        destroyByDevice(loopDevice);
-        close(fd);
-        return -1;
-    }
-
-    /*
-     * Try to read superblock.
-     */
-    memset(&buffer, 0, sizeof(struct asec_superblock));
-    if (lseek(fd, ((*nr_sec - 1) * 512), SEEK_SET) < 0) {
-        SLOGE("lseek failed (%s)", strerror(errno));
-        close(fd);
-        destroyByDevice(loopDevice);
-        return -1;
-    }
-    if (read(fd, &buffer, sizeof(struct asec_superblock)) != sizeof(struct asec_superblock)) {
-        SLOGE("superblock read failed (%s)", strerror(errno));
-        close(fd);
-        destroyByDevice(loopDevice);
-        return -1;
-    }
-    close(fd);
-
-    /*
-     * Superblock successfully read. Copy to caller's struct.
-     */
-    memcpy(sb, &buffer, sizeof(struct asec_superblock));
     return 0;
 }

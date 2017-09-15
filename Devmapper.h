@@ -20,8 +20,6 @@
 #include <unistd.h>
 #include <linux/dm-ioctl.h>
 
-class SocketClient;
-
 class Devmapper {
 public:
     static int create(const char *name, const char *loopFile, const char *key,
@@ -29,7 +27,6 @@ public:
     static int destroy(const char *name);
     static int destroyAll();
     static int lookupActive(const char *name, char *buffer, size_t len);
-    static int dumpState(SocketClient *c);
 
 private:
     static void *_align(void *ptr, unsigned int a);

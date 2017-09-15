@@ -21,22 +21,17 @@
 #include <unistd.h>
 #include <linux/loop.h>
 
-class SocketClient;
-
 class Loop {
 public:
     static const int LOOP_MAX = 4096;
 public:
     static int lookupActive(const char *id, char *buffer, size_t len);
-    static int lookupInfo(const char *loopDevice, struct asec_superblock *sb, unsigned long *nr_sec);
     static int create(const char *id, const char *loopFile, char *loopDeviceBuffer, size_t len);
     static int create(const std::string& file, std::string& out_device);
     static int destroyByDevice(const char *loopDevice);
     static int destroyAll();
     static int createImageFile(const char *file, unsigned long numSectors);
     static int resizeImageFile(const char *file, unsigned long numSectors);
-
-    static int dumpState(SocketClient *c);
 };
 
 #endif

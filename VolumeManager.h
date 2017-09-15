@@ -33,7 +33,6 @@
 #include <cutils/multiuser.h>
 #include <utils/List.h>
 #include <utils/Timers.h>
-#include <sysutils/SocketListener.h>
 #include <sysutils/NetlinkEvent.h>
 
 #include "android/os/IVoldListener.h"
@@ -41,55 +40,17 @@
 #include "model/Disk.h"
 #include "model/VolumeBase.h"
 
-/* The length of an MD5 hash when encoded into ASCII hex characters */
-#define MD5_ASCII_LENGTH_PLUS_NULL ((MD5_DIGEST_LENGTH*2)+1)
-
 #define DEBUG_APPFUSE 0
-
-typedef enum { ASEC, OBB } container_type_t;
-
-class ContainerData {
-public:
-    ContainerData(char* _id, container_type_t _type)
-            : id(_id)
-            , type(_type)
-    {}
-
-    ~ContainerData() {
-        if (id != NULL) {
-            free(id);
-            id = NULL;
-        }
-    }
-
-    char *id;
-    container_type_t type;
-};
-
-typedef android::List<ContainerData*> AsecIdCollection;
 
 class VolumeManager {
 public:
-    static const char *SEC_ASECDIR_EXT;
-    static const char *SEC_ASECDIR_INT;
-    static const char *ASECDIR;
-    static const char *LOOPDIR;
-
     //TODO remove this with better solution, b/64143519
     static bool shutting_down;
 
 private:
     static VolumeManager *sInstance;
 
-    SocketListener        *mBroadcaster;
-
-    AsecIdCollection      *mActiveContainers;
     bool                   mDebug;
-
-    // for adjusting /proc/sys/vm/dirty_ratio when UMS is active
-    int                    mUmsSharingCount;
-    int                    mSavedDirtyRatio;
-    int                    mUmsDirtyRatio;
 
 public:
     virtual ~VolumeManager();
@@ -150,51 +111,10 @@ public:
     /* Unmount all volumes, usually for encryption */
     int unmountAll();
 
-    /* ASEC */
-    int findAsec(const char *id, char *asecPath = NULL, size_t asecPathLen = 0,
-            const char **directory = NULL) const;
-    int createAsec(const char *id, unsigned long numSectors, const char *fstype,
-                   const char *key, const int ownerUid, bool isExternal);
-    int resizeAsec(const char *id, unsigned long numSectors, const char *key);
-    int finalizeAsec(const char *id);
-
-    /**
-     * Fixes ASEC permissions on a filesystem that has owners and permissions.
-     * This currently means EXT4-based ASEC containers.
-     *
-     * There is a single file that can be marked as "private" and will not have
-     * world-readable permission. The group for that file will be set to the gid
-     * supplied.
-     *
-     * Returns 0 on success.
-     */
-    int fixupAsecPermissions(const char *id, gid_t gid, const char* privateFilename);
-    int destroyAsec(const char *id, bool force);
-    int mountAsec(const char *id, const char *key, int ownerUid, bool readOnly);
-    int unmountAsec(const char *id, bool force);
-    int renameAsec(const char *id1, const char *id2);
-    int getAsecMountPath(const char *id, char *buffer, int maxlen);
-    int getAsecFilesystemPath(const char *id, char *buffer, int maxlen);
-
-    /* Loopback images */
-    int listMountedObbs(SocketClient* cli);
-    int mountObb(const char *fileName, const char *key, int ownerUid);
-    int unmountObb(const char *fileName, bool force);
-    int getObbMountPath(const char *id, char *buffer, int maxlen);
-
-    /* Shared between ASEC and Loopback images */
-    int unmountLoopImage(const char *containerId, const char *loopId,
-            const char *fileName, const char *mountPoint, bool force);
-
     int updateVirtualDisk();
     int setDebug(bool enable);
 
-    void setBroadcaster(SocketListener *sl) { mBroadcaster = sl; }
-    SocketListener *getBroadcaster() { return mBroadcaster; }
-
     static VolumeManager *Instance();
-
-    static char *asecHash(const char *id, char *buffer, size_t len);
 
     /*
      * Ensure that all directories along given path exist, creating parent
@@ -215,9 +135,6 @@ public:
 private:
     VolumeManager();
     void readInitialState();
-    bool isMountpointMounted(const char *mp);
-    bool isAsecInDirectory(const char *dir, const char *asec) const;
-    bool isLegalAsecId(const char *id) const;
 
     int linkPrimary(userid_t userId);
 
