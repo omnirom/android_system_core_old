@@ -17,6 +17,7 @@
 #ifndef ANDROID_VOLD_MOVE_TASK_H
 #define ANDROID_VOLD_MOVE_TASK_H
 
+#include "android/os/IVoldTaskListener.h"
 #include "Utils.h"
 #include "model/VolumeBase.h"
 
@@ -27,7 +28,8 @@ namespace vold {
 
 class MoveTask {
 public:
-    MoveTask(const std::shared_ptr<VolumeBase>& from, const std::shared_ptr<VolumeBase>& to);
+    MoveTask(const std::shared_ptr<VolumeBase>& from, const std::shared_ptr<VolumeBase>& to,
+            const android::sp<android::os::IVoldTaskListener>& listener);
     virtual ~MoveTask();
 
     void start();
@@ -35,9 +37,16 @@ public:
 private:
     std::shared_ptr<VolumeBase> mFrom;
     std::shared_ptr<VolumeBase> mTo;
+    android::sp<android::os::IVoldTaskListener> mListener;
     std::thread mThread;
 
     void run();
+
+    void notifyProgress(int progress);
+
+    status_t execRm(const std::string& path, int startProgress, int stepProgress);
+    status_t execCp(const std::string& fromPath, const std::string& toPath,
+            int startProgress, int stepProgress);
 
     DISALLOW_COPY_AND_ASSIGN(MoveTask);
 };

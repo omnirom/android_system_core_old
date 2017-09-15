@@ -47,7 +47,6 @@
 
 #include <private/android_filesystem_config.h>
 
-#include "Benchmark.h"
 #include "model/EmulatedVolume.h"
 #include "model/ObbVolume.h"
 #include "VolumeManager.h"
@@ -457,25 +456,6 @@ void VolumeManager::listVolumes(android::vold::VolumeBase::Type type,
     for (const auto& disk : mDisks) {
         disk->listVolumes(type, list);
     }
-}
-
-nsecs_t VolumeManager::benchmarkPrivate(const std::string& id) {
-    std::string path;
-    if (id == "private" || id == "null") {
-        path = "/data";
-    } else {
-        auto vol = findVolume(id);
-        if (vol != nullptr && vol->getState() == android::vold::VolumeBase::State::kMounted) {
-            path = vol->getPath();
-        }
-    }
-
-    if (path.empty()) {
-        LOG(WARNING) << "Failed to find volume for " << id;
-        return -1;
-    }
-
-    return android::vold::BenchmarkPrivate(path);
 }
 
 int VolumeManager::forgetPartition(const std::string& partGuid) {
