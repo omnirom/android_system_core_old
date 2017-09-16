@@ -17,6 +17,7 @@
 #ifndef ANDROID_VOLD_VOLUME_BASE_H
 #define ANDROID_VOLD_VOLUME_BASE_H
 
+#include "android/os/IVoldListener.h"
 #include "Utils.h"
 
 #include <cutils/multiuser.h>
@@ -116,6 +117,8 @@ protected:
 
     void notifyEvent(int msg);
     void notifyEvent(int msg, const std::string& value);
+
+    android::sp<android::os::IVoldListener> getListener();
 
 private:
     /* ID that uniquely references volume while alive */

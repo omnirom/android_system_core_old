@@ -16,8 +16,13 @@
 
 package android.os;
 
+import android.os.IVoldListener;
+import android.os.IVoldTaskListener;
+
 /** {@hide} */
 interface IVold {
+    void setListener(IVoldListener listener);
+
     void reset();
     void shutdown();
     void mountAll();
@@ -33,9 +38,10 @@ interface IVold {
     void mount(@utf8InCpp String volId, int mountFlags, int mountUserId);
     void unmount(@utf8InCpp String volId);
     void format(@utf8InCpp String volId, @utf8InCpp String fsType);
-    long benchmark(@utf8InCpp String volId);
+    void benchmark(@utf8InCpp String volId, IVoldTaskListener listener);
 
-    void moveStorage(@utf8InCpp String fromVolId, @utf8InCpp String toVolId);
+    void moveStorage(@utf8InCpp String fromVolId, @utf8InCpp String toVolId,
+            IVoldTaskListener listener);
 
     void remountUid(int uid, int remountMode);
 
@@ -45,7 +51,7 @@ interface IVold {
             @utf8InCpp String sourceKey, int ownerGid);
     void destroyObb(@utf8InCpp String volId);
 
-    void fstrim(int fstrimFlags);
+    void fstrim(int fstrimFlags, IVoldTaskListener listener);
 
     FileDescriptor mountAppFuse(int uid, int pid, int mountId);
     void unmountAppFuse(int uid, int pid, int mountId);
@@ -94,7 +100,6 @@ interface IVold {
     const int ENCRYPTION_STATE_ERROR_CORRUPT = -4;
 
     const int FSTRIM_FLAG_DEEP_TRIM = 1;
-    const int FSTRIM_FLAG_BENCHMARK_AFTER = 2;
 
     const int MOUNT_FLAG_PRIMARY = 1;
     const int MOUNT_FLAG_VISIBLE = 2;
@@ -116,19 +121,19 @@ interface IVold {
     const int REMOUNT_MODE_READ = 2;
     const int REMOUNT_MODE_WRITE = 3;
 
-    const int STATE_UNMOUNTED = 0;
-    const int STATE_CHECKING = 1;
-    const int STATE_MOUNTED = 2;
-    const int STATE_MOUNTED_READ_ONLY = 3;
-    const int STATE_FORMATTING = 4;
-    const int STATE_EJECTING = 5;
-    const int STATE_UNMOUNTABLE = 6;
-    const int STATE_REMOVED = 7;
-    const int STATE_BAD_REMOVAL = 8;
+    const int VOLUME_STATE_UNMOUNTED = 0;
+    const int VOLUME_STATE_CHECKING = 1;
+    const int VOLUME_STATE_MOUNTED = 2;
+    const int VOLUME_STATE_MOUNTED_READ_ONLY = 3;
+    const int VOLUME_STATE_FORMATTING = 4;
+    const int VOLUME_STATE_EJECTING = 5;
+    const int VOLUME_STATE_UNMOUNTABLE = 6;
+    const int VOLUME_STATE_REMOVED = 7;
+    const int VOLUME_STATE_BAD_REMOVAL = 8;
 
-    const int TYPE_PUBLIC = 0;
-    const int TYPE_PRIVATE = 1;
-    const int TYPE_EMULATED = 2;
-    const int TYPE_ASEC = 3;
-    const int TYPE_OBB = 4;
+    const int VOLUME_TYPE_PUBLIC = 0;
+    const int VOLUME_TYPE_PRIVATE = 1;
+    const int VOLUME_TYPE_EMULATED = 2;
+    const int VOLUME_TYPE_ASEC = 3;
+    const int VOLUME_TYPE_OBB = 4;
 }

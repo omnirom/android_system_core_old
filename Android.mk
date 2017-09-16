@@ -26,7 +26,7 @@ common_src_files := \
 	model/ObbVolume.cpp \
 	Utils.cpp \
 	MoveTask.cpp \
-	Benchmark.cpp \
+	BenchmarkTask.cpp \
 	TrimTask.cpp \
 	KeyBuffer.cpp \
 	Keymaster.cpp \
@@ -36,8 +36,16 @@ common_src_files := \
 	secontext.cpp \
 	EncryptInplace.cpp \
 	MetadataCrypt.cpp \
-	binder/android/os/IVold.aidl \
 	VoldNativeService.cpp \
+
+common_aidl_files := \
+	binder/android/os/IVold.aidl \
+	binder/android/os/IVoldListener.aidl \
+	binder/android/os/IVoldTaskListener.aidl \
+
+common_aidl_includes := \
+	$(LOCAL_PATH)/binder \
+	frameworks/native/aidl/binder \
 
 common_c_includes := \
 	system/extras/f2fs_utils \
@@ -100,7 +108,7 @@ LOCAL_CLANG := true
 LOCAL_TIDY := $(common_local_tidy_enabled)
 LOCAL_TIDY_FLAGS := $(common_local_tidy_flags)
 LOCAL_TIDY_CHECKS := $(common_local_tidy_checks)
-LOCAL_SRC_FILES := $(common_src_files)
+LOCAL_SRC_FILES := $(common_src_files) $(common_aidl_files)
 LOCAL_C_INCLUDES := $(common_c_includes)
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
@@ -108,6 +116,8 @@ LOCAL_MODULE_TAGS := eng tests
 LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
 LOCAL_REQUIRED_MODULES := $(required_modules)
+
+LOCAL_AIDL_INCLUDES := $(common_aidl_includes)
 
 include $(BUILD_STATIC_LIBRARY)
 
@@ -121,7 +131,8 @@ LOCAL_TIDY_FLAGS := $(common_local_tidy_flags)
 LOCAL_TIDY_CHECKS := $(common_local_tidy_checks)
 LOCAL_SRC_FILES := \
 	main.cpp \
-	$(common_src_files)
+	$(common_src_files) \
+	$(common_aidl_files) \
 
 LOCAL_INIT_RC := vold.rc
 
@@ -133,7 +144,7 @@ LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
 LOCAL_REQUIRED_MODULES := $(required_modules)
 
-LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/binder
+LOCAL_AIDL_INCLUDES := $(common_aidl_includes)
 
 include $(BUILD_EXECUTABLE)
 
@@ -144,12 +155,18 @@ LOCAL_CLANG := true
 LOCAL_TIDY := $(common_local_tidy_enabled)
 LOCAL_TIDY_FLAGS := $(common_local_tidy_flags)
 LOCAL_TIDY_CHECKS := $(common_local_tidy_checks)
-LOCAL_SRC_FILES := vdc.cpp
+
+LOCAL_SRC_FILES := \
+	vdc.cpp \
+	$(common_aidl_files) \
+
 LOCAL_MODULE := vdc
-LOCAL_SHARED_LIBRARIES := libcutils libbase
+LOCAL_SHARED_LIBRARIES := libbase libbinder libcutils libutils
 LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
 LOCAL_INIT_RC := vdc.rc
+
+LOCAL_AIDL_INCLUDES := $(common_aidl_includes)
 
 include $(BUILD_EXECUTABLE)
 

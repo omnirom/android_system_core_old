@@ -45,9 +45,9 @@ static const char* kRmPath = "/system/bin/rm";
 
 static const char* kWakeLock = "MoveTask";
 
-MoveTask::MoveTask(const std::shared_ptr<VolumeBase>& from,
-        const std::shared_ptr<VolumeBase>& to) :
-        mFrom(from), mTo(to) {
+MoveTask::MoveTask(const std::shared_ptr<VolumeBase>& from, const std::shared_ptr<VolumeBase>& to,
+        const android::sp<android::os::IVoldTaskListener>& listener) :
+        mFrom(from), mTo(to), mListener(listener) {
 }
 
 MoveTask::~MoveTask() {
@@ -57,9 +57,11 @@ void MoveTask::start() {
     mThread = std::thread(&MoveTask::run, this);
 }
 
-static void notifyProgress(int progress) {
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(ResponseCode::MoveStatus,
-            StringPrintf("%d", progress).c_str(), false);
+void MoveTask::notifyProgress(int progress) {
+    if (mListener) {
+        android::os::PersistableBundle extras;
+        mListener->onStatus(progress, extras);
+    }
 }
 
 static status_t pushBackContents(const std::string& path, std::vector<std::string>& cmd,
@@ -85,7 +87,7 @@ static status_t pushBackContents(const std::string& path, std::vector<std::strin
     return found ? OK : -1;
 }
 
-static status_t execRm(const std::string& path, int startProgress, int stepProgress) {
+status_t MoveTask::execRm(const std::string& path, int startProgress, int stepProgress) {
     notifyProgress(startProgress);
 
     uint64_t expectedBytes = GetTreeBytes(path);
@@ -126,7 +128,7 @@ static status_t execRm(const std::string& path, int startProgress, int stepProgr
 #endif
 }
 
-static status_t execCp(const std::string& fromPath, const std::string& toPath,
+status_t MoveTask::execCp(const std::string& fromPath, const std::string& toPath,
         int startProgress, int stepProgress) {
     notifyProgress(startProgress);
 

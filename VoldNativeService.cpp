@@ -16,6 +16,7 @@
 
 #include "VoldNativeService.h"
 #include "VolumeManager.h"
+#include "BenchmarkTask.h"
 #include "MoveTask.h"
 #include "Process.h"
 #include "TrimTask.h"
@@ -201,6 +202,15 @@ status_t VoldNativeService::dump(int fd, const Vector<String16> & /* args */) {
     return NO_ERROR;
 }
 
+binder::Status VoldNativeService::setListener(
+        const android::sp<android::os::IVoldListener>& listener) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    VolumeManager::Instance()->setListener(listener);
+    return ok();
+}
+
 binder::Status VoldNativeService::reset() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
@@ -324,17 +334,39 @@ binder::Status VoldNativeService::format(const std::string& volId, const std::st
     return translate(vol->format(fsType));
 }
 
-binder::Status VoldNativeService::benchmark(const std::string& volId, int64_t* _aidl_return) {
+binder::Status VoldNativeService::benchmark(const std::string& volId,
+        const android::sp<android::os::IVoldTaskListener>& listener) {
     ENFORCE_UID(AID_SYSTEM);
     CHECK_ARGUMENT_ID(volId);
     ACQUIRE_LOCK;
 
-    *_aidl_return = VolumeManager::Instance()->benchmarkPrivate(volId);
+    std::string path;
+    if (volId == "private" || volId == "null") {
+        path = "/data";
+    } else {
+        auto vol = VolumeManager::Instance()->findVolume(volId);
+        if (vol == nullptr) {
+            return error("Failed to find volume " + volId);
+        }
+        if (vol->getType() != VolumeBase::Type::kPrivate) {
+            return error("Volume " + volId + " not private");
+        }
+        if (vol->getState() != VolumeBase::State::kMounted) {
+            return error("Volume " + volId + " not mounted");
+        }
+        path = vol->getPath();
+    }
+
+    if (path.empty()) {
+        return error("Volume " + volId + " missing path");
+    }
+
+    (new android::vold::BenchmarkTask(path, listener))->start();
     return ok();
 }
 
 binder::Status VoldNativeService::moveStorage(const std::string& fromVolId,
-        const std::string& toVolId) {
+        const std::string& toVolId, const android::sp<android::os::IVoldTaskListener>& listener) {
     ENFORCE_UID(AID_SYSTEM);
     CHECK_ARGUMENT_ID(fromVolId);
     CHECK_ARGUMENT_ID(toVolId);
@@ -347,7 +379,7 @@ binder::Status VoldNativeService::moveStorage(const std::string& fromVolId,
     } else if (toVol == nullptr) {
         return error("Failed to find volume " + toVolId);
     }
-    (new android::vold::MoveTask(fromVol, toVol))->start();
+    (new android::vold::MoveTask(fromVol, toVol, listener))->start();
     return ok();
 }
 
@@ -393,11 +425,12 @@ binder::Status VoldNativeService::destroyObb(const std::string& volId) {
     return translate(VolumeManager::Instance()->destroyObb(volId));
 }
 
-binder::Status VoldNativeService::fstrim(int32_t fstrimFlags) {
+binder::Status VoldNativeService::fstrim(int32_t fstrimFlags,
+        const android::sp<android::os::IVoldTaskListener>& listener) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    (new android::vold::TrimTask(fstrimFlags))->start();
+    (new android::vold::TrimTask(fstrimFlags, listener))->start();
     return ok();
 }
 

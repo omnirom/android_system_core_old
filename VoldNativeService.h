@@ -31,6 +31,8 @@ public:
     static char const* getServiceName() { return "vold"; }
     virtual status_t dump(int fd, const Vector<String16> &args) override;
 
+    binder::Status setListener(const android::sp<android::os::IVoldListener>& listener);
+
     binder::Status reset();
     binder::Status shutdown();
     binder::Status mountAll();
@@ -46,9 +48,11 @@ public:
     binder::Status mount(const std::string& volId, int32_t mountFlags, int32_t mountUserId);
     binder::Status unmount(const std::string& volId);
     binder::Status format(const std::string& volId, const std::string& fsType);
-    binder::Status benchmark(const std::string& volId, int64_t* _aidl_return);
+    binder::Status benchmark(const std::string& volId,
+            const android::sp<android::os::IVoldTaskListener>& listener);
 
-    binder::Status moveStorage(const std::string& fromVolId, const std::string& toVolId);
+    binder::Status moveStorage(const std::string& fromVolId, const std::string& toVolId,
+            const android::sp<android::os::IVoldTaskListener>& listener);
 
     binder::Status remountUid(int32_t uid, int32_t remountMode);
 
@@ -58,7 +62,8 @@ public:
             int32_t ownerGid, std::string* _aidl_return);
     binder::Status destroyObb(const std::string& volId);
 
-    binder::Status fstrim(int32_t fstrimFlags);
+    binder::Status fstrim(int32_t fstrimFlags,
+            const android::sp<android::os::IVoldTaskListener>& listener);
 
     binder::Status mountAppFuse(int32_t uid, int32_t pid, int32_t mountId,
             android::base::unique_fd* _aidl_return);

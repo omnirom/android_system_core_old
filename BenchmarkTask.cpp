@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "Benchmark.h"
+#include "BenchmarkTask.h"
 #include "BenchmarkGen.h"
 #include "VolumeManager.h"
 #include "ResponseCode.h"
@@ -22,6 +22,7 @@
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <cutils/iosched_policy.h>
+#include <hardware_legacy/power.h>
 #include <private/android_filesystem_config.h>
 
 #include <sys/time.h>
@@ -36,19 +37,35 @@ using android::base::WriteStringToFile;
 namespace android {
 namespace vold {
 
-static void notifyResult(const std::string& path, int64_t create_d,
-        int64_t drop_d, int64_t run_d, int64_t destroy_d) {
-    std::string res(path +
-            + " " + BenchmarkIdent()
-            + " " + std::to_string(create_d)
-            + " " + std::to_string(drop_d)
-            + " " + std::to_string(run_d)
-            + " " + std::to_string(destroy_d));
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::BenchmarkResult, res.c_str(), false);
+static const char* kWakeLock = "BenchmarkTask";
+
+BenchmarkTask::BenchmarkTask(const std::string& path,
+        const android::sp<android::os::IVoldTaskListener>& listener) :
+        mPath(path), mListener(listener) {
 }
 
-static nsecs_t benchmark(const std::string& path) {
+BenchmarkTask::~BenchmarkTask() {
+}
+
+void BenchmarkTask::start() {
+    mThread = std::thread(&BenchmarkTask::run, this);
+}
+
+static status_t runInternal(const std::string& rootPath, android::os::PersistableBundle& extras) {
+    auto path = rootPath;
+    path += "/misc";
+    if (android::vold::PrepareDir(path, 01771, AID_SYSTEM, AID_MISC)) {
+        return -1;
+    }
+    path += "/vold";
+    if (android::vold::PrepareDir(path, 0700, AID_ROOT, AID_ROOT)) {
+        return -1;
+    }
+    path += "/bench";
+    if (android::vold::PrepareDir(path, 0700, AID_ROOT, AID_ROOT)) {
+        return -1;
+    }
+
     errno = 0;
     int orig_prio = getpriority(PRIO_PROCESS, 0);
     if (errno != 0) {
@@ -127,26 +144,26 @@ static nsecs_t benchmark(const std::string& path) {
     LOG(INFO) << "run took " << nanoseconds_to_milliseconds(run_d) << "ms";
     LOG(INFO) << "destroy took " << nanoseconds_to_milliseconds(destroy_d) << "ms";
 
-    notifyResult(path, create_d, drop_d, run_d, destroy_d);
+    extras.putString(String16("path"), String16(path.c_str()));
+    extras.putString(String16("ident"), String16(BenchmarkIdent().c_str()));
+    extras.putLong(String16("create"), create_d);
+    extras.putLong(String16("drop"), drop_d);
+    extras.putLong(String16("run"), run_d);
+    extras.putLong(String16("destroy"), destroy_d);
 
-    return run_d;
+    return 0;
 }
 
-nsecs_t BenchmarkPrivate(const std::string& path) {
-    std::string benchPath(path);
-    benchPath += "/misc";
-    if (android::vold::PrepareDir(benchPath, 01771, AID_SYSTEM, AID_MISC)) {
-        return -1;
+void BenchmarkTask::run() {
+    acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
+
+    android::os::PersistableBundle extras;
+    status_t res = runInternal(mPath, extras);
+    if (mListener) {
+        mListener->onFinished(res, extras);
     }
-    benchPath += "/vold";
-    if (android::vold::PrepareDir(benchPath, 0700, AID_ROOT, AID_ROOT)) {
-        return -1;
-    }
-    benchPath += "/bench";
-    if (android::vold::PrepareDir(benchPath, 0700, AID_ROOT, AID_ROOT)) {
-        return -1;
-    }
-    return benchmark(benchPath);
+
+    release_wake_lock(kWakeLock);
 }
 
 }  // namespace vold

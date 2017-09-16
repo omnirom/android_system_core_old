@@ -30,15 +30,23 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include "android/os/IVold.h"
+
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
+#include <binder/IServiceManager.h>
 
 #include <cutils/sockets.h>
 #include <private/android_filesystem_config.h>
 
+#define ENABLE_BINDER 1
+
 static void usage(char *progname);
+
+#if !ENABLE_BINDER
 static int do_monitor(int sock, int stop_after_cmd);
 static int do_cmd(int sock, int argc, char **argv);
+#endif
 
 static constexpr int kCommandTimeoutMs = 20 * 1000;
 
@@ -62,11 +70,39 @@ int main(int argc, char **argv) {
         argc--;
     }
 
-    if (argc < 2) {
+    if (argc < 3) {
         usage(progname);
         exit(5);
     }
 
+#if ENABLE_BINDER
+    std::string arg1 = argv[1];
+    std::string arg2 = argv[2];
+
+    android::sp<android::IBinder> binder = android::defaultServiceManager()->getService(
+            android::String16("vold"));
+    if (!binder) {
+        LOG(ERROR) << "Failed to obtain vold Binder";
+        exit(EINVAL);
+    }
+    auto vold = android::interface_cast<android::os::IVold>(binder);
+
+    if (arg1 == "cryptfs" && arg2 == "enablefilecrypto") {
+        exit(vold->fbeEnable().isOk() ? 0 : ENOTTY);
+    } else if (arg1 == "cryptfs" && arg2 == "init_user0") {
+        exit(vold->initUser0().isOk() ? 0 : ENOTTY);
+    } else if (arg1 == "cryptfs" && arg2 == "enablecrypto") {
+        int passwordType = android::os::IVold::PASSWORD_TYPE_DEFAULT;
+        int encryptionFlags = android::os::IVold::ENCRYPTION_FLAG_IN_PLACE
+                | android::os::IVold::ENCRYPTION_FLAG_NO_UI;
+        exit(vold->fdeEnable(passwordType, "", encryptionFlags).isOk() ? 0 : ENOTTY);
+    } else if (arg1 == "volume" && arg2 == "shutdown") {
+        exit(vold->shutdown().isOk() ? 0 : ENOTTY);
+    } else {
+        LOG(ERROR) << "Raw commands are no longer supported";
+        exit(EINVAL);
+    }
+#else
     const char* sockname = "vold";
     if (!strcmp(argv[1], "cryptfs")) {
         sockname = "cryptd";
@@ -88,8 +124,10 @@ int main(int argc, char **argv) {
     } else {
         exit(do_cmd(sock, argc, argv));
     }
+#endif
 }
 
+#if !ENABLE_BINDER
 static int do_cmd(int sock, int argc, char **argv) {
     int seq = getpid();
 
@@ -175,6 +213,7 @@ static int do_monitor(int sock, int stop_after_seq) {
     }
     return EIO;
 }
+#endif
 
 static void usage(char *progname) {
     LOG(INFO) << "Usage: " << progname << " [--wait] <monitor>|<cmd> [arg1] [arg2...]";

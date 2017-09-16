@@ -256,13 +256,14 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
             return cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume", false);
         }
 
-        (new android::vold::MoveTask(fromVol, toVol))->start();
+        (new android::vold::MoveTask(fromVol, toVol, nullptr))->start();
         return sendGenericOkFail(cli, 0);
 
     } else if (cmd == "benchmark" && argc > 2) {
         // benchmark [volId]
         std::string id(argv[2]);
-        nsecs_t res = vm->benchmarkPrivate(id);
+        LOG(WARNING) << "Benchmarking has moved to Binder interface";
+        nsecs_t res = 0;
         return cli->sendMsg(ResponseCode::CommandOkay,
                 android::base::StringPrintf("%" PRId64, res).c_str(), false);
 
@@ -603,16 +604,13 @@ int CommandListener::FstrimCmd::runCommand(SocketClient *cli,
     std::string cmd(argv[1]);
     if (cmd == "dotrim") {
         flags = 0;
-    } else if (cmd == "dotrimbench") {
-        flags = android::vold::TrimTask::Flags::kBenchmarkAfter;
     } else if (cmd == "dodtrim") {
         flags = android::vold::TrimTask::Flags::kDeepTrim;
     } else if (cmd == "dodtrimbench") {
-        flags = android::vold::TrimTask::Flags::kDeepTrim
-                | android::vold::TrimTask::Flags::kBenchmarkAfter;
+        flags = android::vold::TrimTask::Flags::kDeepTrim;
     }
 
-    (new android::vold::TrimTask(flags))->start();
+    (new android::vold::TrimTask(flags, nullptr))->start();
     return sendGenericOkFail(cli, 0);
 }
 

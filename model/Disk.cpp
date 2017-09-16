@@ -151,7 +151,12 @@ void Disk::listVolumes(VolumeBase::Type type, std::list<std::string>& list) {
 status_t Disk::create() {
     CHECK(!mCreated);
     mCreated = true;
+#if ENABLE_BINDER
+    auto listener = VolumeManager::Instance()->getListener();
+    if (listener) listener->onDiskCreated(getId(), mFlags);
+#else
     notifyEvent(ResponseCode::DiskCreated, StringPrintf("%d", mFlags));
+#endif
     readMetadata();
     readPartitions();
     return OK;
@@ -161,7 +166,12 @@ status_t Disk::destroy() {
     CHECK(mCreated);
     destroyAllVolumes();
     mCreated = false;
+#if ENABLE_BINDER
+    auto listener = VolumeManager::Instance()->getListener();
+    if (listener) listener->onDiskDestroyed(getId());
+#else
     notifyEvent(ResponseCode::DiskDestroyed);
+#endif
     return OK;
 }
 
@@ -281,9 +291,15 @@ status_t Disk::readMetadata() {
     }
     }
 
+#if ENABLE_BINDER
+    auto listener = VolumeManager::Instance()->getListener();
+    if (listener) listener->onDiskMetadataChanged(getId(),
+            mSize, mLabel, mSysPath);
+#else
     notifyEvent(ResponseCode::DiskSizeChanged, StringPrintf("%" PRIu64, mSize));
     notifyEvent(ResponseCode::DiskLabelChanged, mLabel);
     notifyEvent(ResponseCode::DiskSysPathChanged, mSysPath);
+#endif
     return OK;
 }
 
@@ -306,7 +322,12 @@ status_t Disk::readPartitions() {
     status_t res = ForkExecvp(cmd, output);
     if (res != OK) {
         LOG(WARNING) << "sgdisk failed to scan " << mDevPath;
+#if ENABLE_BINDER
+        auto listener = VolumeManager::Instance()->getListener();
+        if (listener) listener->onDiskScanned(getId());
+#else
         notifyEvent(ResponseCode::DiskScanned);
+#endif
         mJustPartitioned = false;
         return res;
     }
@@ -372,7 +393,12 @@ status_t Disk::readPartitions() {
         }
     }
 
+#if ENABLE_BINDER
+    auto listener = VolumeManager::Instance()->getListener();
+    if (listener) listener->onDiskScanned(getId());
+#else
     notifyEvent(ResponseCode::DiskScanned);
+#endif
     mJustPartitioned = false;
     return OK;
 }

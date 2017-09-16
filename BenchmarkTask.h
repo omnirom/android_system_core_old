@@ -14,19 +14,35 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_VOLD_BENCHMARK_H
-#define ANDROID_VOLD_BENCHMARK_H
+#ifndef ANDROID_VOLD_BENCHMARK_TASK_H
+#define ANDROID_VOLD_BENCHMARK_TASK_H
 
-#include <utils/Errors.h>
-#include <utils/Timers.h>
+#include "android/os/IVoldTaskListener.h"
+#include "Utils.h"
 
 #include <string>
+#include <thread>
 
 namespace android {
 namespace vold {
 
-/* Benchmark a private volume mounted at the given path */
-nsecs_t BenchmarkPrivate(const std::string& path);
+class BenchmarkTask {
+public:
+    BenchmarkTask(const std::string& path,
+            const android::sp<android::os::IVoldTaskListener>& listener);
+    virtual ~BenchmarkTask();
+
+    void start();
+
+private:
+    std::string mPath;
+    android::sp<android::os::IVoldTaskListener> mListener;
+    std::thread mThread;
+
+    void run();
+
+    DISALLOW_COPY_AND_ASSIGN(BenchmarkTask);
+};
 
 }  // namespace vold
 }  // namespace android
