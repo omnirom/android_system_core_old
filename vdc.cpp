@@ -96,6 +96,8 @@ int main(int argc, char **argv) {
         int encryptionFlags = android::os::IVold::ENCRYPTION_FLAG_IN_PLACE
                 | android::os::IVold::ENCRYPTION_FLAG_NO_UI;
         exit(vold->fdeEnable(passwordType, "", encryptionFlags).isOk() ? 0 : ENOTTY);
+    } else if (arg1 == "cryptfs" && arg2 == "mountdefaultencrypted") {
+        exit(vold->mountDefaultEncrypted().isOk() ? 0 : ENOTTY);
     } else if (arg1 == "volume" && arg2 == "shutdown") {
         exit(vold->shutdown().isOk() ? 0 : ENOTTY);
     } else {
