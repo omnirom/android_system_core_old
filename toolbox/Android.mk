@@ -82,6 +82,47 @@ $(INPUT_H_LABELS_H):
 	$(transform-generated-source)
 
 
+# static version to be installed in /vendor
+#
+include $(CLEAR_VARS)
+BSD_TOOLS := \
+    dd \
+
+ALL_TOOLS = $(BSD_TOOLS)
+
+LOCAL_SRC_FILES := \
+    toolbox.c \
+
+LOCAL_CFLAGS += $(common_cflags)
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/upstream-netbsd/include/
+
+LOCAL_SHARED_LIBRARIES := \
+    libcutils \
+
+LOCAL_WHOLE_STATIC_LIBRARIES := $(patsubst %,libtoolbox_%,$(BSD_TOOLS))
+
+LOCAL_VENDOR_MODULE := true
+
+LOCAL_MODULE := toolbox_vendor
+
+# Install the symlinks.
+LOCAL_POST_INSTALL_CMD := $(hide) $(foreach t,$(ALL_TOOLS),ln -sf ${LOCAL_MODULE} $(TARGET_OUT_VENDOR_EXECUTABLES)/$(t);)
+
+include $(BUILD_EXECUTABLE)
+
+
+
+$(LOCAL_PATH)/toolbox.c: $(intermediates)/tools.h
+
+TOOLS_H := $(intermediates)/tools.h
+$(TOOLS_H): PRIVATE_TOOLS := toolbox $(ALL_TOOLS)
+$(TOOLS_H): PRIVATE_CUSTOM_TOOL = echo "/* file generated automatically */" > $@ ; for t in $(PRIVATE_TOOLS) ; do echo "TOOL($$t)" >> $@ ; done
+$(TOOLS_H): $(LOCAL_PATH)/Android.mk
+$(TOOLS_H):
+	$(transform-generated-source)
+
+
+
 # We build BSD grep separately, so it can provide egrep and fgrep too.
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
