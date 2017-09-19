@@ -16,8 +16,6 @@
 
 #include "model/Disk.h"
 #include "VolumeManager.h"
-#include "CommandListener.h"
-#include "CryptCommandListener.h"
 #include "NetlinkManager.h"
 #include "VoldNativeService.h"
 #include "cryptfs.h"
@@ -27,7 +25,6 @@
 #include <android-base/stringprintf.h>
 #include <cutils/klog.h>
 #include <cutils/properties.h>
-#include <cutils/sockets.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,8 +59,6 @@ int main(int argc, char** argv) {
             << (android::vold::IsFilesystemSupported("vfat") ? " vfat" : "");
 
     VolumeManager *vm;
-    CommandListener *cl;
-    CryptCommandListener *ccl;
     NetlinkManager *nm;
 
     parse_args(argc, argv);
@@ -72,10 +67,6 @@ int main(int argc, char** argv) {
     if (sehandle) {
         selinux_android_set_sehandle(sehandle);
     }
-
-    // Quickly throw a CLOEXEC on the socket we just inherited from init
-    fcntl(android_get_control_socket("vold"), F_SETFD, FD_CLOEXEC);
-    fcntl(android_get_control_socket("cryptd"), F_SETFD, FD_CLOEXEC);
 
     mkdir("/dev/block/vold", 0755);
 
@@ -97,11 +88,6 @@ int main(int argc, char** argv) {
         vm->setDebug(true);
     }
 
-    cl = new CommandListener();
-    ccl = new CryptCommandListener();
-    vm->setBroadcaster((SocketListener *) cl);
-    nm->setBroadcaster((SocketListener *) cl);
-
     if (vm->start()) {
         PLOG(ERROR) << "Unable to start VolumeManager";
         exit(1);
@@ -121,19 +107,6 @@ int main(int argc, char** argv) {
 
     if (nm->start()) {
         PLOG(ERROR) << "Unable to start NetlinkManager";
-        exit(1);
-    }
-
-    /*
-     * Now that we're up, we can respond to commands
-     */
-    if (cl->startListener()) {
-        PLOG(ERROR) << "Unable to start CommandListener";
-        exit(1);
-    }
-
-    if (ccl->startListener()) {
-        PLOG(ERROR) << "Unable to start CryptCommandListener";
         exit(1);
     }
 

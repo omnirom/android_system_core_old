@@ -34,7 +34,6 @@
 
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
-#include <sysutils/SocketClient.h>
 
 #include "Devmapper.h"
 
@@ -43,82 +42,6 @@
 using android::base::StringPrintf;
 
 static const char* kVoldPrefix = "vold:";
-
-int Devmapper::dumpState(SocketClient *c) {
-
-    char *buffer = (char *) malloc(1024 * 64);
-    if (!buffer) {
-        SLOGE("Error allocating memory (%s)", strerror(errno));
-        return -1;
-    }
-    memset(buffer, 0, (1024 * 64));
-
-    char *buffer2 = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
-    if (!buffer2) {
-        SLOGE("Error allocating memory (%s)", strerror(errno));
-        free(buffer);
-        return -1;
-    }
-
-    int fd;
-    if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
-        SLOGE("Error opening devmapper (%s)", strerror(errno));
-        free(buffer);
-        free(buffer2);
-        return -1;
-    }
-
-    struct dm_ioctl *io = (struct dm_ioctl *) buffer;
-    ioctlInit(io, (1024 * 64), NULL, 0);
-
-    if (ioctl(fd, DM_LIST_DEVICES, io)) {
-        SLOGE("DM_LIST_DEVICES ioctl failed (%s)", strerror(errno));
-        free(buffer);
-        free(buffer2);
-        close(fd);
-        return -1;
-    }
-
-    struct dm_name_list *n = (struct dm_name_list *) (((char *) buffer) + io->data_start);
-    if (!n->dev) {
-        free(buffer);
-        free(buffer2);
-        close(fd);
-        return 0;
-    }
-
-    unsigned nxt = 0;
-    do {
-        n = (struct dm_name_list *) (((char *) n) + nxt);
-
-        memset(buffer2, 0, DEVMAPPER_BUFFER_SIZE);
-        struct dm_ioctl *io2 = (struct dm_ioctl *) buffer2;
-        ioctlInit(io2, DEVMAPPER_BUFFER_SIZE, n->name, 0);
-        if (ioctl(fd, DM_DEV_STATUS, io2)) {
-            if (errno != ENXIO) {
-                SLOGE("DM_DEV_STATUS ioctl failed (%s)", strerror(errno));
-            }
-            io2 = NULL;
-        }
-
-        char *tmp;
-        if (!io2) {
-            asprintf(&tmp, "%s %llu:%llu (no status available)", n->name, MAJOR(n->dev), MINOR(n->dev));
-        } else {
-            asprintf(&tmp, "%s %llu:%llu %d %d 0x%.8x %llu:%llu", n->name, MAJOR(n->dev),
-                    MINOR(n->dev), io2->target_count, io2->open_count, io2->flags, MAJOR(io2->dev),
-                            MINOR(io2->dev));
-        }
-        c->sendMsg(0, tmp, false);
-        free(tmp);
-        nxt = n->next;
-    } while (nxt);
-
-    free(buffer);
-    free(buffer2);
-    close(fd);
-    return 0;
-}
 
 void Devmapper::ioctlInit(struct dm_ioctl *io, size_t dataSize,
                           const char *name, unsigned flags) {

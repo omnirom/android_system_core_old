@@ -2,9 +2,6 @@ LOCAL_PATH:= $(call my-dir)
 
 common_src_files := \
 	VolumeManager.cpp \
-	CommandListener.cpp \
-	CryptCommandListener.cpp \
-	VoldCommand.cpp \
 	NetlinkManager.cpp \
 	NetlinkHandler.cpp \
 	Process.cpp \
@@ -13,7 +10,6 @@ common_src_files := \
 	fs/Vfat.cpp \
 	Loop.cpp \
 	Devmapper.cpp \
-	ResponseCode.cpp \
 	CheckBattery.cpp \
 	Ext4Crypt.cpp \
 	VoldUtil.c \
