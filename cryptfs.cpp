@@ -1419,7 +1419,7 @@ static int cryptfs_restart_internal(int restart_main)
          */
         char ro_prop[PROPERTY_VALUE_MAX];
         property_get("ro.crypto.readonly", ro_prop, "");
-        if (strlen(ro_prop) > 0 && atoi(ro_prop)) {
+        if (strlen(ro_prop) > 0 && std::stoi(ro_prop)) {
             struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
             rec->flags |= MS_RDONLY;
         }
@@ -2553,30 +2553,23 @@ static int persist_set_key(const char *fieldname, const char *value, int encrypt
  * Test if key is part of the multi-entry (field, index) sequence. Return non-zero if key is in the
  * sequence and its index is greater than or equal to index. Return 0 otherwise.
  */
-static int match_multi_entry(const char *key, const char *field, unsigned index) {
-    unsigned int field_len;
-    unsigned int key_index;
-    field_len = strlen(field);
+int match_multi_entry(const char *key, const char *field, unsigned index) {
+    std::string key_ = key;
+    std::string field_ = field;
 
-    if (index == 0) {
-        // The first key in a multi-entry field is just the filedname itself.
-        if (!strcmp(key, field)) {
-            return 1;
-        }
+    std::string parsed_field;
+    unsigned parsed_index;
+
+    std::string::size_type split = key_.find_last_of('_');
+    if (split == std::string::npos) {
+        parsed_field = key_;
+        parsed_index = 0;
+    } else {
+        parsed_field = key_.substr(0, split);
+        parsed_index = std::stoi(key_.substr(split + 1));
     }
-    // Match key against "%s_%d" % (field, index)
-    if (strlen(key) < field_len + 1 + 1) {
-        // Need at least a '_' and a digit.
-        return 0;
-    }
-    if (strncmp(key, field, field_len)) {
-        // If the key does not begin with field, it's not a match.
-        return 0;
-    }
-    if (1 != sscanf(&key[field_len],"_%d", &key_index)) {
-        return 0;
-    }
-    return key_index >= index;
+
+    return parsed_field == field_ && parsed_index >= index;
 }
 
 /*
