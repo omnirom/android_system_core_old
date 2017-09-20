@@ -33,6 +33,7 @@ public:
 
     binder::Status setListener(const android::sp<android::os::IVoldListener>& listener);
 
+    binder::Status monitor();
     binder::Status reset();
     binder::Status shutdown();
     binder::Status mountAll();

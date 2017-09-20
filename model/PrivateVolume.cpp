@@ -20,7 +20,6 @@
 #include "EmulatedVolume.h"
 #include "Utils.h"
 #include "VolumeManager.h"
-#include "ResponseCode.h"
 #include "cryptfs.h"
 
 #include <android-base/stringprintf.h>
@@ -55,14 +54,10 @@ PrivateVolume::~PrivateVolume() {
 
 status_t PrivateVolume::readMetadata() {
     status_t res = ReadMetadata(mDmDevPath, mFsType, mFsUuid, mFsLabel);
-#if ENABLE_BINDER
+
     auto listener = getListener();
     if (listener) listener->onVolumeMetadataChanged(getId(), mFsType, mFsUuid, mFsLabel);
-#else
-    notifyEvent(ResponseCode::VolumeFsTypeChanged, mFsType);
-    notifyEvent(ResponseCode::VolumeFsUuidChanged, mFsUuid);
-    notifyEvent(ResponseCode::VolumeFsLabelChanged, mFsLabel);
-#endif
+
     return res;
 }
 

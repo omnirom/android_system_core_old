@@ -17,7 +17,6 @@
 #include "BenchmarkTask.h"
 #include "BenchmarkGen.h"
 #include "VolumeManager.h"
-#include "ResponseCode.h"
 
 #include <android-base/file.h>
 #include <android-base/logging.h>

@@ -23,6 +23,7 @@ import android.os.IVoldTaskListener;
 interface IVold {
     void setListener(IVoldListener listener);
 
+    void monitor();
     void reset();
     void shutdown();
     void mountAll();

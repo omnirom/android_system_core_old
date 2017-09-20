@@ -29,8 +29,6 @@
 
 struct DIR;
 
-#define ENABLE_BINDER 1
-
 namespace android {
 namespace vold {
 

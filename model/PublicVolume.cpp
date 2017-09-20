@@ -18,7 +18,6 @@
 #include "PublicVolume.h"
 #include "Utils.h"
 #include "VolumeManager.h"
-#include "ResponseCode.h"
 
 #include <android-base/stringprintf.h>
 #include <android-base/logging.h>
@@ -54,14 +53,10 @@ PublicVolume::~PublicVolume() {
 
 status_t PublicVolume::readMetadata() {
     status_t res = ReadMetadataUntrusted(mDevPath, mFsType, mFsUuid, mFsLabel);
-#if ENABLE_BINDER
+
     auto listener = getListener();
     if (listener) listener->onVolumeMetadataChanged(getId(), mFsType, mFsUuid, mFsLabel);
-#else
-    notifyEvent(ResponseCode::VolumeFsTypeChanged, mFsType);
-    notifyEvent(ResponseCode::VolumeFsUuidChanged, mFsUuid);
-    notifyEvent(ResponseCode::VolumeFsLabelChanged, mFsLabel);
-#endif
+
     return res;
 }
 

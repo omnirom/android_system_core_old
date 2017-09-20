@@ -115,9 +115,6 @@ protected:
     status_t setPath(const std::string& path);
     status_t setInternalPath(const std::string& internalPath);
 
-    void notifyEvent(int msg);
-    void notifyEvent(int msg, const std::string& value);
-
     android::sp<android::os::IVoldListener> getListener();
 
 private:
