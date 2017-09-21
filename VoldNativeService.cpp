@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
+
 #include "VoldNativeService.h"
 #include "VolumeManager.h"
 #include "BenchmarkTask.h"
@@ -32,6 +34,7 @@
 #include <android-base/strings.h>
 #include <fs_mgr.h>
 #include <private/android_filesystem_config.h>
+#include <utils/Trace.h>
 
 #ifndef LOG_TAG
 #define LOG_TAG "vold"
@@ -169,10 +172,12 @@ binder::Status checkArgumentHex(const std::string& hex) {
 }
 
 #define ACQUIRE_LOCK \
-    std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock());
+    std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock()); \
+    ATRACE_CALL();
 
 #define ACQUIRE_CRYPT_LOCK \
-    std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getCryptLock());
+    std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getCryptLock()); \
+    ATRACE_CALL();
 
 }  // namespace
 
