@@ -555,7 +555,7 @@ int Disk::getMaxMinors() {
             LOG(ERROR) << "Failed to read max minors";
             return -errno;
         }
-        return atoi(tmp.c_str());
+        return std::stoi(tmp);
     }
     case kMajorBlockScsiA: case kMajorBlockScsiB: case kMajorBlockScsiC: case kMajorBlockScsiD:
     case kMajorBlockScsiE: case kMajorBlockScsiF: case kMajorBlockScsiG: case kMajorBlockScsiH:
@@ -571,7 +571,7 @@ int Disk::getMaxMinors() {
             LOG(ERROR) << "Failed to read max minors";
             return -errno;
         }
-        return atoi(tmp.c_str());
+        return std::stoi(tmp);
     }
     default: {
         if (isVirtioBlkDevice(majorId)) {

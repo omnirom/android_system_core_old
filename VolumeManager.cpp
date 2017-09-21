@@ -189,8 +189,8 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
 
     if (devType != "disk") return;
 
-    int major = atoi(evt->findParam("MAJOR"));
-    int minor = atoi(evt->findParam("MINOR"));
+    int major = std::stoi(evt->findParam("MAJOR"));
+    int minor = std::stoi(evt->findParam("MINOR"));
     dev_t device = makedev(major, minor);
 
     switch (evt->getAction()) {
