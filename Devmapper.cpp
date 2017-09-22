@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -34,6 +36,7 @@
 
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
+#include <utils/Trace.h>
 
 #include "Devmapper.h"
 
@@ -233,6 +236,7 @@ int Devmapper::destroy(const char *name_raw) {
 }
 
 int Devmapper::destroyAll() {
+    ATRACE_NAME("Devmapper::destroyAll");
     char *buffer = (char *) malloc(1024 * 64);
     if (!buffer) {
         SLOGE("Error allocating memory (%s)", strerror(errno));
