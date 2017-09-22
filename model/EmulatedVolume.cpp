@@ -85,6 +85,7 @@ status_t EmulatedVolume::doMount() {
                 "-g", "1023", // AID_MEDIA_RW
                 "-m",
                 "-w",
+                "-G",
                 mRawPath.c_str(),
                 label.c_str(),
                 NULL)) {
