@@ -39,6 +39,21 @@
 
 static void usage(char *progname);
 
+static android::sp<android::IBinder> getServiceAggressive() {
+    android::sp<android::IBinder> res;
+    auto sm = android::defaultServiceManager();
+    auto name = android::String16("vold");
+    for (int i = 0; i < 500; i++) {
+        res = sm->checkService(name);
+        if (res) {
+            LOG(VERBOSE) << "Waited " << (i * 10) << "ms for vold";
+            break;
+        }
+        usleep(10000); // 10ms
+    }
+    return res;
+}
+
 int main(int argc, char **argv) {
     int sock;
     int wait;
@@ -46,6 +61,7 @@ int main(int argc, char **argv) {
 
     progname = argv[0];
 
+    setenv("ANDROID_LOG_TAGS", "*:v", 1);
     if (getppid() == 1) {
         // If init is calling us then it's during boot and we should log to kmsg
         android::base::InitLogging(argv, &android::base::KernelLogger);
@@ -67,8 +83,7 @@ int main(int argc, char **argv) {
     std::string arg1 = argv[1];
     std::string arg2 = argv[2];
 
-    android::sp<android::IBinder> binder = android::defaultServiceManager()->getService(
-            android::String16("vold"));
+    android::sp<android::IBinder> binder = getServiceAggressive();
     if (!binder) {
         LOG(ERROR) << "Failed to obtain vold Binder";
         exit(EINVAL);
