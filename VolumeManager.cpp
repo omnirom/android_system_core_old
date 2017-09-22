@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -40,6 +42,7 @@
 #include <android-base/stringprintf.h>
 #include <cutils/fs.h>
 #include <cutils/log.h>
+#include <utils/Trace.h>
 
 #include <selinux/android.h>
 
@@ -94,6 +97,7 @@ VolumeManager::~VolumeManager() {
 }
 
 int VolumeManager::updateVirtualDisk() {
+    ATRACE_NAME("VolumeManager::updateVirtualDisk");
     if (property_get_bool(kPropVirtualDisk, false)) {
         if (access(kPathVirtualDisk, F_OK) != 0) {
             Loop::createImageFile(kPathVirtualDisk, kSizeVirtualDisk / 512);
@@ -148,6 +152,8 @@ int VolumeManager::setDebug(bool enable) {
 }
 
 int VolumeManager::start() {
+    ATRACE_NAME("VolumeManager::start");
+
     // Always start from a clean slate by unmounting everything in
     // directories that we own, in case we crashed.
     unmountAll();
@@ -189,8 +195,8 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
 
     if (devType != "disk") return;
 
-    int major = atoi(evt->findParam("MAJOR"));
-    int minor = atoi(evt->findParam("MINOR"));
+    int major = std::stoi(evt->findParam("MAJOR"));
+    int minor = std::stoi(evt->findParam("MINOR"));
     dev_t device = makedev(major, minor);
 
     switch (evt->getAction()) {
@@ -548,6 +554,7 @@ int VolumeManager::shutdown() {
 
 int VolumeManager::unmountAll() {
     std::lock_guard<std::mutex> lock(mLock);
+    ATRACE_NAME("VolumeManager::unmountAll()");
 
     // First, try gracefully unmounting all known devices
     if (mInternalEmulated != nullptr) {

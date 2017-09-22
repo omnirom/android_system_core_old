@@ -304,7 +304,7 @@ static bool load_all_de_keys() {
             LOG(DEBUG) << "Skipping non-de-key " << entry->d_name;
             continue;
         }
-        userid_t user_id = atoi(entry->d_name);
+        userid_t user_id = std::stoi(entry->d_name);
         if (s_de_key_raw_refs.count(user_id) == 0) {
             auto key_path = de_dir + "/" + entry->d_name;
             KeyBuffer key;

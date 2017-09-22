@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
+
 #include "model/Disk.h"
 #include "VolumeManager.h"
 #include "NetlinkManager.h"
@@ -25,6 +27,7 @@
 #include <android-base/stringprintf.h>
 #include <cutils/klog.h>
 #include <cutils/properties.h>
+#include <utils/Trace.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,6 +53,8 @@ using android::base::StringPrintf;
 int main(int argc, char** argv) {
     setenv("ANDROID_LOG_TAGS", "*:v", 1);
     android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
+
+    ATRACE_BEGIN("main");
 
     LOG(INFO) << "Vold 3.0 (the awakening) firing up";
 
@@ -93,10 +98,12 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
+    ATRACE_BEGIN("VoldNativeService::start");
     if (android::vold::VoldNativeService::start() != android::OK) {
         LOG(ERROR) << "Unable to start VoldNativeService";
         exit(1);
     }
+    ATRACE_END();
 
     bool has_adoptable;
     bool has_quota;
@@ -105,10 +112,12 @@ int main(int argc, char** argv) {
         PLOG(ERROR) << "Error reading configuration... continuing anyways";
     }
 
+    ATRACE_BEGIN("NetlinkManager::start");
     if (nm->start()) {
         PLOG(ERROR) << "Unable to start NetlinkManager";
         exit(1);
     }
+    ATRACE_END();
 
     // This call should go after listeners are started to avoid
     // a deadlock between vold and init (see b/34278978 for details)
@@ -119,6 +128,9 @@ int main(int argc, char** argv) {
     // also the cold boot is needed in case we have flash drive
     // connected before Vold launched
     coldboot("/sys/block");
+
+    ATRACE_END();
+
     // Eventually we'll become the monitoring thread
     while(1) {
         pause();
@@ -188,6 +200,7 @@ static void do_coldboot(DIR *d, int lvl) {
 }
 
 static void coldboot(const char *path) {
+    ATRACE_NAME("coldboot");
     DIR *d = opendir(path);
     if(d) {
         do_coldboot(d, 0);
@@ -196,6 +209,8 @@ static void coldboot(const char *path) {
 }
 
 static int process_config(VolumeManager *vm, bool* has_adoptable, bool* has_quota) {
+    ATRACE_NAME("process_config");
+
     fstab = fs_mgr_read_fstab_default();
     if (!fstab) {
         PLOG(ERROR) << "Failed to open default fstab";

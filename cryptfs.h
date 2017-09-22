@@ -222,6 +222,7 @@ struct crypt_persist_data {
 extern "C" {
 #endif
 
+  int match_multi_entry(const char *key, const char *field, unsigned index);
   int wait_and_unmount(const char *mountpoint, bool kill);
 
   typedef int (*kdf_func)(const char *passwd, const unsigned char *salt,

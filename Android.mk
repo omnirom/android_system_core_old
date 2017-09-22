@@ -82,11 +82,10 @@ common_static_libraries := \
 	libbatteryservice \
 	libavb \
 
-# TODO: include "cert-err34-c" once we move to Binder
 # TODO: include "cert-err58-cpp" once 36656327 is fixed
 common_local_tidy_enabled := true
 common_local_tidy_flags := -warnings-as-errors=clang-analyzer-security*,cert-*
-common_local_tidy_checks := -*,clang-analyzer-security*,cert-*,-cert-err34-c,-cert-err58-cpp
+common_local_tidy_checks := -*,clang-analyzer-security*,cert-*,-cert-err58-cpp
 
 vold_conlyflags := -std=c11
 vold_cflags := -Werror -Wall -Wno-missing-field-initializers -Wno-unused-variable -Wno-unused-parameter

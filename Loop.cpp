@@ -14,8 +14,11 @@
  * limitations under the License.
  */
 
+#define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -35,6 +38,7 @@
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <android-base/unique_fd.h>
+#include <utils/Trace.h>
 
 #include "Loop.h"
 #include "VoldUtil.h"
@@ -262,9 +266,22 @@ int Loop::destroyByDevice(const char *loopDevice) {
 }
 
 int Loop::destroyAll() {
-    for (int i = 0; i < LOOP_MAX; i++) {
-        auto path = StringPrintf("/dev/block/loop%d", i);
+    ATRACE_NAME("Loop::destroyAll");
 
+    DIR* dir;
+    struct dirent* de;
+
+    std::string root = "/dev/block/";
+    if (!(dir = opendir(root.c_str()))) {
+        PLOG(ERROR) << "Failed to opendir";
+        return -1;
+    }
+
+    // Poke through all devices looking for loops
+    while ((de = readdir(dir))) {
+        if (strncmp(de->d_name, "loop", 4) != 0) continue;
+
+        auto path = root + de->d_name;
         unique_fd fd(open(path.c_str(), O_RDWR | O_CLOEXEC));
         if (fd.get() == -1) {
             if (errno != ENOENT) {
@@ -290,6 +307,8 @@ int Loop::destroyAll() {
             LOG(VERBOSE) << "Found unmanaged loop device at " << path << " named " << id;
         }
     }
+
+    closedir(dir);
     return 0;
 }
 
