@@ -64,7 +64,7 @@ extern struct selabel_handle *sehandle;
 
 static android::base::unique_fd device_fd;
 
-static std::string boot_device;
+extern std::string boot_device;
 
 struct perms_ {
     char *name;
