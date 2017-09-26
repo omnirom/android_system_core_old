@@ -12,7 +12,7 @@ common_src_files := \
 	Devmapper.cpp \
 	CheckBattery.cpp \
 	Ext4Crypt.cpp \
-	VoldUtil.c \
+	VoldUtil.cpp \
 	cryptfs.cpp \
 	model/Disk.cpp \
 	model/VolumeBase.cpp \
