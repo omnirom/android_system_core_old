@@ -67,7 +67,6 @@ common_static_libraries := \
 	libfec_rs \
 	libsquashfs_utils \
 	libscrypt_static \
-	libbatteryservice \
 	libavb \
 
 vold_conlyflags := -std=c11
