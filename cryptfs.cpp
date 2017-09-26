@@ -191,8 +191,6 @@ static char* password = 0;
 static int password_expiry_time = 0;
 static const int password_max_age_seconds = 60;
 
-extern struct fstab *fstab;
-
 enum class RebootType {reboot, recovery, shutdown};
 static void cryptfs_reboot(RebootType rt)
 {
@@ -295,7 +293,7 @@ static int get_crypt_ftr_info(char **metadata_fname, off64_t *off)
   int rc = -1;
 
   if (!cached_data) {
-    fs_mgr_get_crypt_info(fstab, key_loc, real_blkdev, sizeof(key_loc));
+    fs_mgr_get_crypt_info(fstab_default, key_loc, real_blkdev, sizeof(key_loc));
 
     if (!strcmp(key_loc, KEY_IN_FOOTER)) {
       if ( (fd = open(real_blkdev, O_RDWR|O_CLOEXEC)) < 0) {
@@ -1420,7 +1418,7 @@ static int cryptfs_restart_internal(int restart_main)
         char ro_prop[PROPERTY_VALUE_MAX];
         property_get("ro.crypto.readonly", ro_prop, "");
         if (strlen(ro_prop) > 0 && std::stoi(ro_prop)) {
-            struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+            struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab_default, DATA_MNT_POINT);
             rec->flags |= MS_RDONLY;
         }
 
@@ -1436,7 +1434,7 @@ static int cryptfs_restart_internal(int restart_main)
             SLOGE("Failed to setexeccon");
             return -1;
         }
-        while ((mount_rc = fs_mgr_do_mount(fstab, DATA_MNT_POINT,
+        while ((mount_rc = fs_mgr_do_mount(fstab_default, DATA_MNT_POINT,
                                            crypto_blkdev, 0))
                != 0) {
             if (mount_rc == FS_MGR_DOMNT_BUSY) {
@@ -1517,7 +1515,7 @@ static int do_crypto_complete(const char *mount_point)
   }
 
   if (get_crypt_ftr_and_key(&crypt_ftr)) {
-    fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
+    fs_mgr_get_crypt_info(fstab_default, key_loc, 0, sizeof(key_loc));
 
     /*
      * Only report this error if key_loc is a file and it exists.
@@ -1585,7 +1583,7 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
     }
   }
 
-  fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
+  fs_mgr_get_crypt_info(fstab_default, 0, real_blkdev, sizeof(real_blkdev));
 
   // Create crypto block device - all (non fatal) code paths
   // need it
@@ -1617,7 +1615,7 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
     snprintf(tmp_mount_point, sizeof(tmp_mount_point), "%s/tmp_mnt",
              mount_point);
     mkdir(tmp_mount_point, 0755);
-    if (fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
+    if (fs_mgr_do_mount(fstab_default, DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
       SLOGE("Error temp mounting decrypted block device\n");
       delete_crypto_blk_dev(label);
 
@@ -2021,7 +2019,7 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
     tot_encryption_size = crypt_ftr->fs_size;
 
     if (how == CRYPTO_ENABLE_WIPE) {
-        struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+        struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab_default, DATA_MNT_POINT);
         int fs_type = get_fs_type(rec);
         if (fs_type < 0) {
             SLOGE("cryptfs_enable: unsupported fs type %s\n", rec->fs_type);
@@ -2121,8 +2119,8 @@ int cryptfs_enable_internal(const char *howarg, int crypt_type, const char *pass
     }
 
     // TODO refactor fs_mgr_get_crypt_info to get both in one call
-    fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
-    fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
+    fs_mgr_get_crypt_info(fstab_default, key_loc, 0, sizeof(key_loc));
+    fs_mgr_get_crypt_info(fstab_default, 0, real_blkdev, sizeof(real_blkdev));
 
     /* Get the size of the real block device */
     fd = open(real_blkdev, O_RDONLY|O_CLOEXEC);
@@ -2870,7 +2868,7 @@ void cryptfs_clear_password()
 
 int cryptfs_isConvertibleToFBE()
 {
-    struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+    struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab_default, DATA_MNT_POINT);
     return fs_mgr_is_convertible_to_fbe(rec) ? 1 : 0;
 }
 
@@ -2943,6 +2941,6 @@ int cryptfs_set_password(struct crypt_mnt_ftr* ftr, const char* password,
 void cryptfs_get_file_encryption_modes(const char **contents_mode_ret,
                                        const char **filenames_mode_ret)
 {
-    struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+    struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab_default, DATA_MNT_POINT);
     fs_mgr_get_file_encryption_modes(rec, contents_mode_ret, filenames_mode_ret);
 }
