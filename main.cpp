@@ -20,6 +20,7 @@
 #include "VolumeManager.h"
 #include "NetlinkManager.h"
 #include "VoldNativeService.h"
+#include "VoldUtil.h"
 #include "cryptfs.h"
 #include "sehandle.h"
 
@@ -43,8 +44,6 @@
 static int process_config(VolumeManager *vm, bool* has_adoptable, bool* has_quota);
 static void coldboot(const char *path);
 static void parse_args(int argc, char** argv);
-
-struct fstab *fstab;
 
 struct selabel_handle *sehandle;
 
@@ -211,8 +210,8 @@ static void coldboot(const char *path) {
 static int process_config(VolumeManager *vm, bool* has_adoptable, bool* has_quota) {
     ATRACE_NAME("process_config");
 
-    fstab = fs_mgr_read_fstab_default();
-    if (!fstab) {
+    fstab_default = fs_mgr_read_fstab_default();
+    if (!fstab_default) {
         PLOG(ERROR) << "Failed to open default fstab";
         return -1;
     }
@@ -220,26 +219,27 @@ static int process_config(VolumeManager *vm, bool* has_adoptable, bool* has_quot
     /* Loop through entries looking for ones that vold manages */
     *has_adoptable = false;
     *has_quota = false;
-    for (int i = 0; i < fstab->num_entries; i++) {
-        if (fs_mgr_is_quota(&fstab->recs[i])) {
+    for (int i = 0; i < fstab_default->num_entries; i++) {
+        auto rec = &fstab_default->recs[i];
+        if (fs_mgr_is_quota(rec)) {
             *has_quota = true;
         }
 
-        if (fs_mgr_is_voldmanaged(&fstab->recs[i])) {
-            if (fs_mgr_is_nonremovable(&fstab->recs[i])) {
+        if (fs_mgr_is_voldmanaged(rec)) {
+            if (fs_mgr_is_nonremovable(rec)) {
                 LOG(WARNING) << "nonremovable no longer supported; ignoring volume";
                 continue;
             }
 
-            std::string sysPattern(fstab->recs[i].blk_device);
-            std::string nickname(fstab->recs[i].label);
+            std::string sysPattern(rec->blk_device);
+            std::string nickname(rec->label);
             int flags = 0;
 
-            if (fs_mgr_is_encryptable(&fstab->recs[i])) {
+            if (fs_mgr_is_encryptable(rec)) {
                 flags |= android::vold::Disk::Flags::kAdoptable;
                 *has_adoptable = true;
             }
-            if (fs_mgr_is_noemulatedsd(&fstab->recs[i])
+            if (fs_mgr_is_noemulatedsd(rec)
                     || property_get_bool("vold.debug.default_primary", false)) {
                 flags |= android::vold::Disk::Flags::kDefaultPrimary;
             }

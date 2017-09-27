@@ -42,7 +42,6 @@
 #include "Utils.h"
 #include "VoldUtil.h"
 
-extern struct fstab *fstab;
 #define DM_CRYPT_BUF_SIZE 4096
 #define TABLE_LOAD_RETRIES 10
 #define DEFAULT_KEY_TARGET_TYPE "default-key"
@@ -58,7 +57,7 @@ static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
         PLOG(ERROR) << "Failed to setexeccon";
         return false;
     }
-    auto mount_rc = fs_mgr_do_mount(fstab, const_cast<char*>(mount_point),
+    auto mount_rc = fs_mgr_do_mount(fstab_default, const_cast<char*>(mount_point),
                                     const_cast<char*>(blk_device), nullptr);
     if (setexeccon(nullptr)) {
         PLOG(ERROR) << "Failed to clear setexeccon";
@@ -73,7 +72,7 @@ static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
 }
 
 static bool read_key(bool create_if_absent, KeyBuffer* key) {
-    auto data_rec = fs_mgr_get_crypt_entry(fstab);
+    auto data_rec = fs_mgr_get_crypt_entry(fstab_default);
     if (!data_rec) {
         LOG(ERROR) << "Failed to get data_rec";
         return false;
@@ -253,7 +252,7 @@ bool e4crypt_mount_metadata_encrypted() {
     LOG(DEBUG) << "e4crypt_mount_default_encrypted";
     KeyBuffer key;
     if (!read_key(false, &key)) return false;
-    auto data_rec = fs_mgr_get_crypt_entry(fstab);
+    auto data_rec = fs_mgr_get_crypt_entry(fstab_default);
     if (!data_rec) {
         LOG(ERROR) << "Failed to get data_rec";
         return false;
@@ -283,7 +282,7 @@ bool e4crypt_enable_crypto() {
     KeyBuffer key_ref;
     if (!read_key(true, &key_ref)) return false;
 
-    auto data_rec = fs_mgr_get_crypt_entry(fstab);
+    auto data_rec = fs_mgr_get_crypt_entry(fstab_default);
     if (!data_rec) {
         LOG(ERROR) << "Failed to get data_rec";
         return false;
