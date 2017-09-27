@@ -97,19 +97,19 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    ATRACE_BEGIN("VoldNativeService::start");
-    if (android::vold::VoldNativeService::start() != android::OK) {
-        LOG(ERROR) << "Unable to start VoldNativeService";
-        exit(1);
-    }
-    ATRACE_END();
-
     bool has_adoptable;
     bool has_quota;
 
     if (process_config(vm, &has_adoptable, &has_quota)) {
         PLOG(ERROR) << "Error reading configuration... continuing anyways";
     }
+
+    ATRACE_BEGIN("VoldNativeService::start");
+    if (android::vold::VoldNativeService::start() != android::OK) {
+        LOG(ERROR) << "Unable to start VoldNativeService";
+        exit(1);
+    }
+    ATRACE_END();
 
     ATRACE_BEGIN("NetlinkManager::start");
     if (nm->start()) {
