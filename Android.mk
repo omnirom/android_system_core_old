@@ -71,7 +71,6 @@ common_static_libraries := \
 	libfec_rs \
 	libsquashfs_utils \
 	libscrypt_static \
-	libbatteryservice \
 	libavb \
 
 # TODO: include "cert-err34-c" once we move to Binder
