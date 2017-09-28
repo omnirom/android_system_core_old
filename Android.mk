@@ -79,7 +79,6 @@ common_static_libraries := \
 	libfec_rs \
 	libsquashfs_utils \
 	libscrypt_static \
-	libbatteryservice \
 	libavb \
 
 # TODO: include "cert-err58-cpp" once 36656327 is fixed

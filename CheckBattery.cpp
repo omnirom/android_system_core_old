@@ -17,11 +17,6 @@
 #define LOG_TAG "VoldCheckBattery"
 #include <cutils/log.h>
 
-#include <binder/IServiceManager.h>
-#include <batteryservice/IBatteryPropertiesRegistrar.h>
-
-using namespace android;
-
 extern "C"
 {
     int is_battery_ok_to_start()
