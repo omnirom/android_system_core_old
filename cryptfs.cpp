@@ -58,7 +58,6 @@
 #include "VoldUtil.h"
 #include "Ext4Crypt.h"
 #include "f2fs_sparseblock.h"
-#include "CheckBattery.h"
 #include "Process.h"
 #include "Keymaster.h"
 #include "android-base/properties.h"
@@ -2172,13 +2171,6 @@ static int encrypt_groups(struct encryptGroupsData* data)
                     goto errout;
                 }
             }
-
-            if (!is_battery_ok_to_continue()) {
-                SLOGE("Stopping encryption due to low battery");
-                rc = 0;
-                goto errout;
-            }
-
         }
         if (flush_outstanding_data(data)) {
             goto errout;
@@ -2501,13 +2493,6 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
                   CRYPT_SECTORS_PER_BUFSIZE,
                   i * CRYPT_SECTORS_PER_BUFSIZE);
         }
-
-       if (!is_battery_ok_to_continue()) {
-            SLOGE("Stopping encryption due to low battery");
-            *size_already_done += (i + 1) * CRYPT_SECTORS_PER_BUFSIZE - 1;
-            rc = 0;
-            goto errout;
-        }
     }
 
     /* Do any remaining sectors */
@@ -2630,11 +2615,6 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
 {
     off64_t cur_encryption_done=0, tot_encryption_size=0;
     int rc = -1;
-
-    if (!is_battery_ok_to_start()) {
-        SLOGW("Not starting encryption due to low battery");
-        return 0;
-    }
 
     /* The size of the userdata partition, and add in the vold volumes below */
     tot_encryption_size = crypt_ftr->fs_size;
