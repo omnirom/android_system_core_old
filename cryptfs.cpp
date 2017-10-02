@@ -57,7 +57,6 @@
 #include "VoldUtil.h"
 #include "Ext4Crypt.h"
 #include "f2fs_sparseblock.h"
-#include "CheckBattery.h"
 #include "EncryptInplace.h"
 #include "Process.h"
 #include "Keymaster.h"
@@ -2009,11 +2008,6 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
 {
     off64_t cur_encryption_done=0, tot_encryption_size=0;
     int rc = -1;
-
-    if (!is_battery_ok_to_start()) {
-        SLOGW("Not starting encryption due to low battery");
-        return 0;
-    }
 
     /* The size of the userdata partition, and add in the vold volumes below */
     tot_encryption_size = crypt_ftr->fs_size;
