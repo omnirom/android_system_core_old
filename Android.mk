@@ -10,7 +10,6 @@ common_src_files := \
 	fs/Vfat.cpp \
 	Loop.cpp \
 	Devmapper.cpp \
-	CheckBattery.cpp \
 	Ext4Crypt.cpp \
 	VoldUtil.cpp \
 	cryptfs.cpp \

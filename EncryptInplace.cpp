@@ -32,7 +32,6 @@
 #include "cutils/properties.h"
 #define LOG_TAG "EncryptInplace"
 #include "cutils/log.h"
-#include "CheckBattery.h"
 
 // HORRIBLE HACK, FIXME
 #include "cryptfs.h"
@@ -244,13 +243,6 @@ static int encrypt_groups(struct encryptGroupsData* data)
                     goto errout;
                 }
             }
-
-            if (!is_battery_ok_to_continue()) {
-                SLOGE("Stopping encryption due to low battery");
-                rc = 0;
-                goto errout;
-            }
-
         }
         if (flush_outstanding_data(data)) {
             goto errout;
@@ -572,13 +564,6 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
             SLOGD("Encrypted %d block at %" PRId64,
                   CRYPT_SECTORS_PER_BUFSIZE,
                   i * CRYPT_SECTORS_PER_BUFSIZE);
-        }
-
-       if (!is_battery_ok_to_continue()) {
-            SLOGE("Stopping encryption due to low battery");
-            *size_already_done += (i + 1) * CRYPT_SECTORS_PER_BUFSIZE - 1;
-            rc = 0;
-            goto errout;
         }
     }
 
