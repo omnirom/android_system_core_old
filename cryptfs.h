@@ -246,15 +246,6 @@ extern "C" {
   void cryptfs_clear_password(void);
   int cryptfs_isConvertibleToFBE(void);
 
-  // Functions for file encryption to use to inherit our encryption logic
-  int cryptfs_create_default_ftr(struct crypt_mnt_ftr* ftr, int key_length);
-  int cryptfs_get_master_key(struct crypt_mnt_ftr* ftr, const char* password,
-                             unsigned char* master_key);
-  int cryptfs_set_password(struct crypt_mnt_ftr* ftr, const char* password,
-                           const unsigned char* master_key);
-  void cryptfs_get_file_encryption_modes(const char **contents_mode_ret,
-                                         const char **filenames_mode_ret);
-
 #ifdef __cplusplus
 }
 #endif
