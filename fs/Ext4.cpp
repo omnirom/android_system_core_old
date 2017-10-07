@@ -146,7 +146,7 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
     rc = mount(c_source, c_target, "ext4", flags, NULL);
 
     if (rc && errno == EROFS) {
-        SLOGE("%s appears to be a read only filesystem - retrying mount RO", c_source);
+        LOG(ERROR) << source << " appears to be a read only filesystem - retrying mount RO";
         flags |= MS_RDONLY;
         rc = mount(c_source, c_target, "ext4", flags, NULL);
     }

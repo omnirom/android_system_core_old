@@ -12,6 +12,7 @@ LOCAL_STATIC_LIBRARIES := libbase libselinux libvold liblog libcrypto
 
 LOCAL_SRC_FILES := \
 	cryptfs_test.cpp \
+	Utils_test.cpp \
 	VolumeManager_test.cpp \
 
 LOCAL_MODULE := vold_tests

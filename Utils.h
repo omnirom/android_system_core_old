@@ -53,13 +53,15 @@ status_t KillProcessesUsingPath(const std::string& path);
 /* Creates bind mount from source to target */
 status_t BindMount(const std::string& source, const std::string& target);
 
+bool FindValue(const std::string& raw, const std::string& key, std::string* value);
+
 /* Reads filesystem metadata from device at path */
-status_t ReadMetadata(const std::string& path, std::string& fsType,
-        std::string& fsUuid, std::string& fsLabel);
+status_t ReadMetadata(const std::string& path, std::string* fsType,
+        std::string* fsUuid, std::string* fsLabel);
 
 /* Reads filesystem metadata from untrusted device at path */
-status_t ReadMetadataUntrusted(const std::string& path, std::string& fsType,
-        std::string& fsUuid, std::string& fsLabel);
+status_t ReadMetadataUntrusted(const std::string& path, std::string* fsType,
+        std::string* fsUuid, std::string* fsLabel);
 
 /* Returns either WEXITSTATUS() status, or a negative errno */
 status_t ForkExecvp(const std::vector<std::string>& args);
@@ -112,7 +114,8 @@ dev_t GetDevice(const std::string& path);
 
 status_t RestoreconRecursive(const std::string& path);
 
-status_t SaneReadLinkAt(int dirfd, const char* path, char* buf, size_t bufsiz);
+// TODO: promote to android::base
+bool Readlinkat(int dirfd, const std::string& path, std::string* result);
 
 /* Checks if Android is running in QEMU */
 bool IsRunningInEmulator();

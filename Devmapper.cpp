@@ -30,11 +30,8 @@
 
 #include <linux/kdev_t.h>
 
-#define LOG_TAG "Vold"
-
-#include <cutils/log.h>
-
 #include <android-base/logging.h>
+#include <android-base/strings.h>
 #include <android-base/stringprintf.h>
 #include <utils/Trace.h>
 
@@ -62,42 +59,6 @@ void Devmapper::ioctlInit(struct dm_ioctl *io, size_t dataSize,
     }
 }
 
-int Devmapper::lookupActive(const char *name_raw, char *ubuffer, size_t len) {
-    auto name_string = StringPrintf("%s%s", kVoldPrefix, name_raw);
-    const char* name = name_string.c_str();
-
-    char *buffer = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
-    if (!buffer) {
-        SLOGE("Error allocating memory (%s)", strerror(errno));
-        return -1;
-    }
-
-    int fd;
-    if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
-        SLOGE("Error opening devmapper (%s)", strerror(errno));
-        free(buffer);
-        return -1;
-    }
-
-    struct dm_ioctl *io = (struct dm_ioctl *) buffer;
- 
-    ioctlInit(io, DEVMAPPER_BUFFER_SIZE, name, 0);
-    if (ioctl(fd, DM_DEV_STATUS, io)) {
-        if (errno != ENXIO) {
-            SLOGE("DM_DEV_STATUS ioctl failed for lookup (%s)", strerror(errno));
-        }
-        free(buffer);
-        close(fd);
-        return -1;
-    }
-    close(fd);
-
-    unsigned minor = (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00);
-    free(buffer);
-    snprintf(ubuffer, len, "/dev/block/dm-%u", minor);
-    return 0;
-}
-
 int Devmapper::create(const char *name_raw, const char *loopFile, const char *key,
                       unsigned long numSectors, char *ubuffer, size_t len) {
     auto name_string = StringPrintf("%s%s", kVoldPrefix, name_raw);
@@ -105,13 +66,13 @@ int Devmapper::create(const char *name_raw, const char *loopFile, const char *ke
 
     char *buffer = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
     if (!buffer) {
-        SLOGE("Error allocating memory (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed malloc";
         return -1;
     }
 
     int fd;
     if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
-        SLOGE("Error opening devmapper (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed open";
         free(buffer);
         return -1;
     }
@@ -122,7 +83,7 @@ int Devmapper::create(const char *name_raw, const char *loopFile, const char *ke
     ioctlInit(io, DEVMAPPER_BUFFER_SIZE, name, 0);
 
     if (ioctl(fd, DM_DEV_CREATE, io)) {
-        SLOGE("Error creating device mapping (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed DM_DEV_CREATE";
         free(buffer);
         close(fd);
         return -1;
@@ -137,7 +98,7 @@ int Devmapper::create(const char *name_raw, const char *loopFile, const char *ke
     geoParams += strlen(geoParams) + 1;
     geoParams = (char *) _align(geoParams, 8);
     if (ioctl(fd, DM_DEV_SET_GEOMETRY, io)) {
-        SLOGE("Error setting device geometry (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed DM_DEV_SET_GEOMETRY";
         free(buffer);
         close(fd);
         return -1;
@@ -146,7 +107,7 @@ int Devmapper::create(const char *name_raw, const char *loopFile, const char *ke
     // Retrieve the device number we were allocated
     ioctlInit(io, DEVMAPPER_BUFFER_SIZE, name, 0);
     if (ioctl(fd, DM_DEV_STATUS, io)) {
-        SLOGE("Error retrieving devmapper status (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed DM_DEV_STATUS";
         free(buffer);
         close(fd);
         return -1;
@@ -177,7 +138,7 @@ int Devmapper::create(const char *name_raw, const char *loopFile, const char *ke
     tgt->next = cryptParams - buffer;
 
     if (ioctl(fd, DM_TABLE_LOAD, io)) {
-        SLOGE("Error loading mapping table (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed DM_TABLE_LOAD";
         free(buffer);
         close(fd);
         return -1;
@@ -187,7 +148,7 @@ int Devmapper::create(const char *name_raw, const char *loopFile, const char *ke
     ioctlInit(io, DEVMAPPER_BUFFER_SIZE, name, 0);
 
     if (ioctl(fd, DM_DEV_SUSPEND, io)) {
-        SLOGE("Error Resuming (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed DM_DEV_SUSPEND";
         free(buffer);
         close(fd);
         return -1;
@@ -205,13 +166,13 @@ int Devmapper::destroy(const char *name_raw) {
 
     char *buffer = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
     if (!buffer) {
-        SLOGE("Error allocating memory (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed malloc";
         return -1;
     }
 
     int fd;
     if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
-        SLOGE("Error opening devmapper (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed open";
         free(buffer);
         return -1;
     }
@@ -223,7 +184,7 @@ int Devmapper::destroy(const char *name_raw) {
 
     if (ioctl(fd, DM_DEV_REMOVE, io)) {
         if (errno != ENXIO) {
-            SLOGE("Error destroying device mapping (%s)", strerror(errno));
+            PLOG(ERROR) << "Failed DM_DEV_REMOVE";
         }
         free(buffer);
         close(fd);
@@ -239,21 +200,21 @@ int Devmapper::destroyAll() {
     ATRACE_NAME("Devmapper::destroyAll");
     char *buffer = (char *) malloc(1024 * 64);
     if (!buffer) {
-        SLOGE("Error allocating memory (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed malloc";
         return -1;
     }
     memset(buffer, 0, (1024 * 64));
 
     char *buffer2 = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
     if (!buffer2) {
-        SLOGE("Error allocating memory (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed malloc";
         free(buffer);
         return -1;
     }
 
     int fd;
     if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
-        SLOGE("Error opening devmapper (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed open";
         free(buffer);
         free(buffer2);
         return -1;
@@ -263,7 +224,7 @@ int Devmapper::destroyAll() {
     ioctlInit(io, (1024 * 64), NULL, 0);
 
     if (ioctl(fd, DM_LIST_DEVICES, io)) {
-        SLOGE("DM_LIST_DEVICES ioctl failed (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed DM_LIST_DEVICES";
         free(buffer);
         free(buffer2);
         close(fd);
@@ -281,19 +242,20 @@ int Devmapper::destroyAll() {
     unsigned nxt = 0;
     do {
         n = (struct dm_name_list *) (((char *) n) + nxt);
-        if (strncmp(n->name, kVoldPrefix, strlen(kVoldPrefix)) == 0) {
-            LOG(DEBUG) << "Tearing down stale dm device named " << n->name;
+        auto name = std::string(n->name);
+        if (android::base::StartsWith(name, kVoldPrefix)) {
+            LOG(DEBUG) << "Tearing down stale dm device named " << name;
 
             memset(buffer2, 0, DEVMAPPER_BUFFER_SIZE);
             struct dm_ioctl *io2 = (struct dm_ioctl *) buffer2;
             ioctlInit(io2, DEVMAPPER_BUFFER_SIZE, n->name, 0);
             if (ioctl(fd, DM_DEV_REMOVE, io2)) {
                 if (errno != ENXIO) {
-                    PLOG(WARNING) << "Failed to destroy dm device named " << n->name;
+                    PLOG(WARNING) << "Failed to destroy dm device named " << name;
                 }
             }
         } else {
-            LOG(VERBOSE) << "Found unmanaged dm device named " << n->name;
+            LOG(VERBOSE) << "Found unmanaged dm device named " << name;
         }
         nxt = n->next;
     } while (nxt);

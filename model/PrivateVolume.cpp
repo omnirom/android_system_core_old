@@ -53,7 +53,7 @@ PrivateVolume::~PrivateVolume() {
 }
 
 status_t PrivateVolume::readMetadata() {
-    status_t res = ReadMetadata(mDmDevPath, mFsType, mFsUuid, mFsLabel);
+    status_t res = ReadMetadata(mDmDevPath, &mFsType, &mFsUuid, &mFsLabel);
 
     auto listener = getListener();
     if (listener) listener->onVolumeMetadataChanged(getId(), mFsType, mFsUuid, mFsLabel);
