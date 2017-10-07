@@ -19,6 +19,8 @@
 #include "KeyStorage.h"
 #include "KeyUtil.h"
 #include "Utils.h"
+#include "VoldUtil.h"
+
 
 #include <algorithm>
 #include <map>
@@ -261,11 +263,18 @@ static bool lookup_key_ref(const std::map<userid_t, std::string>& key_map, useri
     return true;
 }
 
+static void get_file_encryption_modes(const char **contents_mode_ret,
+                                       const char **filenames_mode_ret)
+{
+    struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab_default, DATA_MNT_POINT);
+    fs_mgr_get_file_encryption_modes(rec, contents_mode_ret, filenames_mode_ret);
+}
+
 static bool ensure_policy(const std::string& raw_ref, const std::string& path) {
     const char *contents_mode;
     const char *filenames_mode;
 
-    cryptfs_get_file_encryption_modes(&contents_mode, &filenames_mode);
+    get_file_encryption_modes(&contents_mode, &filenames_mode);
 
     if (e4crypt_policy_ensure(path.c_str(),
                               raw_ref.data(), raw_ref.size(),
@@ -330,7 +339,7 @@ bool e4crypt_initialize_global_de() {
 
     const char *contents_mode;
     const char *filenames_mode;
-    cryptfs_get_file_encryption_modes(&contents_mode, &filenames_mode);
+    get_file_encryption_modes(&contents_mode, &filenames_mode);
     std::string modestring = std::string(contents_mode) + ":" + filenames_mode;
 
     std::string mode_filename = std::string("/data") + e4crypt_key_mode;
