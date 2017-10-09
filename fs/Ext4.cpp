@@ -42,6 +42,7 @@
 #include <android-base/stringprintf.h>
 #include <cutils/log.h>
 #include <cutils/properties.h>
+#include <ext4_utils/ext4_crypt.h>
 #include <logwrap/logwrap.h>
 #include <selinux/selinux.h>
 

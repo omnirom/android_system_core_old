@@ -38,6 +38,7 @@
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 #include <errno.h>
+#include <ext4_utils/ext4_crypt.h>
 #include <ext4_utils/ext4_utils.h>
 #include <linux/kdev_t.h>
 #include <fs_mgr.h>

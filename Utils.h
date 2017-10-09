@@ -103,10 +103,10 @@ std::string BuildDataMiscCePath(userid_t userid);
 std::string BuildDataMiscDePath(userid_t userid);
 std::string BuildDataProfilesDePath(userid_t userid);
 
-std::string BuildDataPath(const char* volumeUuid);
-std::string BuildDataMediaCePath(const char* volumeUuid, userid_t userid);
-std::string BuildDataUserCePath(const char* volumeUuid, userid_t userid);
-std::string BuildDataUserDePath(const char* volumeUuid, userid_t userid);
+std::string BuildDataPath(const std::string& volumeUuid);
+std::string BuildDataMediaCePath(const std::string& volumeUuid, userid_t userid);
+std::string BuildDataUserCePath(const std::string& volumeUuid, userid_t userid);
+std::string BuildDataUserDePath(const std::string& volumeUuid, userid_t userid);
 
 dev_t GetDevice(const std::string& path);
 

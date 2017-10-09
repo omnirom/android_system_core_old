@@ -585,54 +585,54 @@ std::string BuildKeyPath(const std::string& partGuid) {
 }
 
 std::string BuildDataSystemLegacyPath(userid_t userId) {
-    return StringPrintf("%s/system/users/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/system/users/%u", BuildDataPath("").c_str(), userId);
 }
 
 std::string BuildDataSystemCePath(userid_t userId) {
-    return StringPrintf("%s/system_ce/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/system_ce/%u", BuildDataPath("").c_str(), userId);
 }
 
 std::string BuildDataSystemDePath(userid_t userId) {
-    return StringPrintf("%s/system_de/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/system_de/%u", BuildDataPath("").c_str(), userId);
 }
 
 std::string BuildDataMiscLegacyPath(userid_t userId) {
-    return StringPrintf("%s/misc/user/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/misc/user/%u", BuildDataPath("").c_str(), userId);
 }
 
 std::string BuildDataMiscCePath(userid_t userId) {
-    return StringPrintf("%s/misc_ce/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/misc_ce/%u", BuildDataPath("").c_str(), userId);
 }
 
 std::string BuildDataMiscDePath(userid_t userId) {
-    return StringPrintf("%s/misc_de/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/misc_de/%u", BuildDataPath("").c_str(), userId);
 }
 
 // Keep in sync with installd (frameworks/native/cmds/installd/utils.h)
 std::string BuildDataProfilesDePath(userid_t userId) {
-    return StringPrintf("%s/misc/profiles/cur/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/misc/profiles/cur/%u", BuildDataPath("").c_str(), userId);
 }
 
-std::string BuildDataPath(const char* volumeUuid) {
+std::string BuildDataPath(const std::string& volumeUuid) {
     // TODO: unify with installd path generation logic
-    if (volumeUuid == nullptr) {
+    if (volumeUuid.empty()) {
         return "/data";
     } else {
         CHECK(isValidFilename(volumeUuid));
-        return StringPrintf("/mnt/expand/%s", volumeUuid);
+        return StringPrintf("/mnt/expand/%s", volumeUuid.c_str());
     }
 }
 
-std::string BuildDataMediaCePath(const char* volumeUuid, userid_t userId) {
+std::string BuildDataMediaCePath(const std::string& volumeUuid, userid_t userId) {
     // TODO: unify with installd path generation logic
     std::string data(BuildDataPath(volumeUuid));
     return StringPrintf("%s/media/%u", data.c_str(), userId);
 }
 
-std::string BuildDataUserCePath(const char* volumeUuid, userid_t userId) {
+std::string BuildDataUserCePath(const std::string& volumeUuid, userid_t userId) {
     // TODO: unify with installd path generation logic
     std::string data(BuildDataPath(volumeUuid));
-    if (volumeUuid == nullptr && userId == 0) {
+    if (volumeUuid.empty() && userId == 0) {
         std::string legacy = StringPrintf("%s/data", data.c_str());
         struct stat sb;
         if (lstat(legacy.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode)) {
@@ -643,7 +643,7 @@ std::string BuildDataUserCePath(const char* volumeUuid, userid_t userId) {
     return StringPrintf("%s/user/%u", data.c_str(), userId);
 }
 
-std::string BuildDataUserDePath(const char* volumeUuid, userid_t userId) {
+std::string BuildDataUserDePath(const std::string& volumeUuid, userid_t userId) {
     // TODO: unify with installd path generation logic
     std::string data(BuildDataPath(volumeUuid));
     return StringPrintf("%s/user_de/%u", data.c_str(), userId);

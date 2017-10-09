@@ -32,6 +32,7 @@
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
+#include <ext4_utils/ext4_crypt.h>
 #include <fs_mgr.h>
 #include <private/android_filesystem_config.h>
 #include <utils/Trace.h>
@@ -666,7 +667,7 @@ binder::Status VoldNativeService::addUserKeyAuth(int32_t userId, int32_t userSer
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(e4crypt_add_user_key_auth(userId, userSerial, token.c_str(), secret.c_str()));
+    return translateBool(e4crypt_add_user_key_auth(userId, userSerial, token, secret));
 }
 
 binder::Status VoldNativeService::fixateNewestUserKeyAuth(int32_t userId) {
@@ -681,7 +682,7 @@ binder::Status VoldNativeService::unlockUserKey(int32_t userId, int32_t userSeri
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(e4crypt_unlock_user_key(userId, userSerial, token.c_str(), secret.c_str()));
+    return translateBool(e4crypt_unlock_user_key(userId, userSerial, token, secret));
 }
 
 binder::Status VoldNativeService::lockUserKey(int32_t userId) {
@@ -696,7 +697,8 @@ binder::Status VoldNativeService::prepareUserStorage(const std::unique_ptr<std::
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    const char* uuid_ = uuid ? uuid->c_str() : nullptr;
+    std::string empty_string = "";
+    auto uuid_ = uuid ? *uuid : empty_string;
     return translateBool(e4crypt_prepare_user_storage(uuid_, userId, userSerial, flags));
 }
 
@@ -705,7 +707,8 @@ binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    const char* uuid_ = uuid ? uuid->c_str() : nullptr;
+    std::string empty_string = "";
+    auto uuid_ = uuid ? *uuid : empty_string;
     return translateBool(e4crypt_destroy_user_storage(uuid_, userId, flags));
 }
 
@@ -713,7 +716,7 @@ binder::Status VoldNativeService::secdiscard(const std::string& path) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(e4crypt_secdiscard(path.c_str()));
+    return translateBool(e4crypt_secdiscard(path));
 }
 
 }  // namespace vold
