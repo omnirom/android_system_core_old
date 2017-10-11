@@ -23,10 +23,11 @@
 #include "Ext4Crypt.h"
 
 #include <android-base/file.h>
+#include <android-base/logging.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
-#include <android-base/logging.h>
 #include <diskconfig/diskconfig.h>
+#include <ext4_utils/ext4_crypt.h>
 
 #include <vector>
 #include <fcntl.h>

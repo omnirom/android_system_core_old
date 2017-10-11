@@ -91,8 +91,8 @@ static bool e4crypt_is_emulated() {
     return property_get_bool("persist.sys.emulate_fbe", false);
 }
 
-static const char* escape_null(const char* value) {
-    return (value == nullptr) ? "null" : value;
+static const char* escape_empty(const std::string& value) {
+    return value.empty() ? "null" : value.c_str();
 }
 
 static std::string get_de_key_path(userid_t user_id) {
@@ -379,7 +379,7 @@ bool e4crypt_init_user0() {
     // We can only safely prepare DE storage here, since CE keys are probably
     // entangled with user credentials.  The framework will always prepare CE
     // storage once CE keys are installed.
-    if (!e4crypt_prepare_user_storage(nullptr, 0, 0, FLAG_STORAGE_DE)) {
+    if (!e4crypt_prepare_user_storage("", 0, 0, FLAG_STORAGE_DE)) {
         LOG(ERROR) << "Failed to prepare user 0 storage";
         return false;
     }
@@ -491,8 +491,8 @@ static bool emulated_unlock(const std::string& path, mode_t mode) {
     return true;
 }
 
-static bool parse_hex(const char* hex, std::string* result) {
-    if (strcmp("!", hex) == 0) {
+static bool parse_hex(const std::string& hex, std::string* result) {
+    if (hex == "!") {
         *result = "";
         return true;
     }
@@ -503,10 +503,10 @@ static bool parse_hex(const char* hex, std::string* result) {
     return true;
 }
 
-bool e4crypt_add_user_key_auth(userid_t user_id, int serial, const char* token_hex,
-                          const char* secret_hex) {
+bool e4crypt_add_user_key_auth(userid_t user_id, int serial, const std::string& token_hex,
+                               const std::string& secret_hex) {
     LOG(DEBUG) << "e4crypt_add_user_key_auth " << user_id << " serial=" << serial
-               << " token_present=" << (strcmp(token_hex, "!") != 0);
+               << " token_present=" << (token_hex != "!");
     if (!e4crypt_is_native()) return true;
     if (s_ephemeral_users.count(user_id) != 0) return true;
     std::string token, secret;
@@ -543,10 +543,10 @@ bool e4crypt_fixate_newest_user_key_auth(userid_t user_id) {
 }
 
 // TODO: rename to 'install' for consistency, and take flags to know which keys to install
-bool e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token_hex,
-                             const char* secret_hex) {
+bool e4crypt_unlock_user_key(userid_t user_id, int serial, const std::string& token_hex,
+                             const std::string& secret_hex) {
     LOG(DEBUG) << "e4crypt_unlock_user_key " << user_id << " serial=" << serial
-               << " token_present=" << (strcmp(token_hex, "!") != 0);
+               << " token_present=" << (token_hex != "!");
     if (e4crypt_is_native()) {
         if (s_ce_key_raw_refs.count(user_id) != 0) {
             LOG(WARNING) << "Tried to unlock already-unlocked key for user " << user_id;
@@ -566,8 +566,8 @@ bool e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token_hex
         // back into a known-good state.
         if (!emulated_unlock(android::vold::BuildDataSystemCePath(user_id), 0771) ||
             !emulated_unlock(android::vold::BuildDataMiscCePath(user_id), 01771) ||
-            !emulated_unlock(android::vold::BuildDataMediaCePath(nullptr, user_id), 0770) ||
-            !emulated_unlock(android::vold::BuildDataUserCePath(nullptr, user_id), 0771)) {
+            !emulated_unlock(android::vold::BuildDataMediaCePath("", user_id), 0770) ||
+            !emulated_unlock(android::vold::BuildDataUserCePath("", user_id), 0771)) {
             LOG(ERROR) << "Failed to unlock user " << user_id;
             return false;
         }
@@ -584,8 +584,8 @@ bool e4crypt_lock_user_key(userid_t user_id) {
         // When in emulation mode, we just use chmod
         if (!emulated_lock(android::vold::BuildDataSystemCePath(user_id)) ||
             !emulated_lock(android::vold::BuildDataMiscCePath(user_id)) ||
-            !emulated_lock(android::vold::BuildDataMediaCePath(nullptr, user_id)) ||
-            !emulated_lock(android::vold::BuildDataUserCePath(nullptr, user_id))) {
+            !emulated_lock(android::vold::BuildDataMediaCePath("", user_id)) ||
+            !emulated_lock(android::vold::BuildDataUserCePath("", user_id))) {
             LOG(ERROR) << "Failed to lock user " << user_id;
             return false;
         }
@@ -594,9 +594,9 @@ bool e4crypt_lock_user_key(userid_t user_id) {
     return true;
 }
 
-bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int serial,
-        int flags) {
-    LOG(DEBUG) << "e4crypt_prepare_user_storage for volume " << escape_null(volume_uuid)
+bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_id, int serial,
+                                  int flags) {
+    LOG(DEBUG) << "e4crypt_prepare_user_storage for volume " << escape_empty(volume_uuid)
                << ", user " << user_id << ", serial " << serial << ", flags " << flags;
 
     if (flags & FLAG_STORAGE_DE) {
@@ -610,7 +610,7 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
         auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
 
-        if (volume_uuid == nullptr) {
+        if (volume_uuid.empty()) {
             if (!prepare_dir(system_legacy_path, 0700, AID_SYSTEM, AID_SYSTEM)) return false;
 #if MANAGE_MISC_DIRS
             if (!prepare_dir(misc_legacy_path, 0750, multiuser_get_uid(user_id, AID_SYSTEM),
@@ -626,7 +626,7 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
         if (e4crypt_is_native()) {
             std::string de_raw_ref;
             if (!lookup_key_ref(s_de_key_raw_refs, user_id, &de_raw_ref)) return false;
-            if (volume_uuid == nullptr) {
+            if (volume_uuid.empty()) {
                 if (!ensure_policy(de_raw_ref, system_de_path)) return false;
                 if (!ensure_policy(de_raw_ref, misc_de_path)) return false;
             }
@@ -641,7 +641,7 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
         auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
         auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
 
-        if (volume_uuid == nullptr) {
+        if (volume_uuid.empty()) {
             if (!prepare_dir(system_ce_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
             if (!prepare_dir(misc_ce_path, 01771, AID_SYSTEM, AID_MISC)) return false;
         }
@@ -651,7 +651,7 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
         if (e4crypt_is_native()) {
             std::string ce_raw_ref;
             if (!lookup_key_ref(s_ce_key_raw_refs, user_id, &ce_raw_ref)) return false;
-            if (volume_uuid == nullptr) {
+            if (volume_uuid.empty()) {
                 if (!ensure_policy(ce_raw_ref, system_ce_path)) return false;
                 if (!ensure_policy(ce_raw_ref, misc_ce_path)) return false;
 
@@ -669,8 +669,8 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
     return true;
 }
 
-bool e4crypt_destroy_user_storage(const char* volume_uuid, userid_t user_id, int flags) {
-    LOG(DEBUG) << "e4crypt_destroy_user_storage for volume " << escape_null(volume_uuid)
+bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_id, int flags) {
+    LOG(DEBUG) << "e4crypt_destroy_user_storage for volume " << escape_empty(volume_uuid)
                << ", user " << user_id << ", flags " << flags;
     bool res = true;
 
@@ -685,7 +685,7 @@ bool e4crypt_destroy_user_storage(const char* volume_uuid, userid_t user_id, int
         auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
 
-        if (volume_uuid == nullptr) {
+        if (volume_uuid.empty()) {
             res &= destroy_dir(system_legacy_path);
 #if MANAGE_MISC_DIRS
             res &= destroy_dir(misc_legacy_path);
@@ -704,7 +704,7 @@ bool e4crypt_destroy_user_storage(const char* volume_uuid, userid_t user_id, int
         auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
         auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
 
-        if (volume_uuid == nullptr) {
+        if (volume_uuid.empty()) {
             res &= destroy_dir(system_ce_path);
             res &= destroy_dir(misc_ce_path);
         }
@@ -715,6 +715,6 @@ bool e4crypt_destroy_user_storage(const char* volume_uuid, userid_t user_id, int
     return res;
 }
 
-bool e4crypt_secdiscard(const char* path) {
-    return android::vold::runSecdiscardSingle(std::string(path));
+bool e4crypt_secdiscard(const std::string& path) {
+    return android::vold::runSecdiscardSingle(path);
 }

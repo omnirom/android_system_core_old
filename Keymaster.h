@@ -17,8 +17,6 @@
 #ifndef ANDROID_VOLD_KEYMASTER_H
 #define ANDROID_VOLD_KEYMASTER_H
 
-#ifdef __cplusplus
-
 #include "KeyBuffer.h"
 
 #include <memory>
@@ -127,8 +125,7 @@ class Keymaster {
 }  // namespace vold
 }  // namespace android
 
-#endif // __cplusplus
-
+// FIXME no longer needed now cryptfs is in C++.
 
 /*
  * The following functions provide C bindings to keymaster services
@@ -138,7 +135,6 @@ class Keymaster {
  * The sign_object function signes an object with the given keymaster
  * key.
  */
-__BEGIN_DECLS
 
 int keymaster_compatibility_cryptfs_scrypt();
 int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size,
@@ -156,6 +152,5 @@ int keymaster_sign_object_for_cryptfs_scrypt(const uint8_t* key_blob,
                                              uint8_t** signature_buffer,
                                              size_t* signature_buffer_size);
 
-__END_DECLS
 
 #endif
