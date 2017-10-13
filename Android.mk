@@ -88,7 +88,7 @@ common_local_tidy_checks := -*,clang-analyzer-security*,cert-*,-cert-err58-cpp
 vold_conlyflags := -std=c11
 vold_cflags := -Werror -Wall -Wno-missing-field-initializers -Wno-unused-variable -Wno-unused-parameter
 
-required_modules :=
+required_modules := vold_prepare_subdirs
 ifeq ($(TARGET_USERIMAGES_USE_EXT4), true)
   required_modules += mke2fs
 endif
@@ -180,5 +180,31 @@ LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
 
 include $(BUILD_EXECUTABLE)
+
+include $(CLEAR_VARS)
+
+LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
+LOCAL_CLANG := true
+LOCAL_TIDY := $(common_local_tidy_enabled)
+LOCAL_TIDY_FLAGS := $(common_local_tidy_flags)
+LOCAL_TIDY_CHECKS := $(common_local_tidy_checks)
+LOCAL_SRC_FILES:= \
+    prepare_dir.cpp \
+
+LOCAL_MODULE:= prepare_dir
+LOCAL_SHARED_LIBRARIES := libbase libcutils libselinux
+LOCAL_CFLAGS := $(vold_cflags)
+LOCAL_CONLYFLAGS := $(vold_conlyflags)
+
+include $(BUILD_EXECUTABLE)
+
+include $(CLEAR_VARS)
+
+LOCAL_MODULE:= vold_prepare_subdirs
+LOCAL_MODULE_CLASS := EXECUTABLES
+LOCAL_SRC_FILES := vold_prepare_subdirs
+LOCAL_REQUIRED_MODULES := prepare_dir
+
+include $(BUILD_PREBUILT)
 
 include $(LOCAL_PATH)/tests/Android.mk
