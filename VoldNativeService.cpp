@@ -695,20 +695,22 @@ binder::Status VoldNativeService::lockUserKey(int32_t userId) {
 binder::Status VoldNativeService::prepareUserStorage(const std::unique_ptr<std::string>& uuid,
         int32_t userId, int32_t userSerial, int32_t flags) {
     ENFORCE_UID(AID_SYSTEM);
-    ACQUIRE_CRYPT_LOCK;
-
     std::string empty_string = "";
     auto uuid_ = uuid ? *uuid : empty_string;
+    CHECK_ARGUMENT_HEX(uuid_);
+
+    ACQUIRE_CRYPT_LOCK;
     return translateBool(e4crypt_prepare_user_storage(uuid_, userId, userSerial, flags));
 }
 
 binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::string>& uuid,
         int32_t userId, int32_t flags) {
     ENFORCE_UID(AID_SYSTEM);
-    ACQUIRE_CRYPT_LOCK;
-
     std::string empty_string = "";
     auto uuid_ = uuid ? *uuid : empty_string;
+    CHECK_ARGUMENT_HEX(uuid_);
+
+    ACQUIRE_CRYPT_LOCK;
     return translateBool(e4crypt_destroy_user_storage(uuid_, userId, flags));
 }
 
