@@ -18,16 +18,17 @@
 
 #include "VoldNativeService.h"
 #include "VolumeManager.h"
-#include "BenchmarkTask.h"
-#include "MoveTask.h"
+#include "Benchmark.h"
+#include "MoveStorage.h"
 #include "Process.h"
-#include "TrimTask.h"
+#include "IdleMaint.h"
 
 #include "cryptfs.h"
 #include "Ext4Crypt.h"
 #include "MetadataCrypt.h"
 
 #include <fstream>
+#include <thread>
 
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
@@ -119,6 +120,10 @@ binder::Status checkArgumentPath(const std::string& path) {
     if (path[0] != '/') {
         return exception(binder::Status::EX_ILLEGAL_ARGUMENT,
                 StringPrintf("Path %s is relative", path.c_str()));
+    }
+    if ((path + '/').find("/../") != std::string::npos) {
+        return exception(binder::Status::EX_ILLEGAL_ARGUMENT,
+                StringPrintf("Path %s is shady", path.c_str()));
     }
     for (const char& c : path) {
         if (c == '\0' || c == '\n') {
@@ -377,7 +382,9 @@ binder::Status VoldNativeService::benchmark(const std::string& volId,
         return error("Volume " + volId + " missing path");
     }
 
-    (new android::vold::BenchmarkTask(path, listener))->start();
+    std::thread([=]() {
+        android::vold::Benchmark(path, listener);
+    }).detach();
     return ok();
 }
 
@@ -395,7 +402,10 @@ binder::Status VoldNativeService::moveStorage(const std::string& fromVolId,
     } else if (toVol == nullptr) {
         return error("Failed to find volume " + toVolId);
     }
-    (new android::vold::MoveTask(fromVol, toVol, listener))->start();
+
+    std::thread([=]() {
+        android::vold::MoveStorage(fromVol, toVol, listener);
+    }).detach();
     return ok();
 }
 
@@ -446,7 +456,9 @@ binder::Status VoldNativeService::fstrim(int32_t fstrimFlags,
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    (new android::vold::TrimTask(fstrimFlags, listener))->start();
+    std::thread([=]() {
+        android::vold::Trim(listener);
+    }).detach();
     return ok();
 }
 
@@ -712,6 +724,7 @@ binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::
 
 binder::Status VoldNativeService::secdiscard(const std::string& path) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PATH(path);
     ACQUIRE_CRYPT_LOCK;
 
     return translateBool(e4crypt_secdiscard(path));

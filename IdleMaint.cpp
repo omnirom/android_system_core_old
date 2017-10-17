@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "TrimTask.h"
+#include "IdleMaint.h"
 #include "Utils.h"
 #include "VolumeManager.h"
 
@@ -31,36 +31,26 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
-/* From a would-be kernel header */
-#define FIDTRIM         _IOWR('f', 128, struct fstrim_range)    /* Deep discard trim */
-
 using android::base::StringPrintf;
 
 namespace android {
 namespace vold {
 
-static const char* kWakeLock = "TrimTask";
+static const char* kWakeLock = "IdleMaint";
 
-TrimTask::TrimTask(int flags, const android::sp<android::os::IVoldTaskListener>& listener) :
-        mFlags(flags), mListener(listener) {
-    // Collect both fstab and vold volumes
-    addFromFstab();
-
+static void addFromVolumeManager(std::list<std::string>* paths) {
     VolumeManager* vm = VolumeManager::Instance();
     std::list<std::string> privateIds;
     vm->listVolumes(VolumeBase::Type::kPrivate, privateIds);
     for (const auto& id : privateIds) {
         auto vol = vm->findVolume(id);
         if (vol != nullptr && vol->getState() == VolumeBase::State::kMounted) {
-            mPaths.push_back(vol->getPath());
+            paths->push_back(vol->getPath());
         }
     }
 }
 
-TrimTask::~TrimTask() {
-}
-
-void TrimTask::addFromFstab() {
+static void addFromFstab(std::list<std::string>* paths) {
     std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)> fstab(fs_mgr_read_fstab_default(),
                                                                fs_mgr_free_fstab);
     struct fstab_rec *prev_rec = NULL;
@@ -89,19 +79,20 @@ void TrimTask::addFromFstab() {
             continue;
         }
 
-        mPaths.push_back(fstab->recs[i].mount_point);
+        paths->push_back(fstab->recs[i].mount_point);
         prev_rec = &fstab->recs[i];
     }
 }
 
-void TrimTask::start() {
-    mThread = std::thread(&TrimTask::run, this);
-}
-
-void TrimTask::run() {
+void Trim(const android::sp<android::os::IVoldTaskListener>& listener) {
     acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
 
-    for (const auto& path : mPaths) {
+    // Collect both fstab and vold volumes
+    std::list<std::string> paths;
+    addFromFstab(&paths);
+    addFromVolumeManager(&paths);
+
+    for (const auto& path : paths) {
         LOG(DEBUG) << "Starting trim of " << path;
 
         android::os::PersistableBundle extras;
@@ -110,8 +101,8 @@ void TrimTask::run() {
         int fd = open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
         if (fd < 0) {
             PLOG(WARNING) << "Failed to open " << path;
-            if (mListener) {
-                mListener->onStatus(-1, extras);
+            if (listener) {
+                listener->onStatus(-1, extras);
             }
             continue;
         }
@@ -121,10 +112,10 @@ void TrimTask::run() {
         range.len = ULLONG_MAX;
 
         nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
-        if (ioctl(fd, (mFlags & Flags::kDeepTrim) ? FIDTRIM : FITRIM, &range)) {
+        if (ioctl(fd, FITRIM, &range)) {
             PLOG(WARNING) << "Trim failed on " << path;
-            if (mListener) {
-                mListener->onStatus(-1, extras);
+            if (listener) {
+                listener->onStatus(-1, extras);
             }
         } else {
             nsecs_t time = systemTime(SYSTEM_TIME_BOOTTIME) - start;
@@ -132,16 +123,16 @@ void TrimTask::run() {
                     << " in " << nanoseconds_to_milliseconds(time) << "ms";
             extras.putLong(String16("bytes"), range.len);
             extras.putLong(String16("time"), time);
-            if (mListener) {
-                mListener->onStatus(0, extras);
+            if (listener) {
+                listener->onStatus(0, extras);
             }
         }
         close(fd);
     }
 
-    if (mListener) {
+    if (listener) {
         android::os::PersistableBundle extras;
-        mListener->onFinished(0, extras);
+        listener->onFinished(0, extras);
     }
 
     release_wake_lock(kWakeLock);

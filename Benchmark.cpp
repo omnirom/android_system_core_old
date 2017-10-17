@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "BenchmarkTask.h"
+#include "Benchmark.h"
 #include "BenchmarkGen.h"
 #include "VolumeManager.h"
 
@@ -23,6 +23,8 @@
 #include <cutils/iosched_policy.h>
 #include <hardware_legacy/power.h>
 #include <private/android_filesystem_config.h>
+
+#include <thread>
 
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -36,21 +38,10 @@ using android::base::WriteStringToFile;
 namespace android {
 namespace vold {
 
-static const char* kWakeLock = "BenchmarkTask";
+static const char* kWakeLock = "Benchmark";
 
-BenchmarkTask::BenchmarkTask(const std::string& path,
-        const android::sp<android::os::IVoldTaskListener>& listener) :
-        mPath(path), mListener(listener) {
-}
-
-BenchmarkTask::~BenchmarkTask() {
-}
-
-void BenchmarkTask::start() {
-    mThread = std::thread(&BenchmarkTask::run, this);
-}
-
-static status_t runInternal(const std::string& rootPath, android::os::PersistableBundle& extras) {
+static status_t benchmarkInternal(const std::string& rootPath,
+        android::os::PersistableBundle* extras) {
     auto path = rootPath;
     path += "/misc";
     if (android::vold::PrepareDir(path, 01771, AID_SYSTEM, AID_MISC)) {
@@ -143,23 +134,24 @@ static status_t runInternal(const std::string& rootPath, android::os::Persistabl
     LOG(INFO) << "run took " << nanoseconds_to_milliseconds(run_d) << "ms";
     LOG(INFO) << "destroy took " << nanoseconds_to_milliseconds(destroy_d) << "ms";
 
-    extras.putString(String16("path"), String16(path.c_str()));
-    extras.putString(String16("ident"), String16(BenchmarkIdent().c_str()));
-    extras.putLong(String16("create"), create_d);
-    extras.putLong(String16("drop"), drop_d);
-    extras.putLong(String16("run"), run_d);
-    extras.putLong(String16("destroy"), destroy_d);
+    extras->putString(String16("path"), String16(path.c_str()));
+    extras->putString(String16("ident"), String16(BenchmarkIdent().c_str()));
+    extras->putLong(String16("create"), create_d);
+    extras->putLong(String16("drop"), drop_d);
+    extras->putLong(String16("run"), run_d);
+    extras->putLong(String16("destroy"), destroy_d);
 
     return 0;
 }
 
-void BenchmarkTask::run() {
+void Benchmark(const std::string& path,
+        const android::sp<android::os::IVoldTaskListener>& listener) {
     acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
 
     android::os::PersistableBundle extras;
-    status_t res = runInternal(mPath, extras);
-    if (mListener) {
-        mListener->onFinished(res, extras);
+    status_t res = benchmarkInternal(path, &extras);
+    if (listener) {
+        listener->onFinished(res, extras);
     }
 
     release_wake_lock(kWakeLock);
