@@ -136,3 +136,18 @@ LOCAL_C_INCLUDES += $(LOCAL_PATH)/upstream-netbsd/include/
 LOCAL_MODULE := grep
 LOCAL_POST_INSTALL_CMD := $(hide) $(foreach t,egrep fgrep,ln -sf grep $(TARGET_OUT)/bin/$(t);)
 include $(BUILD_EXECUTABLE)
+
+# Install grep in /vendor
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES := \
+    upstream-netbsd/usr.bin/grep/fastgrep.c \
+    upstream-netbsd/usr.bin/grep/file.c \
+    upstream-netbsd/usr.bin/grep/grep.c \
+    upstream-netbsd/usr.bin/grep/queue.c \
+    upstream-netbsd/usr.bin/grep/util.c
+LOCAL_CFLAGS += $(common_cflags)
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/upstream-netbsd/include/
+LOCAL_VENDOR_MODULE := true
+LOCAL_MODULE := grep_vendor
+LOCAL_POST_INSTALL_CMD := $(hide) $(foreach t,grep egrep fgrep,ln -sf ${LOCAL_MODULE} $(TARGET_OUT_VENDOR_EXECUTABLES)/$(t);)
+include $(BUILD_EXECUTABLE)
