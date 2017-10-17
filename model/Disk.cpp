@@ -26,6 +26,8 @@
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
+#include <android-base/strings.h>
+#include <android-base/parseint.h>
 #include <diskconfig/diskconfig.h>
 #include <ext4_utils/ext4_crypt.h>
 
@@ -263,7 +265,11 @@ status_t Disk::readMetadata() {
             PLOG(WARNING) << "Failed to read manufacturer from " << path;
             return -errno;
         }
-        uint64_t manfid = strtoll(tmp.c_str(), nullptr, 16);
+        int64_t manfid;
+        if (!android::base::ParseInt(tmp, &manfid)) {
+            PLOG(WARNING) << "Failed to parse manufacturer " << tmp;
+            return -EINVAL;
+        }
         // Our goal here is to give the user a meaningful label, ideally
         // matching whatever is silk-screened on the card.  To reduce
         // user confusion, this list doesn't contain white-label manfid.
@@ -295,7 +301,7 @@ status_t Disk::readMetadata() {
 }
 
 status_t Disk::readPartitions() {
-    int8_t maxMinors = getMaxMinors();
+    int maxMinors = getMaxMinors();
     if (maxMinors < 0) {
         return -ENOTSUP;
     }
@@ -324,31 +330,40 @@ status_t Disk::readPartitions() {
     Table table = Table::kUnknown;
     bool foundParts = false;
     for (const auto& line : output) {
-        char* cline = (char*) line.c_str();
-        char* token = strtok(cline, kSgdiskToken);
-        if (token == nullptr) continue;
+        auto split = android::base::Split(line, kSgdiskToken);
+        auto it = split.begin();
+        if (it == split.end()) continue;
 
-        if (!strcmp(token, "DISK")) {
-            const char* type = strtok(nullptr, kSgdiskToken);
-            if (!strcmp(type, "mbr")) {
+        if (*it == "DISK") {
+            if (++it == split.end()) continue;
+            if (*it == "mbr") {
                 table = Table::kMbr;
-            } else if (!strcmp(type, "gpt")) {
+            } else if (*it == "gpt") {
                 table = Table::kGpt;
+            } else {
+                LOG(WARNING) << "Invalid partition table " << *it;
+                continue;
             }
-        } else if (!strcmp(token, "PART")) {
+        } else if (*it == "PART") {
             foundParts = true;
-            int i = strtol(strtok(nullptr, kSgdiskToken), nullptr, 10);
-            if (i <= 0 || i > maxMinors) {
-                LOG(WARNING) << mId << " is ignoring partition " << i
-                        << " beyond max supported devices";
+
+            if (++it == split.end()) continue;
+            int i = 0;
+            if (!android::base::ParseInt(*it, &i, 1, maxMinors)) {
+                LOG(WARNING) << "Invalid partition number " << *it;
                 continue;
             }
             dev_t partDevice = makedev(major(mDevice), minor(mDevice) + i);
 
             if (table == Table::kMbr) {
-                const char* type = strtok(nullptr, kSgdiskToken);
+                if (++it == split.end()) continue;
+                int type = 0;
+                if (!android::base::ParseInt("0x" + *it, &type)) {
+                    LOG(WARNING) << "Invalid partition type " << *it;
+                    continue;
+                }
 
-                switch (strtol(type, nullptr, 16)) {
+                switch (type) {
                 case 0x06: // FAT16
                 case 0x0b: // W95 FAT32 (LBA)
                 case 0x0c: // W95 FAT32 (LBA)
@@ -357,12 +372,14 @@ status_t Disk::readPartitions() {
                     break;
                 }
             } else if (table == Table::kGpt) {
-                const char* typeGuid = strtok(nullptr, kSgdiskToken);
-                const char* partGuid = strtok(nullptr, kSgdiskToken);
+                if (++it == split.end()) continue;
+                auto typeGuid = *it;
+                if (++it == split.end()) continue;
+                auto partGuid = *it;
 
-                if (!strcasecmp(typeGuid, kGptBasicData)) {
+                if (android::base::EqualsIgnoreCase(typeGuid, kGptBasicData)) {
                     createPublicVolume(partDevice);
-                } else if (!strcasecmp(typeGuid, kGptAndroidExpand)) {
+                } else if (android::base::EqualsIgnoreCase(typeGuid, kGptAndroidExpand)) {
                     createPrivateVolume(partDevice, partGuid);
                 }
             }
@@ -375,7 +392,7 @@ status_t Disk::readPartitions() {
 
         std::string fsType;
         std::string unused;
-        if (ReadMetadataUntrusted(mDevPath, fsType, unused, unused) == OK) {
+        if (ReadMetadataUntrusted(mDevPath, &fsType, &unused, &unused) == OK) {
             createPublicVolume(mDevice);
         } else {
             LOG(WARNING) << mId << " failed to identify, giving up";

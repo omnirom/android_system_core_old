@@ -20,7 +20,6 @@
 
 #include <android-base/stringprintf.h>
 #include <android-base/logging.h>
-#include <cutils/properties.h>
 #include <fs_mgr.h>
 #include <private/android_filesystem_config.h>
 #include <hardware_legacy/power.h>
@@ -67,9 +66,9 @@ void TrimTask::addFromFstab() {
     struct fstab_rec *prev_rec = NULL;
 
     for (int i = 0; i < fstab->num_entries; i++) {
+        auto fs_type = std::string(fstab->recs[i].fs_type);
         /* Skip raw partitions */
-        if (!strcmp(fstab->recs[i].fs_type, "emmc") ||
-            !strcmp(fstab->recs[i].fs_type, "mtd")) {
+        if (fs_type == "emmc" || fs_type == "mtd") {
             continue;
         }
         /* Skip read-only filesystems */

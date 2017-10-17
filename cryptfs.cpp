@@ -1277,10 +1277,10 @@ int wait_and_unmount(const char *mountpoint, bool kill)
         if (kill) {
             if (i == (WAIT_UNMOUNT_COUNT - 3)) {
                 SLOGW("sending SIGHUP to processes with open files\n");
-                vold_killProcessesWithOpenFiles(mountpoint, SIGTERM);
+                android::vold::KillProcessesWithOpenFiles(mountpoint, SIGTERM);
             } else if (i == (WAIT_UNMOUNT_COUNT - 2)) {
                 SLOGW("sending SIGKILL to processes with open files\n");
-                vold_killProcessesWithOpenFiles(mountpoint, SIGKILL);
+                android::vold::KillProcessesWithOpenFiles(mountpoint, SIGKILL);
             }
         }
 
@@ -1291,7 +1291,7 @@ int wait_and_unmount(const char *mountpoint, bool kill)
       SLOGD("unmounting %s succeeded\n", mountpoint);
       rc = 0;
     } else {
-      vold_killProcessesWithOpenFiles(mountpoint, 0);
+      android::vold::KillProcessesWithOpenFiles(mountpoint, 0);
       SLOGE("unmounting %s failed: %s\n", mountpoint, strerror(err));
       rc = -1;
     }

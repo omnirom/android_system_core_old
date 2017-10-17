@@ -22,6 +22,7 @@
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/properties.h>
+#include <android-base/strings.h>
 #include <android-base/stringprintf.h>
 #include <cutils/fs.h>
 #include <logwrap/logwrap.h>
@@ -129,19 +130,19 @@ status_t ForceUnmount(const std::string& path) {
     // we start sending signals
     if (!VolumeManager::shutting_down) sleep(5);
 
-    Process::killProcessesWithOpenFiles(cpath, SIGINT);
+    KillProcessesWithOpenFiles(path, SIGINT);
     if (!VolumeManager::shutting_down) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
 
-    Process::killProcessesWithOpenFiles(cpath, SIGTERM);
+    KillProcessesWithOpenFiles(path, SIGTERM);
     if (!VolumeManager::shutting_down) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
 
-    Process::killProcessesWithOpenFiles(cpath, SIGKILL);
+    KillProcessesWithOpenFiles(path, SIGKILL);
     if (!VolumeManager::shutting_down) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
@@ -151,25 +152,24 @@ status_t ForceUnmount(const std::string& path) {
 }
 
 status_t KillProcessesUsingPath(const std::string& path) {
-    const char* cpath = path.c_str();
-    if (Process::killProcessesWithOpenFiles(cpath, SIGINT) == 0) {
+    if (KillProcessesWithOpenFiles(path, SIGINT) == 0) {
         return OK;
     }
     if (!VolumeManager::shutting_down) sleep(5);
 
-    if (Process::killProcessesWithOpenFiles(cpath, SIGTERM) == 0) {
+    if (KillProcessesWithOpenFiles(path, SIGTERM) == 0) {
         return OK;
     }
     if (!VolumeManager::shutting_down) sleep(5);
 
-    if (Process::killProcessesWithOpenFiles(cpath, SIGKILL) == 0) {
+    if (KillProcessesWithOpenFiles(path, SIGKILL) == 0) {
         return OK;
     }
     if (!VolumeManager::shutting_down) sleep(5);
 
     // Send SIGKILL a second time to determine if we've
     // actually killed everyone with open files
-    if (Process::killProcessesWithOpenFiles(cpath, SIGKILL) == 0) {
+    if (KillProcessesWithOpenFiles(path, SIGKILL) == 0) {
         return OK;
     }
     PLOG(ERROR) << "Failed to kill processes using " << path;
@@ -184,11 +184,28 @@ status_t BindMount(const std::string& source, const std::string& target) {
     return OK;
 }
 
-static status_t readMetadata(const std::string& path, std::string& fsType,
-        std::string& fsUuid, std::string& fsLabel, bool untrusted) {
-    fsType.clear();
-    fsUuid.clear();
-    fsLabel.clear();
+bool FindValue(const std::string& raw, const std::string& key, std::string* value) {
+    auto qual = key + "=\"";
+    auto start = raw.find(qual);
+    if (start > 0 && raw[start - 1] != ' ') {
+        start = raw.find(qual, start + 1);
+    }
+
+    if (start == std::string::npos) return false;
+    start += qual.length();
+
+    auto end = raw.find("\"", start);
+    if (end == std::string::npos) return false;
+
+    *value = raw.substr(start, end - start);
+    return true;
+}
+
+static status_t readMetadata(const std::string& path, std::string* fsType,
+        std::string* fsUuid, std::string* fsLabel, bool untrusted) {
+    fsType->clear();
+    fsUuid->clear();
+    fsLabel->clear();
 
     std::vector<std::string> cmd;
     cmd.push_back(kBlkidPath);
@@ -209,36 +226,23 @@ static status_t readMetadata(const std::string& path, std::string& fsType,
         return res;
     }
 
-    char value[128];
     for (const auto& line : output) {
         // Extract values from blkid output, if defined
-        const char* cline = line.c_str();
-        const char* start = strstr(cline, "TYPE=");
-        if (start != nullptr && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
-            fsType = value;
-        }
-
-        start = strstr(cline, "UUID=");
-        if (start != nullptr && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
-            fsUuid = value;
-        }
-
-        start = strstr(cline, "LABEL=");
-        if (start != nullptr && sscanf(start + 6, "\"%127[^\"]\"", value) == 1) {
-            fsLabel = value;
-        }
+        FindValue(line, "TYPE", fsType);
+        FindValue(line, "UUID", fsUuid);
+        FindValue(line, "LABEL", fsLabel);
     }
 
     return OK;
 }
 
-status_t ReadMetadata(const std::string& path, std::string& fsType,
-        std::string& fsUuid, std::string& fsLabel) {
+status_t ReadMetadata(const std::string& path, std::string* fsType,
+        std::string* fsUuid, std::string* fsLabel) {
     return readMetadata(path, fsType, fsUuid, fsLabel, false);
 }
 
-status_t ReadMetadataUntrusted(const std::string& path, std::string& fsType,
-        std::string& fsUuid, std::string& fsLabel) {
+status_t ReadMetadataUntrusted(const std::string& path, std::string* fsType,
+        std::string* fsUuid, std::string* fsLabel) {
     return readMetadata(path, fsType, fsUuid, fsLabel, true);
 }
 
@@ -673,15 +677,27 @@ status_t RestoreconRecursive(const std::string& path) {
     return OK;
 }
 
-status_t SaneReadLinkAt(int dirfd, const char* path, char* buf, size_t bufsiz) {
-    ssize_t len = readlinkat(dirfd, path, buf, bufsiz);
-    if (len < 0) {
-        return -1;
-    } else if (len == (ssize_t) bufsiz) {
-        return -1;
-    } else {
-        buf[len] = '\0';
-        return 0;
+bool Readlinkat(int dirfd, const std::string& path, std::string* result) {
+    // Shamelessly borrowed from android::base::Readlink()
+    result->clear();
+
+    // Most Linux file systems (ext2 and ext4, say) limit symbolic links to
+    // 4095 bytes. Since we'll copy out into the string anyway, it doesn't
+    // waste memory to just start there. We add 1 so that we can recognize
+    // whether it actually fit (rather than being truncated to 4095).
+    std::vector<char> buf(4095 + 1);
+    while (true) {
+        ssize_t size = readlinkat(dirfd, path.c_str(), &buf[0], buf.size());
+        // Unrecoverable error?
+        if (size == -1)
+            return false;
+        // It fit! (If size == buf.size(), it may have been truncated.)
+        if (static_cast<size_t>(size) < buf.size()) {
+            result->assign(&buf[0], size);
+            return true;
+        }
+        // Double our buffer and try again.
+        buf.resize(buf.size() * 2);
     }
 }
 

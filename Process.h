@@ -17,28 +17,12 @@
 #ifndef _PROCESS_H
 #define _PROCESS_H
 
-#ifdef __cplusplus
+namespace android {
+namespace vold {
 
-class Process {
-public:
-    static int killProcessesWithOpenFiles(const char *path, int signal);
-    static int getPid(const char *s);
-    static int checkSymLink(int pid, const char *path, const char *name);
-    static int checkFileMaps(int pid, const char *path);
-    static int checkFileMaps(int pid, const char *path, char *openFilename, size_t max);
-    static int checkFileDescriptorSymLinks(int pid, const char *mountPoint);
-    static int checkFileDescriptorSymLinks(int pid, const char *mountPoint, char *openFilename, size_t max);
-    static void getProcessName(int pid, std::string& out_name);
-private:
-    static int readSymLink(const char *path, char *link, size_t max);
-    static int pathMatchesMountPoint(const char *path, const char *mountPoint);
-};
+int KillProcessesWithOpenFiles(const std::string& path, int signal);
 
-extern "C" {
-#endif /* __cplusplus */
-	void vold_killProcessesWithOpenFiles(const char *path, int signal);
-#ifdef __cplusplus
-}
-#endif
+}  // namespace vold
+}  // namespace android
 
 #endif

@@ -25,9 +25,9 @@
 #include "sehandle.h"
 
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <cutils/klog.h>
-#include <cutils/properties.h>
 #include <utils/Trace.h>
 
 #include <stdio.h>
@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    if (property_get_bool("vold.debug", false)) {
+    if (android::base::GetBoolProperty("vold.debug", false)) {
         vm->setDebug(true);
     }
 
@@ -120,8 +120,8 @@ int main(int argc, char** argv) {
 
     // This call should go after listeners are started to avoid
     // a deadlock between vold and init (see b/34278978 for details)
-    property_set("vold.has_adoptable", has_adoptable ? "1" : "0");
-    property_set("vold.has_quota", has_quota ? "1" : "0");
+    android::base::SetProperty("vold.has_adoptable", has_adoptable ? "1" : "0");
+    android::base::SetProperty("vold.has_quota", has_quota ? "1" : "0");
 
     // Do coldboot here so it won't block booting,
     // also the cold boot is needed in case we have flash drive
@@ -240,7 +240,7 @@ static int process_config(VolumeManager *vm, bool* has_adoptable, bool* has_quot
                 *has_adoptable = true;
             }
             if (fs_mgr_is_noemulatedsd(rec)
-                    || property_get_bool("vold.debug.default_primary", false)) {
+                    || android::base::GetBoolProperty("vold.debug.default_primary", false)) {
                 flags |= android::vold::Disk::Flags::kDefaultPrimary;
             }
 

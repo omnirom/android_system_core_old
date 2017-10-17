@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <fts.h>
 #include <dirent.h>
 #include <ctype.h>
 #include <pwd.h>
@@ -27,196 +28,98 @@
 #include <sys/stat.h>
 #include <signal.h>
 
-#define LOG_TAG "ProcessKiller"
+#include <fstream>
+#include <unordered_set>
 
 #include <android-base/file.h>
+#include <android-base/parseint.h>
+#include <android-base/strings.h>
 #include <android-base/stringprintf.h>
 #include <android-base/logging.h>
-#include <cutils/log.h>
 
 #include "Process.h"
 
-using android::base::ReadFileToString;
 using android::base::StringPrintf;
 
-int Process::readSymLink(const char *path, char *link, size_t max) {
-    struct stat s;
-    int length;
+namespace android {
+namespace vold {
 
-    if (lstat(path, &s) < 0)
-        return 0;
-    if ((s.st_mode & S_IFMT) != S_IFLNK)
-        return 0;
-
-    // we have a symlink
-    length = readlink(path, link, max- 1);
-    if (length <= 0)
-        return 0;
-    link[length] = 0;
-    return 1;
-}
-
-int Process::pathMatchesMountPoint(const char* path, const char* mountPoint) {
-    int length = strlen(mountPoint);
-    if (length > 1 && strncmp(path, mountPoint, length) == 0) {
-        // we need to do extra checking if mountPoint does not end in a '/'
-        if (mountPoint[length - 1] == '/')
-            return 1;
-        // if mountPoint does not have a trailing slash, we need to make sure
-        // there is one in the path to avoid partial matches.
-        return (path[length] == 0 || path[length] == '/');
-    }
-    
-    return 0;
-}
-
-void Process::getProcessName(int pid, std::string& out_name) {
-    if (!ReadFileToString(StringPrintf("/proc/%d/cmdline", pid), &out_name)) {
-        out_name = "???";
-    }
-}
-
-int Process::checkFileDescriptorSymLinks(int pid, const char *mountPoint) {
-    return checkFileDescriptorSymLinks(pid, mountPoint, NULL, 0);
-}
-
-int Process::checkFileDescriptorSymLinks(int pid, const char *mountPoint, char *openFilename, size_t max) {
-
-
-    // compute path to process's directory of open files
-    char    path[PATH_MAX];
-    snprintf(path, sizeof(path), "/proc/%d/fd", pid);
-    DIR *dir = opendir(path);
-    if (!dir)
-        return 0;
-
-    // remember length of the path
-    int parent_length = strlen(path);
-    // append a trailing '/'
-    path[parent_length++] = '/';
-
-    struct dirent* de;
-    while ((de = readdir(dir))) {
-        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..")
-                || strlen(de->d_name) + parent_length + 1 >= PATH_MAX)
-            continue;
-        
-        // append the file name, after truncating to parent directory
-        path[parent_length] = 0;
-        strlcat(path, de->d_name, PATH_MAX);
-
-        char link[PATH_MAX];
-
-        if (readSymLink(path, link, sizeof(link)) && pathMatchesMountPoint(link, mountPoint)) {
-            if (openFilename) {
-                memset(openFilename, 0, max);
-                strlcpy(openFilename, link, max);
+static bool checkMaps(const std::string& path, const std::string& prefix) {
+    bool found = false;
+    std::ifstream infile(path);
+    std::string line;
+    while (std::getline(infile, line)) {
+        std::string::size_type pos = line.find('/');
+        if (pos != std::string::npos) {
+            line = line.substr(pos);
+            if (android::base::StartsWith(line, prefix.c_str())) {
+                LOG(WARNING) << "Found map " << path << " referencing " << line;
+                found = true;
             }
-            closedir(dir);
-            return 1;
         }
     }
-
-    closedir(dir);
-    return 0;
+    return found;
 }
 
-int Process::checkFileMaps(int pid, const char *mountPoint) {
-    return checkFileMaps(pid, mountPoint, NULL, 0);
-}
-
-int Process::checkFileMaps(int pid, const char *mountPoint, char *openFilename, size_t max) {
-    FILE *file;
-    char buffer[PATH_MAX + 100];
-
-    snprintf(buffer, sizeof(buffer), "/proc/%d/maps", pid);
-    file = fopen(buffer, "re");
-    if (!file)
-        return 0;
-    
-    while (fgets(buffer, sizeof(buffer), file)) {
-        // skip to the path
-        const char* path = strchr(buffer, '/');
-        if (path && pathMatchesMountPoint(path, mountPoint)) {
-            if (openFilename) {
-                memset(openFilename, 0, max);
-                strlcpy(openFilename, path, max);
-            }
-            fclose(file);
-            return 1;
+static bool checkSymlink(const std::string& path, const std::string& prefix) {
+    std::string res;
+    if (android::base::Readlink(path, &res)) {
+        if (android::base::StartsWith(res, prefix.c_str())) {
+            LOG(WARNING) << "Found symlink " << path << " referencing " << res;
+            return true;
         }
     }
-    
-    fclose(file);
-    return 0;
+    return false;
 }
 
-int Process::checkSymLink(int pid, const char *mountPoint, const char *name) {
-    char    path[PATH_MAX];
-    char    link[PATH_MAX];
+int KillProcessesWithOpenFiles(const std::string& prefix, int signal) {
+    std::unordered_set<pid_t> pids;
 
-    snprintf(path, sizeof(path), "/proc/%d/%s", pid, name);
-    if (readSymLink(path, link, sizeof(link)) && pathMatchesMountPoint(link, mountPoint)) 
-        return 1;
-    return 0;
-}
-
-int Process::getPid(const char *s) {
-    int result = 0;
-    while (*s) {
-        if (!isdigit(*s)) return -1;
-        result = 10 * result + (*s++ - '0');
-    }
-    return result;
-}
-
-extern "C" void vold_killProcessesWithOpenFiles(const char *path, int signal) {
-	Process::killProcessesWithOpenFiles(path, signal);
-}
-
-/*
- * Hunt down processes that have files open at the given mount point.
- */
-int Process::killProcessesWithOpenFiles(const char *path, int signal) {
-    int count = 0;
-    DIR* dir;
-    struct dirent* de;
-
-    if (!(dir = opendir("/proc"))) {
-        SLOGE("opendir failed (%s)", strerror(errno));
-        return count;
+    auto proc_d = std::unique_ptr<DIR, int (*)(DIR*)>(opendir("/proc"), closedir);
+    if (!proc_d) {
+        PLOG(ERROR) << "Failed to open proc";
+        return -1;
     }
 
-    while ((de = readdir(dir))) {
-        int pid = getPid(de->d_name);
-        if (pid == -1)
-            continue;
+    struct dirent* proc_de;
+    while ((proc_de = readdir(proc_d.get())) != nullptr) {
+        // We only care about valid PIDs
+        pid_t pid;
+        if (proc_de->d_type != DT_DIR) continue;
+        if (!android::base::ParseInt(proc_de->d_name, &pid)) continue;
 
-        std::string name;
-        getProcessName(pid, name);
+        // Look for references to prefix
+        bool found = false;
+        auto path = StringPrintf("/proc/%d", pid);
+        found |= checkMaps(path + "/maps", prefix);
+        found |= checkSymlink(path + "/cwd", prefix);
+        found |= checkSymlink(path + "/root", prefix);
+        found |= checkSymlink(path + "/exe", prefix);
 
-        char openfile[PATH_MAX];
-
-        if (checkFileDescriptorSymLinks(pid, path, openfile, sizeof(openfile))) {
-            SLOGE("Process %s (%d) has open file %s", name.c_str(), pid, openfile);
-        } else if (checkFileMaps(pid, path, openfile, sizeof(openfile))) {
-            SLOGE("Process %s (%d) has open filemap for %s", name.c_str(), pid, openfile);
-        } else if (checkSymLink(pid, path, "cwd")) {
-            SLOGE("Process %s (%d) has cwd within %s", name.c_str(), pid, path);
-        } else if (checkSymLink(pid, path, "root")) {
-            SLOGE("Process %s (%d) has chroot within %s", name.c_str(), pid, path);
-        } else if (checkSymLink(pid, path, "exe")) {
-            SLOGE("Process %s (%d) has executable path within %s", name.c_str(), pid, path);
+        auto fd_path = path + "/fd";
+        auto fd_d = std::unique_ptr<DIR, int (*)(DIR*)>(opendir(fd_path.c_str()), closedir);
+        if (!fd_d) {
+            PLOG(WARNING) << "Failed to open " << fd_path;
         } else {
-            continue;
+            struct dirent* fd_de;
+            while ((fd_de = readdir(fd_d.get())) != nullptr) {
+                if (fd_de->d_type != DT_LNK) continue;
+                found |= checkSymlink(fd_path + "/" + fd_de->d_name, prefix);
+            }
         }
 
-        if (signal != 0) {
-            SLOGW("Sending %s to process %d", strsignal(signal), pid);
-            kill(pid, signal);
-            count++;
+        if (found) {
+            pids.insert(pid);
         }
     }
-    closedir(dir);
-    return count;
+    if (signal != 0) {
+        for (const auto& pid : pids) {
+            LOG(WARNING) << "Sending " << strsignal(signal) << " to " << pid;
+            kill(pid, signal);
+        }
+    }
+    return pids.size();
 }
+
+}  // namespace vold
+}  // namespace android

@@ -123,7 +123,7 @@ public:
      * is treated as filename and ignored, unless the path ends with "/".  Also
      * ensures that path belongs to a volume managed by vold.
      */
-    int mkdirs(const char* path);
+    int mkdirs(const std::string& path);
 
     int createObb(const std::string& path, const std::string& key, int32_t ownerGid,
             std::string* outVolId);
