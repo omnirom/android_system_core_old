@@ -632,6 +632,15 @@ bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             }
             if (!ensure_policy(de_raw_ref, user_de_path)) return false;
         }
+
+        if (volume_uuid.empty()) {
+            if (0 != android::vold::ForkExecvp(
+                         std::vector<std::string>{"/system/bin/vold_prepare_subdirs", "misc_de",
+                                                  misc_de_path, std::to_string(user_id), ""})) {
+                LOG(ERROR) << "vold_prepare_subdirs failed on: " << misc_de_path;
+                return false;
+            }
+        }
     }
 
     if (flags & FLAG_STORAGE_CE) {
@@ -663,6 +672,15 @@ bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             }
             if (!ensure_policy(ce_raw_ref, media_ce_path)) return false;
             if (!ensure_policy(ce_raw_ref, user_ce_path)) return false;
+        }
+
+        if (volume_uuid.empty()) {
+            if (0 != android::vold::ForkExecvp(
+                         std::vector<std::string>{"/system/bin/vold_prepare_subdirs", "misc_ce",
+                                                  misc_ce_path, std::to_string(user_id), ""})) {
+                LOG(ERROR) << "vold_prepare_subdirs failed on: " << misc_ce_path;
+                return false;
+            }
         }
     }
 
