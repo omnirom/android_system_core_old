@@ -28,7 +28,6 @@
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <android-base/parseint.h>
-#include <diskconfig/diskconfig.h>
 #include <ext4_utils/ext4_crypt.h>
 
 #include <vector>
@@ -416,7 +415,6 @@ status_t Disk::unmountAll() {
 status_t Disk::partitionPublic() {
     int res;
 
-    // TODO: improve this code
     destroyAllVolumes();
     mJustPartitioned = true;
 
@@ -432,41 +430,21 @@ status_t Disk::partitionPublic() {
         LOG(WARNING) << "Failed to zap; status " << res;
     }
 
-    struct disk_info dinfo;
-    memset(&dinfo, 0, sizeof(dinfo));
+    // Now let's build the new MBR table. We heavily rely on sgdisk to
+    // force optimal alignment on the created partitions.
+    cmd.clear();
+    cmd.push_back(kSgdiskPath);
+    cmd.push_back("--new=0:0:-0");
+    cmd.push_back("--typecode=0:0c00");
+    cmd.push_back("--gpttombr=1");
+    cmd.push_back(mDevPath);
 
-    if (!(dinfo.part_lst = (struct part_info *) malloc(
-            MAX_NUM_PARTS * sizeof(struct part_info)))) {
-        return -1;
+    if ((res = ForkExecvp(cmd)) != 0) {
+        LOG(ERROR) << "Failed to partition; status " << res;
+        return res;
     }
 
-    memset(dinfo.part_lst, 0, MAX_NUM_PARTS * sizeof(struct part_info));
-    dinfo.device = strdup(mDevPath.c_str());
-    dinfo.scheme = PART_SCHEME_MBR;
-    dinfo.sect_size = 512;
-    dinfo.skip_lba = 2048;
-    dinfo.num_lba = 0;
-    dinfo.num_parts = 1;
-
-    struct part_info *pinfo = &dinfo.part_lst[0];
-
-    pinfo->name = strdup("android_sdcard");
-    pinfo->flags |= PART_ACTIVE_FLAG;
-    pinfo->type = PC_PART_TYPE_FAT32;
-    pinfo->len_kb = -1;
-
-    int rc = apply_disk_config(&dinfo, 0);
-    if (rc) {
-        LOG(ERROR) << "Failed to apply disk configuration: " << rc;
-        goto out;
-    }
-
-out:
-    free(pinfo->name);
-    free(dinfo.device);
-    free(dinfo.part_lst);
-
-    return rc;
+    return OK;
 }
 
 status_t Disk::partitionPrivate() {
