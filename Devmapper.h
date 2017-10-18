@@ -26,7 +26,6 @@ public:
                       unsigned long numSectors, char *buffer, size_t len);
     static int destroy(const char *name);
     static int destroyAll();
-    static int lookupActive(const char *name, char *buffer, size_t len);
 
 private:
     static void *_align(void *ptr, unsigned int a);

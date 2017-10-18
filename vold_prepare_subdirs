@@ -14,31 +14,54 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -e
+# Set up or tear down subdirectories of vold-created directories.
+#
+# This is kept separate from vold because under the SELinux rules, it has privileges vold doesn't
+# have. In particular, prepare_dir sets SELinux labels on subdirectories based on file_contexts,
+# so this script has some relabelling privileges.
 
-case "$3" in
-  *[!0-9]* | '')
-    echo "Invalid user id"
-    exit -1
-    ;;
+
+set -e
+action="$1"
+dirtype="$2"
+volume_uuid="$3"
+user_id="$4"
+path="$5"
+
+case "$user_id" in
+    *[!0-9]* | '')
+        echo "Invalid user id"
+        exit -1
+        ;;
 esac
 
-if [ x"$4" != x ] ; then
+if [ x"$volume_uuid" != x ] ; then
     echo "Volume must be root volume"
     exit -1;
 fi
 
-case "$1" in
+case "$dirtype" in
     misc_de|misc_ce)
-        computed_path="/data/$1/$3"
-        if [ x"$computed_path" != x"$2" ] ; then
+        computed_path="/data/$dirtype/$user_id"
+        if [ x"$computed_path" != x"$path" ] ; then
             echo "Parameter path didn't match computed path: " $computed_path
             exit -1;
         fi
-        /system/bin/prepare_dir --mode 700 --uid 0 --gid 0 -- "$computed_path"/vold
+        case "$action" in
+            prepare)
+                /system/bin/prepare_dir --mode 700 --uid 0 --gid 0 -- "$computed_path"/vold
+                ;;
+            destroy)
+                rm -rf "$computed_path"/*
+                ;;
+            *)
+                echo "Unknown action: $action"
+                exit -1
+                ;;
+        esac
         ;;
     *)
-        echo "Unknown type: $1"
-        exit -1;
+        echo "Unknown type: $dirtype"
+        exit -1
         ;;
 esac

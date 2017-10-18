@@ -19,7 +19,6 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <fts.h>
 #include <mntent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,14 +33,11 @@
 
 #include <linux/kdev_t.h>
 
-#define LOG_TAG "Vold"
-
-#include <openssl/md5.h>
-
 #include <android-base/logging.h>
+#include <android-base/properties.h>
+#include <android-base/strings.h>
 #include <android-base/stringprintf.h>
 #include <cutils/fs.h>
-#include <cutils/log.h>
 #include <utils/Trace.h>
 
 #include <selinux/android.h>
@@ -98,7 +94,7 @@ VolumeManager::~VolumeManager() {
 
 int VolumeManager::updateVirtualDisk() {
     ATRACE_NAME("VolumeManager::updateVirtualDisk");
-    if (property_get_bool(kPropVirtualDisk, false)) {
+    if (android::base::GetBoolProperty(kPropVirtualDisk, false)) {
         if (access(kPathVirtualDisk, F_OK) != 0) {
             Loop::createImageFile(kPathVirtualDisk, kSizeVirtualDisk / 512);
         }
@@ -323,13 +319,12 @@ int VolumeManager::linkPrimary(userid_t userId) {
     std::string target(StringPrintf("/mnt/user/%d/primary", userId));
     if (TEMP_FAILURE_RETRY(unlink(target.c_str()))) {
         if (errno != ENOENT) {
-            SLOGW("Failed to unlink %s: %s", target.c_str(), strerror(errno));
+            PLOG(WARNING) << "Failed to unlink " << target;
         }
     }
     LOG(DEBUG) << "Linking " << source << " to " << target;
     if (TEMP_FAILURE_RETRY(symlink(source.c_str(), target.c_str()))) {
-        SLOGW("Failed to link %s to %s: %s", source.c_str(), target.c_str(),
-                strerror(errno));
+        PLOG(WARNING) << "Failed to link";
         return -errno;
     }
     return 0;
@@ -372,12 +367,10 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
     return 0;
 }
 
-static int unmount_tree(const char* path) {
-    size_t path_len = strlen(path);
-
+static int unmount_tree(const std::string& prefix) {
     FILE* fp = setmntent("/proc/mounts", "r");
     if (fp == NULL) {
-        ALOGE("Error opening /proc/mounts: %s", strerror(errno));
+        PLOG(ERROR) << "Failed to open /proc/mounts";
         return -errno;
     }
 
@@ -386,15 +379,16 @@ static int unmount_tree(const char* path) {
     std::list<std::string> toUnmount;
     mntent* mentry;
     while ((mentry = getmntent(fp)) != NULL) {
-        if (strncmp(mentry->mnt_dir, path, path_len) == 0) {
-            toUnmount.push_front(std::string(mentry->mnt_dir));
+        auto test = std::string(mentry->mnt_dir) + "/";
+        if (android::base::StartsWith(test, prefix.c_str())) {
+            toUnmount.push_front(test);
         }
     }
     endmntent(fp);
 
     for (const auto& path : toUnmount) {
         if (umount2(path.c_str(), MNT_DETACH)) {
-            ALOGW("Failed to unmount %s: %s", path.c_str(), strerror(errno));
+            PLOG(ERROR) << "Failed to unmount " << path;
         }
     }
     return 0;
@@ -405,8 +399,8 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
 
     DIR* dir;
     struct dirent* de;
-    char rootName[PATH_MAX];
-    char pidName[PATH_MAX];
+    std::string rootName;
+    std::string pidName;
     int pidFd;
     int nsFd;
     struct stat sb;
@@ -418,8 +412,8 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
     }
 
     // Figure out root namespace to compare against below
-    if (android::vold::SaneReadLinkAt(dirfd(dir), "1/ns/mnt", rootName, PATH_MAX) == -1) {
-        PLOG(ERROR) << "Failed to readlink";
+    if (!android::vold::Readlinkat(dirfd(dir), "1/ns/mnt", &rootName)) {
+        PLOG(ERROR) << "Failed to read root namespace";
         closedir(dir);
         return -1;
     }
@@ -443,11 +437,11 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
 
         // Matches so far, but refuse to touch if in root namespace
         LOG(DEBUG) << "Found matching PID " << de->d_name;
-        if (android::vold::SaneReadLinkAt(pidFd, "ns/mnt", pidName, PATH_MAX) == -1) {
+        if (!android::vold::Readlinkat(pidFd, "ns/mnt", &pidName)) {
             PLOG(WARNING) << "Failed to read namespace for " << de->d_name;
             goto next;
         }
-        if (!strcmp(rootName, pidName)) {
+        if (rootName == pidName) {
             LOG(WARNING) << "Skipping due to root namespace";
             goto next;
         }
@@ -465,7 +459,7 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
                 _exit(1);
             }
 
-            unmount_tree("/storage");
+            unmount_tree("/storage/");
 
             std::string storageSource;
             if (mode == "default") {
@@ -568,7 +562,7 @@ int VolumeManager::unmountAll() {
     // force unmount those just to be safe.
     FILE* fp = setmntent("/proc/mounts", "r");
     if (fp == NULL) {
-        SLOGE("Error opening /proc/mounts: %s", strerror(errno));
+        PLOG(ERROR) << "Failed to open /proc/mounts";
         return -errno;
     }
 
@@ -577,9 +571,10 @@ int VolumeManager::unmountAll() {
     std::list<std::string> toUnmount;
     mntent* mentry;
     while ((mentry = getmntent(fp)) != NULL) {
-        if (strncmp(mentry->mnt_dir, "/mnt/", 5) == 0
-                || strncmp(mentry->mnt_dir, "/storage/", 9) == 0) {
-            toUnmount.push_front(std::string(mentry->mnt_dir));
+        auto test = std::string(mentry->mnt_dir);
+        if (android::base::StartsWith(test, "/mnt/")
+                || android::base::StartsWith(test, "/storage/")) {
+            toUnmount.push_front(test);
         }
     }
     endmntent(fp);
@@ -597,13 +592,13 @@ extern "C" int vold_unmountAll(void) {
     return vm->unmountAll();
 }
 
-int VolumeManager::mkdirs(const char* path) {
+int VolumeManager::mkdirs(const std::string& path) {
     // Only offer to create directories for paths managed by vold
-    if (strncmp(path, "/storage/", 9) == 0) {
+    if (android::base::StartsWith(path, "/storage/")) {
         // fs_mkdirs() does symlink checking and relative path enforcement
-        return fs_mkdirs(path, 0700);
+        return fs_mkdirs(path.c_str(), 0700);
     } else {
-        SLOGE("Failed to find mounted volume for %s", path);
+        LOG(ERROR) << "Failed to find mounted volume for " << path;
         return -EINVAL;
     }
 }
@@ -694,21 +689,14 @@ static android::status_t runCommandInNamespace(const std::string& command,
 
     // Matches so far, but refuse to touch if in root namespace
     {
-        char rootName[PATH_MAX];
-        char pidName[PATH_MAX];
-        const int root_result =
-                android::vold::SaneReadLinkAt(dir.get(), "1/ns/mnt", rootName, PATH_MAX);
-        const int pid_result =
-                android::vold::SaneReadLinkAt(pid_fd.get(), "ns/mnt", pidName, PATH_MAX);
-        if (root_result == -1) {
-            LOG(ERROR) << "Failed to readlink for /proc/1/ns/mnt";
+        std::string rootName;
+        std::string pidName;
+        if (!android::vold::Readlinkat(dir.get(), "1/ns/mnt", &rootName)
+                || !android::vold::Readlinkat(pid_fd.get(), "ns/mnt", &pidName)) {
+            PLOG(ERROR) << "Failed to read namespaces";
             return -EPERM;
         }
-        if (pid_result == -1) {
-            LOG(ERROR) << "Failed to readlink for /proc/" << pid << "/ns/mnt";
-            return -EPERM;
-        }
-        if (!strcmp(rootName, pidName)) {
+        if (rootName == pidName) {
             LOG(ERROR) << "Don't mount appfuse in root namespace";
             return -EPERM;
         }

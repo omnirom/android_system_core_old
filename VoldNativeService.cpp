@@ -37,10 +37,6 @@
 #include <private/android_filesystem_config.h>
 #include <utils/Trace.h>
 
-#ifndef LOG_TAG
-#define LOG_TAG "vold"
-#endif
-
 using android::base::StringPrintf;
 using std::endl;
 
@@ -423,7 +419,7 @@ binder::Status VoldNativeService::mkdirs(const std::string& path) {
     CHECK_ARGUMENT_PATH(path);
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->mkdirs(path.c_str()));
+    return translate(VolumeManager::Instance()->mkdirs(path));
 }
 
 binder::Status VoldNativeService::createObb(const std::string& sourcePath,
@@ -519,7 +515,7 @@ static int fdeEnableInternal(int32_t passwordType, const std::string& password,
         if (rc == 0) {
             return 0;
         } else if (tries == 0) {
-            Process::killProcessesWithOpenFiles(DATA_MNT_POINT, SIGKILL);
+            KillProcessesWithOpenFiles(DATA_MNT_POINT, SIGKILL);
         }
     }
 
@@ -695,20 +691,22 @@ binder::Status VoldNativeService::lockUserKey(int32_t userId) {
 binder::Status VoldNativeService::prepareUserStorage(const std::unique_ptr<std::string>& uuid,
         int32_t userId, int32_t userSerial, int32_t flags) {
     ENFORCE_UID(AID_SYSTEM);
-    ACQUIRE_CRYPT_LOCK;
-
     std::string empty_string = "";
     auto uuid_ = uuid ? *uuid : empty_string;
+    CHECK_ARGUMENT_HEX(uuid_);
+
+    ACQUIRE_CRYPT_LOCK;
     return translateBool(e4crypt_prepare_user_storage(uuid_, userId, userSerial, flags));
 }
 
 binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::string>& uuid,
         int32_t userId, int32_t flags) {
     ENFORCE_UID(AID_SYSTEM);
-    ACQUIRE_CRYPT_LOCK;
-
     std::string empty_string = "";
     auto uuid_ = uuid ? *uuid : empty_string;
+    CHECK_ARGUMENT_HEX(uuid_);
+
+    ACQUIRE_CRYPT_LOCK;
     return translateBool(e4crypt_destroy_user_storage(uuid_, userId, flags));
 }
 

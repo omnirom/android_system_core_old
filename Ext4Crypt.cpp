@@ -594,6 +594,18 @@ bool e4crypt_lock_user_key(userid_t user_id) {
     return true;
 }
 
+static bool prepare_subdirs(const std::string& action, const std::string& dirtype,
+                            const std::string& volume_uuid, userid_t user_id,
+                            const std::string& path) {
+    if (0 != android::vold::ForkExecvp(std::vector<std::string>{"/system/bin/vold_prepare_subdirs",
+                                                                action, dirtype, volume_uuid,
+                                                                std::to_string(user_id), path})) {
+        LOG(ERROR) << "vold_prepare_subdirs failed on: " << path;
+        return false;
+    }
+    return true;
+}
+
 bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_id, int serial,
                                   int flags) {
     LOG(DEBUG) << "e4crypt_prepare_user_storage for volume " << escape_empty(volume_uuid)
@@ -634,12 +646,8 @@ bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
         }
 
         if (volume_uuid.empty()) {
-            if (0 != android::vold::ForkExecvp(
-                         std::vector<std::string>{"/system/bin/vold_prepare_subdirs", "misc_de",
-                                                  misc_de_path, std::to_string(user_id), ""})) {
-                LOG(ERROR) << "vold_prepare_subdirs failed on: " << misc_de_path;
+            if (!prepare_subdirs("prepare", "misc_de", volume_uuid, user_id, misc_de_path))
                 return false;
-            }
         }
     }
 
@@ -664,23 +672,19 @@ bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
                 if (!ensure_policy(ce_raw_ref, system_ce_path)) return false;
                 if (!ensure_policy(ce_raw_ref, misc_ce_path)) return false;
 
-                // Now that credentials have been installed, we can run restorecon
-                // over these paths
-                // NOTE: these paths need to be kept in sync with libselinux
-                android::vold::RestoreconRecursive(system_ce_path);
-                android::vold::RestoreconRecursive(misc_ce_path);
             }
             if (!ensure_policy(ce_raw_ref, media_ce_path)) return false;
             if (!ensure_policy(ce_raw_ref, user_ce_path)) return false;
         }
 
         if (volume_uuid.empty()) {
-            if (0 != android::vold::ForkExecvp(
-                         std::vector<std::string>{"/system/bin/vold_prepare_subdirs", "misc_ce",
-                                                  misc_ce_path, std::to_string(user_id), ""})) {
-                LOG(ERROR) << "vold_prepare_subdirs failed on: " << misc_ce_path;
+            if (!prepare_subdirs("prepare", "misc_ce", volume_uuid, user_id, misc_ce_path))
                 return false;
-            }
+            // Now that credentials have been installed, we can run restorecon
+            // over these paths
+            // NOTE: these paths need to be kept in sync with libselinux
+            android::vold::RestoreconRecursive(system_ce_path);
+            android::vold::RestoreconRecursive(misc_ce_path);
         }
     }
 
@@ -691,6 +695,22 @@ bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
     LOG(DEBUG) << "e4crypt_destroy_user_storage for volume " << escape_empty(volume_uuid)
                << ", user " << user_id << ", flags " << flags;
     bool res = true;
+
+    if (flags & FLAG_STORAGE_CE) {
+        // CE_n key
+        auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
+        auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
+        auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
+        auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
+
+        res &= destroy_dir(media_ce_path);
+        res &= destroy_dir(user_ce_path);
+        if (volume_uuid.empty()) {
+            res &= prepare_subdirs("destroy", "misc_ce", volume_uuid, user_id, misc_ce_path);
+            res &= destroy_dir(system_ce_path);
+            res &= destroy_dir(misc_ce_path);
+        }
+    }
 
     if (flags & FLAG_STORAGE_DE) {
         // DE_sys key
@@ -703,7 +723,9 @@ bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
         auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
 
+        res &= destroy_dir(user_de_path);
         if (volume_uuid.empty()) {
+            res &= prepare_subdirs("destroy", "misc_de", volume_uuid, user_id, misc_de_path);
             res &= destroy_dir(system_legacy_path);
 #if MANAGE_MISC_DIRS
             res &= destroy_dir(misc_legacy_path);
@@ -712,22 +734,6 @@ bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
             res &= destroy_dir(system_de_path);
             res &= destroy_dir(misc_de_path);
         }
-        res &= destroy_dir(user_de_path);
-    }
-
-    if (flags & FLAG_STORAGE_CE) {
-        // CE_n key
-        auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
-        auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
-        auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
-        auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
-
-        if (volume_uuid.empty()) {
-            res &= destroy_dir(system_ce_path);
-            res &= destroy_dir(misc_ce_path);
-        }
-        res &= destroy_dir(media_ce_path);
-        res &= destroy_dir(user_ce_path);
     }
 
     return res;

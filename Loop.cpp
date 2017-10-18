@@ -31,11 +31,8 @@
 
 #include <linux/kdev_t.h>
 
-#define LOG_TAG "Vold"
-
-#include <cutils/log.h>
-
 #include <android-base/logging.h>
+#include <android-base/strings.h>
 #include <android-base/stringprintf.h>
 #include <android-base/unique_fd.h>
 #include <utils/Trace.h>
@@ -48,161 +45,6 @@ using android::base::StringPrintf;
 using android::base::unique_fd;
 
 static const char* kVoldPrefix = "vold:";
-
-int Loop::lookupActive(const char *id_raw, char *buffer, size_t len) {
-    auto id_string = StringPrintf("%s%s", kVoldPrefix, id_raw);
-    const char* id = id_string.c_str();
-
-    int i;
-    int fd;
-    char filename[256];
-
-    memset(buffer, 0, len);
-
-    for (i = 0; i < LOOP_MAX; i++) {
-        struct loop_info64 li;
-        int rc;
-
-        snprintf(filename, sizeof(filename), "/dev/block/loop%d", i);
-
-        if ((fd = open(filename, O_RDWR | O_CLOEXEC)) < 0) {
-            if (errno != ENOENT) {
-                SLOGE("Unable to open %s (%s)", filename, strerror(errno));
-            } else {
-                continue;
-            }
-            return -1;
-        }
-
-        rc = ioctl(fd, LOOP_GET_STATUS64, &li);
-        if (rc < 0 && errno == ENXIO) {
-            close(fd);
-            continue;
-        }
-        close(fd);
-
-        if (rc < 0) {
-            SLOGE("Unable to get loop status for %s (%s)", filename,
-                 strerror(errno));
-            return -1;
-        }
-        if (!strncmp((const char*) li.lo_crypt_name, id, LO_NAME_SIZE)) {
-            break;
-        }
-    }
-
-    if (i == LOOP_MAX) {
-        errno = ENOENT;
-        return -1;
-    }
-    strlcpy(buffer, filename, len);
-    return 0;
-}
-
-int Loop::create(const char *id_raw, const char *loopFile, char *loopDeviceBuffer, size_t len) {
-    auto id_string = StringPrintf("%s%s", kVoldPrefix, id_raw);
-    const char* id = id_string.c_str();
-
-    int i;
-    int fd;
-    char filename[256];
-
-    for (i = 0; i < LOOP_MAX; i++) {
-        struct loop_info64 li;
-        int rc;
-        char *secontext = NULL;
-
-        snprintf(filename, sizeof(filename), "/dev/block/loop%d", i);
-
-        /*
-         * The kernel starts us off with 8 loop nodes, but more
-         * are created on-demand if needed.
-         */
-        mode_t mode = 0660 | S_IFBLK;
-        unsigned int dev = (0xff & i) | ((i << 12) & 0xfff00000) | (7 << 8);
-
-        if (sehandle) {
-            rc = selabel_lookup(sehandle, &secontext, filename, S_IFBLK);
-            if (rc == 0)
-                setfscreatecon(secontext);
-        }
-
-        if (mknod(filename, mode, dev) < 0) {
-            if (errno != EEXIST) {
-                int sverrno = errno;
-                SLOGE("Error creating loop device node (%s)", strerror(errno));
-                if (secontext) {
-                    freecon(secontext);
-                    setfscreatecon(NULL);
-                }
-                errno = sverrno;
-                return -1;
-            }
-        }
-        if (secontext) {
-            freecon(secontext);
-            setfscreatecon(NULL);
-        }
-
-        if ((fd = open(filename, O_RDWR | O_CLOEXEC)) < 0) {
-            SLOGE("Unable to open %s (%s)", filename, strerror(errno));
-            return -1;
-        }
-
-        rc = ioctl(fd, LOOP_GET_STATUS64, &li);
-        if (rc < 0 && errno == ENXIO)
-            break;
-
-        close(fd);
-
-        if (rc < 0) {
-            SLOGE("Unable to get loop status for %s (%s)", filename,
-                 strerror(errno));
-            return -1;
-        }
-    }
-
-    if (i == LOOP_MAX) {
-        SLOGE("Exhausted all loop devices");
-        errno = ENOSPC;
-        return -1;
-    }
-
-    strlcpy(loopDeviceBuffer, filename, len);
-
-    int file_fd;
-
-    if ((file_fd = open(loopFile, O_RDWR | O_CLOEXEC)) < 0) {
-        SLOGE("Unable to open %s (%s)", loopFile, strerror(errno));
-        close(fd);
-        return -1;
-    }
-
-    if (ioctl(fd, LOOP_SET_FD, file_fd) < 0) {
-        SLOGE("Error setting up loopback interface (%s)", strerror(errno));
-        close(file_fd);
-        close(fd);
-        return -1;
-    }
-
-    struct loop_info64 li;
-
-    memset(&li, 0, sizeof(li));
-    strlcpy((char*) li.lo_crypt_name, id, LO_NAME_SIZE);
-    strlcpy((char*) li.lo_file_name, loopFile, LO_NAME_SIZE);
-
-    if (ioctl(fd, LOOP_SET_STATUS64, &li) < 0) {
-        SLOGE("Error setting loopback status (%s)", strerror(errno));
-        close(file_fd);
-        close(fd);
-        return -1;
-    }
-
-    close(fd);
-    close(file_fd);
-
-    return 0;
-}
 
 int Loop::create(const std::string& target, std::string& out_device) {
     unique_fd ctl_fd(open("/dev/loop-control", O_RDWR | O_CLOEXEC));
@@ -251,12 +93,12 @@ int Loop::destroyByDevice(const char *loopDevice) {
 
     device_fd = open(loopDevice, O_RDONLY | O_CLOEXEC);
     if (device_fd < 0) {
-        SLOGE("Failed to open loop (%d)", errno);
+        PLOG(ERROR) << "Failed to open " << loopDevice;
         return -1;
     }
 
     if (ioctl(device_fd, LOOP_CLR_FD, 0) < 0) {
-        SLOGE("Failed to destroy loop (%d)", errno);
+        PLOG(ERROR) << "Failed to destroy " << loopDevice;
         close(device_fd);
         return -1;
     }
@@ -279,7 +121,8 @@ int Loop::destroyAll() {
 
     // Poke through all devices looking for loops
     while ((de = readdir(dir))) {
-        if (strncmp(de->d_name, "loop", 4) != 0) continue;
+        auto test = std::string(de->d_name);
+        if (!android::base::StartsWith(test, "loop")) continue;
 
         auto path = root + de->d_name;
         unique_fd fd(open(path.c_str(), O_RDWR | O_CLOEXEC));
@@ -296,8 +139,8 @@ int Loop::destroyAll() {
             continue;
         }
 
-        char* id = (char*) li.lo_crypt_name;
-        if (strncmp(id, kVoldPrefix, strlen(kVoldPrefix)) == 0) {
+        auto id = std::string((char*) li.lo_crypt_name);
+        if (android::base::StartsWith(id, kVoldPrefix)) {
             LOG(DEBUG) << "Tearing down stale loop device at " << path << " named " << id;
 
             if (ioctl(fd.get(), LOOP_CLR_FD, 0) < 0) {
@@ -332,22 +175,22 @@ int Loop::resizeImageFile(const char *file, unsigned long numSectors) {
     int fd;
 
     if ((fd = open(file, O_RDWR | O_CLOEXEC)) < 0) {
-        SLOGE("Error opening imagefile (%s)", strerror(errno));
+        PLOG(ERROR) << "Failed to open " << file;
         return -1;
     }
 
-    SLOGD("Attempting to increase size of %s to %lu sectors.", file, numSectors);
+    LOG(DEBUG) << "Attempting to increase " << file << " to " << numSectors;
 
     if (fallocate(fd, 0, 0, numSectors * 512)) {
         if (errno == ENOSYS || errno == ENOTSUP) {
-            SLOGW("fallocate not found. Falling back to ftruncate.");
+            PLOG(WARNING) << "fallocate not found. Falling back to ftruncate.";
             if (ftruncate(fd, numSectors * 512) < 0) {
-                SLOGE("Error truncating imagefile (%s)", strerror(errno));
+                PLOG(ERROR) << "Failed to ftruncate";
                 close(fd);
                 return -1;
             }
         } else {
-            SLOGE("Error allocating space (%s)", strerror(errno));
+            PLOG(ERROR) << "Failed to fallocate";
             close(fd);
             return -1;
         }
