@@ -13,6 +13,7 @@ LOCAL_SRC_FILES := VolumeManager_test.cpp
 LOCAL_MODULE := vold_tests
 LOCAL_MODULE_TAGS := eng tests
 
+LOCAL_CFLAGS := -Wall -Werror
 include $(BUILD_NATIVE_TEST)
 
 include $(CLEAR_VARS)
