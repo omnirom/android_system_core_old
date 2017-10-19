@@ -369,6 +369,7 @@ static int keymaster_check_compatibility_new()
     return keymaster_compatibility_cryptfs_scrypt();
 }
 
+#if 0
 /* Create a new keymaster key and store it in this footer */
 static int keymaster_create_key_new(struct crypt_mnt_ftr *ftr)
 {
@@ -390,6 +391,7 @@ static int keymaster_create_key_new(struct crypt_mnt_ftr *ftr)
     }
     return 0;
 }
+#endif
 
 /* This signs the given object using the keymaster key. */
 static int keymaster_sign_object_new(struct crypt_mnt_ftr *ftr,
