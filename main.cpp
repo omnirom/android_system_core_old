@@ -130,12 +130,9 @@ int main(int argc, char** argv) {
 
     ATRACE_END();
 
-    // Eventually we'll become the monitoring thread
-    while(1) {
-        pause();
-    }
+    android::IPCThreadState::self()->joinThreadPool();
+    LOG(INFO) << "vold shutting down";
 
-    LOG(ERROR) << "Vold exiting";
     exit(0);
 }
 
