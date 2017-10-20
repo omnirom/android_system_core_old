@@ -38,6 +38,9 @@ extern security_context_t sBlkidUntrustedContext;
 extern security_context_t sFsckContext;
 extern security_context_t sFsckUntrustedContext;
 
+// TODO remove this with better solution, b/64143519
+extern bool sSleepOnUnmount;
+
 status_t CreateDeviceNode(const std::string& path, dev_t dev);
 status_t DestroyDeviceNode(const std::string& path);
 
