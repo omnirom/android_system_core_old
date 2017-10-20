@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-#include "sehandle.h"
 #include "Utils.h"
+
 #include "Process.h"
-#include "VolumeManager.h"
+#include "sehandle.h"
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
@@ -54,6 +54,8 @@ security_context_t sBlkidContext = nullptr;
 security_context_t sBlkidUntrustedContext = nullptr;
 security_context_t sFsckContext = nullptr;
 security_context_t sFsckUntrustedContext = nullptr;
+
+bool sSleepOnUnmount = true;
 
 static const char* kBlkidPath = "/system/bin/blkid";
 static const char* kKeyPath = "/data/misc/vold";
@@ -134,22 +136,22 @@ status_t ForceUnmount(const std::string& path) {
     }
     // Apps might still be handling eject request, so wait before
     // we start sending signals
-    if (!VolumeManager::shutting_down) sleep(5);
+    if (sSleepOnUnmount) sleep(5);
 
     KillProcessesWithOpenFiles(path, SIGINT);
-    if (!VolumeManager::shutting_down) sleep(5);
+    if (sSleepOnUnmount) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
 
     KillProcessesWithOpenFiles(path, SIGTERM);
-    if (!VolumeManager::shutting_down) sleep(5);
+    if (sSleepOnUnmount) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
 
     KillProcessesWithOpenFiles(path, SIGKILL);
-    if (!VolumeManager::shutting_down) sleep(5);
+    if (sSleepOnUnmount) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
@@ -161,17 +163,17 @@ status_t KillProcessesUsingPath(const std::string& path) {
     if (KillProcessesWithOpenFiles(path, SIGINT) == 0) {
         return OK;
     }
-    if (!VolumeManager::shutting_down) sleep(5);
+    if (sSleepOnUnmount) sleep(5);
 
     if (KillProcessesWithOpenFiles(path, SIGTERM) == 0) {
         return OK;
     }
-    if (!VolumeManager::shutting_down) sleep(5);
+    if (sSleepOnUnmount) sleep(5);
 
     if (KillProcessesWithOpenFiles(path, SIGKILL) == 0) {
         return OK;
     }
-    if (!VolumeManager::shutting_down) sleep(5);
+    if (sSleepOnUnmount) sleep(5);
 
     // Send SIGKILL a second time to determine if we've
     // actually killed everyone with open files

@@ -62,8 +62,6 @@
 using android::base::StringPrintf;
 using android::base::unique_fd;
 
-bool VolumeManager::shutting_down = false;
-
 static const char* kPathUserMount = "/mnt/user";
 static const char* kPathVirtualDisk = "/data/misc/vold/virtual_disk";
 
@@ -535,14 +533,14 @@ int VolumeManager::shutdown() {
     if (mInternalEmulated == nullptr) {
         return 0; // already shutdown
     }
-    shutting_down = true;
+    android::vold::sSleepOnUnmount = false;
     mInternalEmulated->destroy();
     mInternalEmulated = nullptr;
     for (const auto& disk : mDisks) {
         disk->destroy();
     }
     mDisks.clear();
-    shutting_down = false;
+    android::vold::sSleepOnUnmount = true;
     return 0;
 }
 
