@@ -60,7 +60,12 @@ static const char* kKeyPath = "/data/misc/vold";
 
 static const char* kProcFilesystems = "/proc/filesystems";
 
+// Lock used to protect process-level SELinux changes from racing with each
+// other between multiple threads.
+static std::mutex kSecurityLock;
+
 status_t CreateDeviceNode(const std::string& path, dev_t dev) {
+    std::lock_guard<std::mutex> lock(kSecurityLock);
     const char* cpath = path.c_str();
     status_t res = 0;
 
@@ -98,6 +103,7 @@ status_t DestroyDeviceNode(const std::string& path) {
 }
 
 status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
+    std::lock_guard<std::mutex> lock(kSecurityLock);
     const char* cpath = path.c_str();
 
     char* secontext = nullptr;
@@ -251,6 +257,7 @@ status_t ForkExecvp(const std::vector<std::string>& args) {
 }
 
 status_t ForkExecvp(const std::vector<std::string>& args, security_context_t context) {
+    std::lock_guard<std::mutex> lock(kSecurityLock);
     size_t argc = args.size();
     char** argv = (char**) calloc(argc, sizeof(char*));
     for (size_t i = 0; i < argc; i++) {
@@ -283,6 +290,7 @@ status_t ForkExecvp(const std::vector<std::string>& args,
 
 status_t ForkExecvp(const std::vector<std::string>& args,
         std::vector<std::string>& output, security_context_t context) {
+    std::lock_guard<std::mutex> lock(kSecurityLock);
     std::string cmd;
     for (size_t i = 0; i < args.size(); i++) {
         cmd += args[i] + " ";

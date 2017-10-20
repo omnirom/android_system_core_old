@@ -14,40 +14,15 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_VOLD_TRIM_TASK_H
-#define ANDROID_VOLD_TRIM_TASK_H
+#ifndef ANDROID_VOLD_IDLE_MAINT_H
+#define ANDROID_VOLD_IDLE_MAINT_H
 
 #include "android/os/IVoldTaskListener.h"
-#include "Utils.h"
-
-#include <thread>
-#include <list>
 
 namespace android {
 namespace vold {
 
-class TrimTask {
-public:
-    explicit TrimTask(int flags, const android::sp<android::os::IVoldTaskListener>& listener);
-    virtual ~TrimTask();
-
-    enum Flags {
-        kDeepTrim = 1 << 0,
-    };
-
-    void start();
-
-private:
-    int mFlags;
-    android::sp<android::os::IVoldTaskListener> mListener;
-    std::list<std::string> mPaths;
-    std::thread mThread;
-
-    void addFromFstab();
-    void run();
-
-    DISALLOW_COPY_AND_ASSIGN(TrimTask);
-};
+void Trim(const android::sp<android::os::IVoldTaskListener>& listener);
 
 }  // namespace vold
 }  // namespace android

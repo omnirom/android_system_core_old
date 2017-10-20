@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "MoveTask.h"
+#include "MoveStorage.h"
 #include "Utils.h"
 #include "VolumeManager.h"
 
@@ -22,6 +22,8 @@
 #include <android-base/logging.h>
 #include <private/android_filesystem_config.h>
 #include <hardware_legacy/power.h>
+
+#include <thread>
 
 #include <dirent.h>
 #include <sys/wait.h>
@@ -44,22 +46,11 @@ static const char* kRmPath = "/system/bin/rm";
 
 static const char* kWakeLock = "MoveTask";
 
-MoveTask::MoveTask(const std::shared_ptr<VolumeBase>& from, const std::shared_ptr<VolumeBase>& to,
-        const android::sp<android::os::IVoldTaskListener>& listener) :
-        mFrom(from), mTo(to), mListener(listener) {
-}
-
-MoveTask::~MoveTask() {
-}
-
-void MoveTask::start() {
-    mThread = std::thread(&MoveTask::run, this);
-}
-
-void MoveTask::notifyProgress(int progress) {
-    if (mListener) {
+static void notifyProgress(int progress,
+        const android::sp<android::os::IVoldTaskListener>& listener) {
+    if (listener) {
         android::os::PersistableBundle extras;
-        mListener->onStatus(progress, extras);
+        listener->onStatus(progress, extras);
     }
 }
 
@@ -86,8 +77,9 @@ static status_t pushBackContents(const std::string& path, std::vector<std::strin
     return found ? OK : -1;
 }
 
-status_t MoveTask::execRm(const std::string& path, int startProgress, int stepProgress) {
-    notifyProgress(startProgress);
+static status_t execRm(const std::string& path, int startProgress, int stepProgress,
+        const android::sp<android::os::IVoldTaskListener>& listener) {
+    notifyProgress(startProgress, listener);
 
     uint64_t expectedBytes = GetTreeBytes(path);
     uint64_t startFreeBytes = GetFreeBytes(path);
@@ -121,15 +113,15 @@ status_t MoveTask::execRm(const std::string& path, int startProgress, int stepPr
         sleep(1);
         uint64_t deltaFreeBytes = GetFreeBytes(path) - startFreeBytes;
         notifyProgress(startProgress + CONSTRAIN((int)
-                ((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress));
+                ((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress), listener);
     }
     return -1;
 #endif
 }
 
-status_t MoveTask::execCp(const std::string& fromPath, const std::string& toPath,
-        int startProgress, int stepProgress) {
-    notifyProgress(startProgress);
+static status_t execCp(const std::string& fromPath, const std::string& toPath, int startProgress,
+        int stepProgress, const android::sp<android::os::IVoldTaskListener>& listener) {
+    notifyProgress(startProgress, listener);
 
     uint64_t expectedBytes = GetTreeBytes(fromPath);
     uint64_t startFreeBytes = GetFreeBytes(toPath);
@@ -172,7 +164,7 @@ status_t MoveTask::execCp(const std::string& fromPath, const std::string& toPath
         sleep(1);
         uint64_t deltaFreeBytes = startFreeBytes - GetFreeBytes(toPath);
         notifyProgress(startProgress + CONSTRAIN((int)
-                ((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress));
+                ((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress), listener);
     }
     return -1;
 #endif
@@ -192,69 +184,80 @@ static void bringOnline(const std::shared_ptr<VolumeBase>& vol) {
     vol->create();
 }
 
-void MoveTask::run() {
-    acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
-
+static status_t moveStorageInternal(const std::shared_ptr<VolumeBase>& from,
+        const std::shared_ptr<VolumeBase>& to,
+        const android::sp<android::os::IVoldTaskListener>& listener) {
     std::string fromPath;
     std::string toPath;
 
     // TODO: add support for public volumes
-    if (mFrom->getType() != VolumeBase::Type::kEmulated) goto fail;
-    if (mTo->getType() != VolumeBase::Type::kEmulated) goto fail;
+    if (from->getType() != VolumeBase::Type::kEmulated) goto fail;
+    if (to->getType() != VolumeBase::Type::kEmulated) goto fail;
 
     // Step 1: tear down volumes and mount silently without making
     // visible to userspace apps
     {
         std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock());
-        bringOffline(mFrom);
-        bringOffline(mTo);
+        bringOffline(from);
+        bringOffline(to);
     }
 
-    fromPath = mFrom->getInternalPath();
-    toPath = mTo->getInternalPath();
+    fromPath = from->getInternalPath();
+    toPath = to->getInternalPath();
 
     // Step 2: clean up any stale data
-    if (execRm(toPath, 10, 10) != OK) {
+    if (execRm(toPath, 10, 10, listener) != OK) {
         goto fail;
     }
 
     // Step 3: perform actual copy
-    if (execCp(fromPath, toPath, 20, 60) != OK) {
+    if (execCp(fromPath, toPath, 20, 60, listener) != OK) {
         goto copy_fail;
     }
 
     // NOTE: MountService watches for this magic value to know
     // that move was successful
-    notifyProgress(82);
+    notifyProgress(82, listener);
     {
         std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock());
-        bringOnline(mFrom);
-        bringOnline(mTo);
+        bringOnline(from);
+        bringOnline(to);
     }
 
     // Step 4: clean up old data
-    if (execRm(fromPath, 85, 15) != OK) {
+    if (execRm(fromPath, 85, 15, listener) != OK) {
         goto fail;
     }
 
-    notifyProgress(kMoveSucceeded);
-    release_wake_lock(kWakeLock);
-    return;
+    notifyProgress(kMoveSucceeded, listener);
+    return OK;
 
 copy_fail:
     // if we failed to copy the data we should not leave it laying around
     // in target location. Do not check return value, we can not do any
     // useful anyway.
-    execRm(toPath, 80, 1);
+    execRm(toPath, 80, 1, listener);
 fail:
     {
         std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock());
-        bringOnline(mFrom);
-        bringOnline(mTo);
+        bringOnline(from);
+        bringOnline(to);
     }
-    notifyProgress(kMoveFailedInternalError);
+    notifyProgress(kMoveFailedInternalError, listener);
+    return -1;
+}
+
+void MoveStorage(const std::shared_ptr<VolumeBase>& from, const std::shared_ptr<VolumeBase>& to,
+        const android::sp<android::os::IVoldTaskListener>& listener) {
+    acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
+
+    android::os::PersistableBundle extras;
+    status_t res = moveStorageInternal(from, to, listener);
+    if (listener) {
+        listener->onFinished(res, extras);
+    }
+
     release_wake_lock(kWakeLock);
-    return;
 }
 
 }  // namespace vold

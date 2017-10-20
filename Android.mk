@@ -20,9 +20,9 @@ common_src_files := \
 	model/EmulatedVolume.cpp \
 	model/ObbVolume.cpp \
 	Utils.cpp \
-	MoveTask.cpp \
-	BenchmarkTask.cpp \
-	TrimTask.cpp \
+	MoveStorage.cpp \
+	Benchmark.cpp \
+	IdleMaint.cpp \
 	KeyBuffer.cpp \
 	Keymaster.cpp \
 	KeyStorage.cpp \

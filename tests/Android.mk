@@ -18,6 +18,7 @@ LOCAL_SRC_FILES := \
 LOCAL_MODULE := vold_tests
 LOCAL_MODULE_TAGS := eng tests
 
+LOCAL_CFLAGS := -Wall -Werror
 include $(BUILD_NATIVE_TEST)
 
 include $(CLEAR_VARS)
@@ -41,4 +42,5 @@ LOCAL_SRC_FILES := CryptfsScryptHidlizationEquivalence_test.cpp
 LOCAL_MODULE := vold_cryptfs_scrypt_hidlization_equivalence_test
 LOCAL_MODULE_TAGS := eng tests
 
+LOCAL_CFLAGS := -Wall -Werror
 include $(BUILD_NATIVE_TEST)
