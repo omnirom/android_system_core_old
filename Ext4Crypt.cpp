@@ -41,6 +41,8 @@
 
 #include <private/android_filesystem_config.h>
 
+#include "android/os/IVold.h"
+
 #include "cryptfs.h"
 
 #define EMULATED_USES_SELINUX 0
@@ -61,10 +63,6 @@ using android::base::WriteStringToFile;
 using android::vold::kEmptyAuthentication;
 using android::vold::KeyBuffer;
 
-// NOTE: keep in sync with StorageManager
-static constexpr int FLAG_STORAGE_DE = 1 << 0;
-static constexpr int FLAG_STORAGE_CE = 1 << 1;
-
 namespace {
 
 const std::string device_key_dir = std::string() + DATA_MNT_POINT + e4crypt_unencrypted_folder;
@@ -73,6 +71,7 @@ const std::string device_key_temp = device_key_dir + "/temp";
 
 const std::string user_key_dir = std::string() + DATA_MNT_POINT + "/misc/vold/user_keys";
 const std::string user_key_temp = user_key_dir + "/temp";
+const std::string prepare_subdirs_path = "/system/bin/vold_prepare_subdirs";
 
 bool s_global_de_initialized = false;
 
@@ -379,7 +378,7 @@ bool e4crypt_init_user0() {
     // We can only safely prepare DE storage here, since CE keys are probably
     // entangled with user credentials.  The framework will always prepare CE
     // storage once CE keys are installed.
-    if (!e4crypt_prepare_user_storage("", 0, 0, FLAG_STORAGE_DE)) {
+    if (!e4crypt_prepare_user_storage("", 0, 0, android::os::IVold::STORAGE_FLAG_DE)) {
         LOG(ERROR) << "Failed to prepare user 0 storage";
         return false;
     }
@@ -594,13 +593,12 @@ bool e4crypt_lock_user_key(userid_t user_id) {
     return true;
 }
 
-static bool prepare_subdirs(const std::string& action, const std::string& dirtype,
-                            const std::string& volume_uuid, userid_t user_id,
-                            const std::string& path) {
-    if (0 != android::vold::ForkExecvp(std::vector<std::string>{"/system/bin/vold_prepare_subdirs",
-                                                                action, dirtype, volume_uuid,
-                                                                std::to_string(user_id), path})) {
-        LOG(ERROR) << "vold_prepare_subdirs failed on: " << path;
+static bool prepare_subdirs(const std::string& action, const std::string& volume_uuid,
+                            userid_t user_id, int flags) {
+    if (0 != android::vold::ForkExecvp(
+                 std::vector<std::string>{prepare_subdirs_path, action, volume_uuid,
+                                          std::to_string(user_id), std::to_string(flags)})) {
+        LOG(ERROR) << "vold_prepare_subdirs failed";
         return false;
     }
     return true;
@@ -611,7 +609,7 @@ bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
     LOG(DEBUG) << "e4crypt_prepare_user_storage for volume " << escape_empty(volume_uuid)
                << ", user " << user_id << ", serial " << serial << ", flags " << flags;
 
-    if (flags & FLAG_STORAGE_DE) {
+    if (flags & android::os::IVold::STORAGE_FLAG_DE) {
         // DE_sys key
         auto system_legacy_path = android::vold::BuildDataSystemLegacyPath(user_id);
         auto misc_legacy_path = android::vold::BuildDataMiscLegacyPath(user_id);
@@ -644,14 +642,9 @@ bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             }
             if (!ensure_policy(de_raw_ref, user_de_path)) return false;
         }
-
-        if (volume_uuid.empty()) {
-            if (!prepare_subdirs("prepare", "misc_de", volume_uuid, user_id, misc_de_path))
-                return false;
-        }
     }
 
-    if (flags & FLAG_STORAGE_CE) {
+    if (flags & android::os::IVold::STORAGE_FLAG_CE) {
         // CE_n key
         auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
         auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
@@ -678,8 +671,6 @@ bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
         }
 
         if (volume_uuid.empty()) {
-            if (!prepare_subdirs("prepare", "misc_ce", volume_uuid, user_id, misc_ce_path))
-                return false;
             // Now that credentials have been installed, we can run restorecon
             // over these paths
             // NOTE: these paths need to be kept in sync with libselinux
@@ -687,6 +678,7 @@ bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             android::vold::RestoreconRecursive(misc_ce_path);
         }
     }
+    if (!prepare_subdirs("prepare", volume_uuid, user_id, flags)) return false;
 
     return true;
 }
@@ -696,7 +688,9 @@ bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
                << ", user " << user_id << ", flags " << flags;
     bool res = true;
 
-    if (flags & FLAG_STORAGE_CE) {
+    res &= prepare_subdirs("destroy", volume_uuid, user_id, flags);
+
+    if (flags & android::os::IVold::STORAGE_FLAG_CE) {
         // CE_n key
         auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
         auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
@@ -706,13 +700,12 @@ bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
         res &= destroy_dir(media_ce_path);
         res &= destroy_dir(user_ce_path);
         if (volume_uuid.empty()) {
-            res &= prepare_subdirs("destroy", "misc_ce", volume_uuid, user_id, misc_ce_path);
             res &= destroy_dir(system_ce_path);
             res &= destroy_dir(misc_ce_path);
         }
     }
 
-    if (flags & FLAG_STORAGE_DE) {
+    if (flags & android::os::IVold::STORAGE_FLAG_DE) {
         // DE_sys key
         auto system_legacy_path = android::vold::BuildDataSystemLegacyPath(user_id);
         auto misc_legacy_path = android::vold::BuildDataMiscLegacyPath(user_id);
@@ -725,7 +718,6 @@ bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
 
         res &= destroy_dir(user_de_path);
         if (volume_uuid.empty()) {
-            res &= prepare_subdirs("destroy", "misc_de", volume_uuid, user_id, misc_de_path);
             res &= destroy_dir(system_legacy_path);
 #if MANAGE_MISC_DIRS
             res &= destroy_dir(misc_legacy_path);

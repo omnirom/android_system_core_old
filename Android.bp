@@ -170,24 +170,20 @@ cc_binary {
 }
 
 cc_binary {
-    name: "prepare_dir",
-    defaults: ["vold_default_flags"],
-
-    srcs: ["prepare_dir.cpp"],
-    shared_libs: [
-        "libbase",
-        "libcutils",
-        "libselinux",
-    ],
-}
-
-cc_prebuilt_binary {
     name: "vold_prepare_subdirs",
     defaults: ["vold_default_flags"],
 
-    srcs: ["vold_prepare_subdirs"],
-
-    required: ["prepare_dir"],
+    srcs: ["vold_prepare_subdirs.cpp", "Utils.cpp"],
+    shared_libs: [
+        "libbase",
+        "libcutils",
+        "liblogwrap",
+        "libselinux",
+        "libutils",
+    ],
+    static_libs: [
+        "libvold_binder",
+    ],
 }
 
 subdirs = ["tests"]
