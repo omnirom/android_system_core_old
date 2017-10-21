@@ -43,10 +43,6 @@
 #define DEBUG_APPFUSE 0
 
 class VolumeManager {
-public:
-    //TODO remove this with better solution, b/64143519
-    static bool shutting_down;
-
 private:
     static VolumeManager *sInstance;
 
