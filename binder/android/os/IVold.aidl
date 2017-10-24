@@ -34,7 +34,7 @@ interface IVold {
     void onUserStopped(int userId);
 
     void partition(@utf8InCpp String diskId, int partitionType, int ratio);
-    void forgetPartition(@utf8InCpp String partGuid);
+    void forgetPartition(@utf8InCpp String partGuid, @utf8InCpp String fsUuid);
 
     void mount(@utf8InCpp String volId, int mountFlags, int mountUserId);
     void unmount(@utf8InCpp String volId);

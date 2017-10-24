@@ -293,7 +293,7 @@ void VolumeManager::listVolumes(android::vold::VolumeBase::Type type,
     }
 }
 
-int VolumeManager::forgetPartition(const std::string& partGuid) {
+int VolumeManager::forgetPartition(const std::string& partGuid, const std::string& fsUuid) {
     std::string normalizedGuid;
     if (android::vold::NormalizeHex(partGuid, normalizedGuid)) {
         LOG(WARNING) << "Invalid GUID " << partGuid;
