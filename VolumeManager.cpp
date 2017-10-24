@@ -34,9 +34,11 @@
 #include <linux/kdev_t.h>
 
 #include <android-base/logging.h>
+#include <android-base/parseint.h>
 #include <android-base/properties.h>
-#include <android-base/strings.h>
 #include <android-base/stringprintf.h>
+#include <android-base/strings.h>
+
 #include <cutils/fs.h>
 #include <utils/Trace.h>
 
@@ -420,6 +422,10 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
 
     // Poke through all running PIDs look for apps running as UID
     while ((de = readdir(dir))) {
+        pid_t pid;
+        if (de->d_type != DT_DIR) continue;
+        if (!android::base::ParseInt(de->d_name, &pid)) continue;
+
         pidFd = -1;
         nsFd = -1;
 
