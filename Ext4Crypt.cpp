@@ -521,7 +521,9 @@ static bool read_or_create_volkey(const std::string& misc_path, const std::strin
 }
 
 static bool destroy_volkey(const std::string& misc_path, const std::string& volume_uuid) {
-    return android::vold::destroyKey(volkey_path(misc_path, volume_uuid));
+    auto path = volkey_path(misc_path, volume_uuid);
+    if (!android::vold::pathExists(path)) return true;
+    return android::vold::destroyKey(path);
 }
 
 bool e4crypt_add_user_key_auth(userid_t user_id, int serial, const std::string& token_hex,
@@ -764,6 +766,40 @@ bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
         }
     }
 
+    return res;
+}
+
+static bool destroy_volume_keys(const std::string& directory_path, const std::string& volume_uuid) {
+    auto dirp = std::unique_ptr<DIR, int (*)(DIR*)>(opendir(directory_path.c_str()), closedir);
+    if (!dirp) {
+        PLOG(ERROR) << "Unable to open directory: " + directory_path;
+        return false;
+    }
+    bool res = true;
+    for (;;) {
+        errno = 0;
+        auto const entry = readdir(dirp.get());
+        if (!entry) {
+            if (errno) {
+                PLOG(ERROR) << "Unable to read directory: " + directory_path;
+                return false;
+            }
+            break;
+        }
+        if (entry->d_type != DT_DIR || entry->d_name[0] == '.') {
+            LOG(DEBUG) << "Skipping non-user " << entry->d_name;
+            continue;
+        }
+        res &= destroy_volkey(directory_path + "/" + entry->d_name, volume_uuid);
+    }
+    return res;
+}
+
+bool e4crypt_destroy_volume_keys(const std::string& volume_uuid) {
+    bool res = true;
+    LOG(DEBUG) << "e4crypt_destroy_volume_keys for volume " << escape_empty(volume_uuid);
+    res &= destroy_volume_keys("/data/misc_ce", volume_uuid);
+    res &= destroy_volume_keys("/data/misc_de", volume_uuid);
     return res;
 }
 

@@ -16,12 +16,8 @@
 
 #include <string>
 
-#include <stdbool.h>
-#include <sys/cdefs.h>
-
 #include <cutils/multiuser.h>
 
-// General functions
 bool e4crypt_initialize_global_de();
 
 bool e4crypt_init_user0();
@@ -38,5 +34,7 @@ bool e4crypt_lock_user_key(userid_t user_id);
 bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_id, int serial,
                                   int flags);
 bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_id, int flags);
+
+bool e4crypt_destroy_volume_keys(const std::string& volume_uuid);
 
 bool e4crypt_secdiscard(const std::string& path);
