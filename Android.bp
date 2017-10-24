@@ -1,0 +1,193 @@
+cc_defaults {
+    name: "vold_default_flags",
+
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wextra",
+        "-Wno-missing-field-initializers",
+        "-Wno-unused-parameter",
+        "-Wno-unused-variable",
+    ],
+
+    clang: true,
+
+    tidy: true,
+    tidy_checks: [
+        "-*",
+        "cert-*",
+        "clang-analyzer-security*",
+        "-cert-err58-cpp",
+    ],
+    tidy_flags: [
+        "-warnings-as-errors=clang-analyzer-security*,cert-*",
+    ],
+}
+
+cc_defaults {
+    name: "vold_default_libs",
+
+    static_libs: [
+        "libavb",
+        "libbootloader_message",
+        "libfec",
+        "libfec_rs",
+        "libfs_mgr",
+        "libscrypt_static",
+        "libsquashfs_utils",
+        "libvold_binder",
+    ],
+    shared_libs: [
+        "android.hardware.keymaster@3.0",
+        "libbase",
+        "libbinder",
+        "libcrypto",
+        "libcrypto_utils",
+        "libcutils",
+        "libdiskconfig",
+        "libext4_utils",
+        "libf2fs_sparseblock",
+        "libhardware",
+        "libhardware_legacy",
+        "libhidlbase",
+        "libhwbinder",
+        "libkeystore_binder",
+        "libkeyutils",
+        "liblog",
+        "liblogwrap",
+        "libselinux",
+        "libsysutils",
+        "libutils",
+    ],
+}
+
+cc_library_static {
+    name: "libvold_binder",
+    defaults: ["vold_default_flags"],
+
+    srcs: [
+        "binder/android/os/IVold.aidl",
+        "binder/android/os/IVoldListener.aidl",
+        "binder/android/os/IVoldTaskListener.aidl",
+    ],
+    shared_libs: [
+        "libbinder",
+        "libutils",
+    ],
+    aidl: {
+        local_include_dirs: ["binder"],
+        include_dirs: ["frameworks/native/aidl/binder"],
+        export_aidl_headers: true,
+    },
+}
+
+// Static library factored out to support testing
+cc_library_static {
+    name: "libvold",
+    defaults: [
+        "vold_default_flags",
+        "vold_default_libs",
+    ],
+
+    srcs: [
+        "Benchmark.cpp",
+        "Devmapper.cpp",
+        "EncryptInplace.cpp",
+        "Ext4Crypt.cpp",
+        "IdleMaint.cpp",
+        "KeyBuffer.cpp",
+        "KeyStorage.cpp",
+        "KeyUtil.cpp",
+        "Keymaster.cpp",
+        "Loop.cpp",
+        "MetadataCrypt.cpp",
+        "MoveStorage.cpp",
+        "NetlinkHandler.cpp",
+        "NetlinkManager.cpp",
+        "Process.cpp",
+        "ScryptParameters.cpp",
+        "Utils.cpp",
+        "VoldNativeService.cpp",
+        "VoldUtil.cpp",
+        "VolumeManager.cpp",
+        "cryptfs.cpp",
+        "fs/Ext4.cpp",
+        "fs/F2fs.cpp",
+        "fs/Vfat.cpp",
+        "model/Disk.cpp",
+        "model/EmulatedVolume.cpp",
+        "model/ObbVolume.cpp",
+        "model/PrivateVolume.cpp",
+        "model/PublicVolume.cpp",
+        "model/VolumeBase.cpp",
+        "secontext.cpp",
+    ],
+}
+
+cc_binary {
+    name: "vold",
+    defaults: [
+        "vold_default_flags",
+        "vold_default_libs",
+    ],
+
+    srcs: ["main.cpp"],
+    static_libs: ["libvold"],
+    init_rc: ["vold.rc"],
+
+    required: [
+        "mke2fs",
+        "vold_prepare_subdirs",
+    ],
+}
+
+cc_binary {
+    name: "vdc",
+    defaults: ["vold_default_flags"],
+
+    srcs: ["vdc.cpp"],
+    shared_libs: [
+        "libbase",
+        "libbinder",
+        "libcutils",
+        "libutils",
+    ],
+    static_libs: [
+        "libvold_binder",
+    ],
+    init_rc: ["vdc.rc"],
+}
+
+cc_binary {
+    name: "secdiscard",
+    defaults: ["vold_default_flags"],
+
+    srcs: [
+        "FileDeviceUtils.cpp",
+        "secdiscard.cpp",
+    ],
+    shared_libs: ["libbase"],
+}
+
+cc_binary {
+    name: "prepare_dir",
+    defaults: ["vold_default_flags"],
+
+    srcs: ["prepare_dir.cpp"],
+    shared_libs: [
+        "libbase",
+        "libcutils",
+        "libselinux",
+    ],
+}
+
+cc_prebuilt_binary {
+    name: "vold_prepare_subdirs",
+    defaults: ["vold_default_flags"],
+
+    srcs: ["vold_prepare_subdirs"],
+
+    required: ["prepare_dir"],
+}
+
+subdirs = ["tests"]
