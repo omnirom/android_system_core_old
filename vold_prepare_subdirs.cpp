@@ -124,10 +124,12 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
         if (flags & android::os::IVold::STORAGE_FLAG_DE) {
             auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/vold")) return false;
+            if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/storaged")) return false;
         }
         if (flags & android::os::IVold::STORAGE_FLAG_CE) {
             auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/vold")) return false;
+            if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/storaged")) return false;
         }
     }
     return true;
