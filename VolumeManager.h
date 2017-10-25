@@ -89,7 +89,7 @@ public:
 
     void listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list);
 
-    int forgetPartition(const std::string& partGuid);
+    int forgetPartition(const std::string& partGuid, const std::string& fsUuid);
 
     int onUserAdded(userid_t userId, int userSerialNumber);
     int onUserRemoved(userid_t userId);

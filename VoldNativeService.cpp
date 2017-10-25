@@ -302,12 +302,14 @@ binder::Status VoldNativeService::partition(const std::string& diskId, int32_t p
     }
 }
 
-binder::Status VoldNativeService::forgetPartition(const std::string& partGuid) {
+binder::Status VoldNativeService::forgetPartition(const std::string& partGuid,
+        const std::string& fsUuid) {
     ENFORCE_UID(AID_SYSTEM);
     CHECK_ARGUMENT_HEX(partGuid);
+    CHECK_ARGUMENT_HEX(fsUuid);
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->forgetPartition(partGuid));
+    return translate(VolumeManager::Instance()->forgetPartition(partGuid, fsUuid));
 }
 
 binder::Status VoldNativeService::mount(const std::string& volId, int32_t mountFlags,
