@@ -161,12 +161,13 @@ bool evictKey(const std::string& raw_ref) {
     return success;
 }
 
-bool retrieveAndInstallKey(bool create_if_absent, const std::string& key_path,
-                           const std::string& tmp_path, std::string* key_ref) {
+bool retrieveAndInstallKey(bool create_if_absent, const KeyAuthentication& key_authentication,
+                           const std::string& key_path, const std::string& tmp_path,
+                           std::string* key_ref) {
     KeyBuffer key;
     if (pathExists(key_path)) {
         LOG(DEBUG) << "Key exists, using: " << key_path;
-        if (!retrieveKey(key_path, kEmptyAuthentication, &key)) return false;
+        if (!retrieveKey(key_path, key_authentication, &key)) return false;
     } else {
         if (!create_if_absent) {
            LOG(ERROR) << "No key found in " << key_path;
@@ -174,8 +175,7 @@ bool retrieveAndInstallKey(bool create_if_absent, const std::string& key_path,
         }
         LOG(INFO) << "Creating new key in " << key_path;
         if (!randomKey(&key)) return false;
-        if (!storeKeyAtomically(key_path, tmp_path,
-                kEmptyAuthentication, key)) return false;
+        if (!storeKeyAtomically(key_path, tmp_path, key_authentication, key)) return false;
     }
 
     if (!installKey(key, key_ref)) {
