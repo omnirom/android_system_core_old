@@ -499,19 +499,6 @@ static bool deleteKey(const std::string& dir) {
     return true;
 }
 
-static bool runSecdiscard(const std::string& dir) {
-    if (ForkExecvp(
-            std::vector<std::string>{kSecdiscardPath, "--",
-                dir + "/" + kFn_encrypted_key,
-                dir + "/" + kFn_keymaster_key_blob,
-                dir + "/" + kFn_secdiscardable,
-                }) != 0) {
-        LOG(ERROR) << "secdiscard failed";
-        return false;
-    }
-    return true;
-}
-
 bool runSecdiscardSingle(const std::string& file) {
     if (ForkExecvp(
             std::vector<std::string>{kSecdiscardPath, "--",
@@ -533,8 +520,20 @@ static bool recursiveDeleteKey(const std::string& dir) {
 bool destroyKey(const std::string& dir) {
     bool success = true;
     // Try each thing, even if previous things failed.
-    success &= deleteKey(dir);
-    success &= runSecdiscard(dir);
+    bool uses_km = pathExists(dir + "/" + kFn_keymaster_key_blob);
+    if (uses_km) {
+        success &= deleteKey(dir);
+    }
+    auto secdiscard_cmd = std::vector<std::string>{
+        kSecdiscardPath, "--", dir + "/" + kFn_encrypted_key, dir + "/" + kFn_secdiscardable,
+    };
+    if (uses_km) {
+        secdiscard_cmd.emplace_back(dir + "/" + kFn_keymaster_key_blob);
+    }
+    if (ForkExecvp(secdiscard_cmd) != 0) {
+        LOG(ERROR) << "secdiscard failed";
+        success = false;
+    }
     success &= recursiveDeleteKey(dir);
     return success;
 }
