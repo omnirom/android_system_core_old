@@ -21,7 +21,6 @@
 #include "Utils.h"
 #include "VoldUtil.h"
 
-
 #include <algorithm>
 #include <map>
 #include <set>
@@ -56,6 +55,7 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 
 using android::base::StringPrintf;
@@ -64,6 +64,12 @@ using android::vold::kEmptyAuthentication;
 using android::vold::KeyBuffer;
 
 namespace {
+
+struct PolicyKeyRef {
+    std::string contents_mode;
+    std::string filenames_mode;
+    std::string key_raw_ref;
+};
 
 const std::string device_key_dir = std::string() + DATA_MNT_POINT + e4crypt_unencrypted_folder;
 const std::string device_key_path = device_key_dir + "/key";
@@ -262,26 +268,19 @@ static bool lookup_key_ref(const std::map<userid_t, std::string>& key_map, useri
     return true;
 }
 
-static void get_file_encryption_modes(const char **contents_mode_ret,
-                                       const char **filenames_mode_ret)
-{
+static void get_data_file_encryption_modes(PolicyKeyRef* key_ref) {
     struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab_default, DATA_MNT_POINT);
-    fs_mgr_get_file_encryption_modes(rec, contents_mode_ret, filenames_mode_ret);
+    char const* contents_mode;
+    char const* filenames_mode;
+    fs_mgr_get_file_encryption_modes(rec, &contents_mode, &filenames_mode);
+    key_ref->contents_mode = contents_mode;
+    key_ref->filenames_mode = filenames_mode;
 }
 
-static bool ensure_policy(const std::string& raw_ref, const std::string& path) {
-    const char *contents_mode;
-    const char *filenames_mode;
-
-    get_file_encryption_modes(&contents_mode, &filenames_mode);
-
-    if (e4crypt_policy_ensure(path.c_str(),
-                              raw_ref.data(), raw_ref.size(),
-                              contents_mode, filenames_mode) != 0) {
-        LOG(ERROR) << "Failed to set policy on: " << path;
-        return false;
-    }
-    return true;
+static bool ensure_policy(const PolicyKeyRef& key_ref, const std::string& path) {
+    return e4crypt_policy_ensure(path.c_str(), key_ref.key_raw_ref.data(),
+                                 key_ref.key_raw_ref.size(), key_ref.contents_mode.c_str(),
+                                 key_ref.filenames_mode.c_str()) == 0;
 }
 
 static bool is_numeric(const char* name) {
@@ -336,23 +335,21 @@ bool e4crypt_initialize_global_de() {
         return true;
     }
 
-    const char *contents_mode;
-    const char *filenames_mode;
-    get_file_encryption_modes(&contents_mode, &filenames_mode);
-    std::string modestring = std::string(contents_mode) + ":" + filenames_mode;
+    PolicyKeyRef device_ref;
+    if (!android::vold::retrieveAndInstallKey(true, device_key_path, device_key_temp,
+                                              &device_ref.key_raw_ref))
+        return false;
+    get_data_file_encryption_modes(&device_ref);
 
+    std::string modestring = device_ref.contents_mode + ":" + device_ref.filenames_mode;
     std::string mode_filename = std::string("/data") + e4crypt_key_mode;
     if (!android::base::WriteStringToFile(modestring, mode_filename)) {
         PLOG(ERROR) << "Cannot save type";
         return false;
     }
 
-    std::string device_key_ref;
-    if (!android::vold::retrieveAndInstallKey(true,
-        device_key_path, device_key_temp, &device_key_ref)) return false;
-
     std::string ref_filename = std::string("/data") + e4crypt_key_ref;
-    if (!android::base::WriteStringToFile(device_key_ref, ref_filename)) {
+    if (!android::base::WriteStringToFile(device_ref.key_raw_ref, ref_filename)) {
         PLOG(ERROR) << "Cannot save key reference to:" << ref_filename;
         return false;
     }
@@ -502,6 +499,31 @@ static bool parse_hex(const std::string& hex, std::string* result) {
     return true;
 }
 
+static std::string volkey_path(const std::string& misc_path, const std::string& volume_uuid) {
+    return misc_path + "/vold/volume_keys/" + volume_uuid + "/default";
+}
+
+static bool read_or_create_volkey(const std::string& misc_path, const std::string& volume_uuid,
+                                  PolicyKeyRef* key_ref) {
+    auto key_path = volkey_path(misc_path, volume_uuid);
+    if (fs_mkdirs(key_path.c_str(), 0700) != 0) {
+        PLOG(ERROR) << "Creating directories for: " << key_path;
+        return false;
+    }
+    if (!android::vold::retrieveAndInstallKey(true, key_path, key_path + "_tmp",
+                                              &key_ref->key_raw_ref))
+        return false;
+    key_ref->contents_mode =
+        android::base::GetProperty("ro.crypto.volume.contents_mode", "aes-256-xts");
+    key_ref->filenames_mode =
+        android::base::GetProperty("ro.crypto.volume.filenames_mode", "aes-256-heh");
+    return true;
+}
+
+static bool destroy_volkey(const std::string& misc_path, const std::string& volume_uuid) {
+    return android::vold::destroyKey(volkey_path(misc_path, volume_uuid));
+}
+
 bool e4crypt_add_user_key_auth(userid_t user_id, int serial, const std::string& token_hex,
                                const std::string& secret_hex) {
     LOG(DEBUG) << "e4crypt_add_user_key_auth " << user_id << " serial=" << serial
@@ -634,13 +656,16 @@ bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
         if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
         if (e4crypt_is_native()) {
-            std::string de_raw_ref;
-            if (!lookup_key_ref(s_de_key_raw_refs, user_id, &de_raw_ref)) return false;
+            PolicyKeyRef de_ref;
             if (volume_uuid.empty()) {
-                if (!ensure_policy(de_raw_ref, system_de_path)) return false;
-                if (!ensure_policy(de_raw_ref, misc_de_path)) return false;
+                if (!lookup_key_ref(s_de_key_raw_refs, user_id, &de_ref.key_raw_ref)) return false;
+                get_data_file_encryption_modes(&de_ref);
+                if (!ensure_policy(de_ref, system_de_path)) return false;
+                if (!ensure_policy(de_ref, misc_de_path)) return false;
+            } else {
+                if (!read_or_create_volkey(misc_de_path, volume_uuid, &de_ref)) return false;
             }
-            if (!ensure_policy(de_raw_ref, user_de_path)) return false;
+            if (!ensure_policy(de_ref, user_de_path)) return false;
         }
     }
 
@@ -659,15 +684,18 @@ bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
         if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
         if (e4crypt_is_native()) {
-            std::string ce_raw_ref;
-            if (!lookup_key_ref(s_ce_key_raw_refs, user_id, &ce_raw_ref)) return false;
+            PolicyKeyRef ce_ref;
             if (volume_uuid.empty()) {
-                if (!ensure_policy(ce_raw_ref, system_ce_path)) return false;
-                if (!ensure_policy(ce_raw_ref, misc_ce_path)) return false;
+                if (!lookup_key_ref(s_ce_key_raw_refs, user_id, &ce_ref.key_raw_ref)) return false;
+                get_data_file_encryption_modes(&ce_ref);
+                if (!ensure_policy(ce_ref, system_ce_path)) return false;
+                if (!ensure_policy(ce_ref, misc_ce_path)) return false;
 
+            } else {
+                if (!read_or_create_volkey(misc_ce_path, volume_uuid, &ce_ref)) return false;
             }
-            if (!ensure_policy(ce_raw_ref, media_ce_path)) return false;
-            if (!ensure_policy(ce_raw_ref, user_ce_path)) return false;
+            if (!ensure_policy(ce_ref, media_ce_path)) return false;
+            if (!ensure_policy(ce_ref, user_ce_path)) return false;
         }
 
         if (volume_uuid.empty()) {
@@ -702,6 +730,10 @@ bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
         if (volume_uuid.empty()) {
             res &= destroy_dir(system_ce_path);
             res &= destroy_dir(misc_ce_path);
+        } else {
+            if (e4crypt_is_native()) {
+                res &= destroy_volkey(misc_ce_path, volume_uuid);
+            }
         }
     }
 
@@ -725,6 +757,10 @@ bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
             res &= destroy_dir(profiles_de_path);
             res &= destroy_dir(system_de_path);
             res &= destroy_dir(misc_de_path);
+        } else {
+            if (e4crypt_is_native()) {
+                res &= destroy_volkey(misc_de_path, volume_uuid);
+            }
         }
     }
 
