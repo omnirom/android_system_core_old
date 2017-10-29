@@ -17,11 +17,12 @@
 #define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
 
 #include "VoldNativeService.h"
-#include "VolumeManager.h"
 #include "Benchmark.h"
+#include "CheckEncryption.h"
+#include "IdleMaint.h"
 #include "MoveStorage.h"
 #include "Process.h"
-#include "IdleMaint.h"
+#include "VolumeManager.h"
 
 #include "cryptfs.h"
 #include "Ext4Crypt.h"
@@ -357,15 +358,9 @@ binder::Status VoldNativeService::format(const std::string& volId, const std::st
     return translate(vol->format(fsType));
 }
 
-binder::Status VoldNativeService::benchmark(const std::string& volId,
-        const android::sp<android::os::IVoldTaskListener>& listener) {
-    ENFORCE_UID(AID_SYSTEM);
-    CHECK_ARGUMENT_ID(volId);
-    ACQUIRE_LOCK;
-
-    std::string path;
+static binder::Status pathForVolId(const std::string& volId, std::string* path) {
     if (volId == "private" || volId == "null") {
-        path = "/data";
+        *path = "/data";
     } else {
         auto vol = VolumeManager::Instance()->findVolume(volId);
         if (vol == nullptr) {
@@ -377,17 +372,39 @@ binder::Status VoldNativeService::benchmark(const std::string& volId,
         if (vol->getState() != VolumeBase::State::kMounted) {
             return error("Volume " + volId + " not mounted");
         }
-        path = vol->getPath();
+        *path = vol->getPath();
+        if (path->empty()) {
+            return error("Volume " + volId + " missing path");
+        }
     }
+    return ok();
+}
 
-    if (path.empty()) {
-        return error("Volume " + volId + " missing path");
-    }
+binder::Status VoldNativeService::benchmark(
+    const std::string& volId, const android::sp<android::os::IVoldTaskListener>& listener) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_ID(volId);
+    ACQUIRE_LOCK;
+
+    std::string path;
+    auto status = pathForVolId(volId, &path);
+    if (!status.isOk()) return status;
 
     std::thread([=]() {
         android::vold::Benchmark(path, listener);
     }).detach();
     return ok();
+}
+
+binder::Status VoldNativeService::checkEncryption(const std::string& volId) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_ID(volId);
+    ACQUIRE_LOCK;
+
+    std::string path;
+    auto status = pathForVolId(volId, &path);
+    if (!status.isOk()) return status;
+    return translate(android::vold::CheckEncryption(path));
 }
 
 binder::Status VoldNativeService::moveStorage(const std::string& fromVolId,

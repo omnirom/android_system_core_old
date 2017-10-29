@@ -88,7 +88,7 @@ static bool checkSize(const std::string& kind, size_t actual, size_t expected) {
     return true;
 }
 
-static std::string hashWithPrefix(char const* prefix, const std::string& tohash) {
+static void hashWithPrefix(char const* prefix, const std::string& tohash, std::string* res) {
     SHA512_CTX c;
 
     SHA512_Init(&c);
@@ -99,9 +99,8 @@ static std::string hashWithPrefix(char const* prefix, const std::string& tohash)
     hashingPrefix.resize(SHA512_CBLOCK);
     SHA512_Update(&c, hashingPrefix.data(), hashingPrefix.size());
     SHA512_Update(&c, tohash.data(), tohash.size());
-    std::string res(SHA512_DIGEST_LENGTH, '\0');
-    SHA512_Final(reinterpret_cast<uint8_t*>(&res[0]), &c);
-    return res;
+    res->assign(SHA512_DIGEST_LENGTH, '\0');
+    SHA512_Final(reinterpret_cast<uint8_t*>(&(*res)[0]), &c);
 }
 
 static bool generateKeymasterKey(Keymaster& keymaster, const KeyAuthentication& auth,
@@ -157,6 +156,30 @@ static bool writeStringToFile(const std::string& payload, const std::string& fil
         PLOG(ERROR) << "Failed to write to " << filename;
         return false;
     }
+    return true;
+}
+
+static bool readRandomBytesOrLog(size_t count, std::string* out) {
+    auto status = ReadRandomBytes(count, *out);
+    if (status != OK) {
+        LOG(ERROR) << "Random read failed with status: " << status;
+        return false;
+    }
+    return true;
+}
+
+bool createSecdiscardable(const std::string& filename, std::string* hash) {
+    std::string secdiscardable;
+    if (!readRandomBytesOrLog(SECDISCARDABLE_BYTES, &secdiscardable)) return false;
+    if (!writeStringToFile(secdiscardable, filename)) return false;
+    hashWithPrefix(kHashPrefix_secdiscardable, secdiscardable, hash);
+    return true;
+}
+
+bool readSecdiscardable(const std::string& filename, std::string* hash) {
+    std::string secdiscardable;
+    if (!readFileToString(filename, &secdiscardable)) return false;
+    hashWithPrefix(kHashPrefix_secdiscardable, secdiscardable, hash);
     return true;
 }
 
@@ -283,20 +306,11 @@ static bool stretchSecret(const std::string& stretching, const std::string& secr
 }
 
 static bool generateAppId(const KeyAuthentication& auth, const std::string& stretching,
-                          const std::string& salt, const std::string& secdiscardable,
+                          const std::string& salt, const std::string& secdiscardable_hash,
                           std::string* appId) {
     std::string stretched;
     if (!stretchSecret(stretching, auth.secret, salt, &stretched)) return false;
-    *appId = hashWithPrefix(kHashPrefix_secdiscardable, secdiscardable) + stretched;
-    return true;
-}
-
-static bool readRandomBytesOrLog(size_t count, std::string* out) {
-    auto status = ReadRandomBytes(count, *out);
-    if (status != OK) {
-        LOG(ERROR) << "Random read failed with status: " << status;
-        return false;
-    }
+    *appId = secdiscardable_hash + stretched;
     return true;
 }
 
@@ -306,7 +320,8 @@ static void logOpensslError() {
 
 static bool encryptWithoutKeymaster(const std::string& preKey,
                                     const KeyBuffer& plaintext, std::string* ciphertext) {
-    auto key = hashWithPrefix(kHashPrefix_keygen, preKey);
+    std::string key;
+    hashWithPrefix(kHashPrefix_keygen, preKey, &key);
     key.resize(AES_KEY_BYTES);
     if (!readRandomBytesOrLog(GCM_NONCE_BYTES, ciphertext)) return false;
     auto ctx = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(
@@ -356,7 +371,8 @@ static bool decryptWithoutKeymaster(const std::string& preKey,
         LOG(ERROR) << "GCM ciphertext too small: " << ciphertext.size();
         return false;
     }
-    auto key = hashWithPrefix(kHashPrefix_keygen, preKey);
+    std::string key;
+    hashWithPrefix(kHashPrefix_keygen, preKey, &key);
     key.resize(AES_KEY_BYTES);
     auto ctx = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(
         EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
@@ -410,9 +426,8 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBu
         return false;
     }
     if (!writeStringToFile(kCurrentVersion, dir + "/" + kFn_version)) return false;
-    std::string secdiscardable;
-    if (!readRandomBytesOrLog(SECDISCARDABLE_BYTES, &secdiscardable)) return false;
-    if (!writeStringToFile(secdiscardable, dir + "/" + kFn_secdiscardable)) return false;
+    std::string secdiscardable_hash;
+    if (!createSecdiscardable(dir + "/" + kFn_secdiscardable, &secdiscardable_hash)) return false;
     std::string stretching = getStretching(auth);
     if (!writeStringToFile(stretching, dir + "/" + kFn_stretching)) return false;
     std::string salt;
@@ -424,7 +439,7 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBu
         if (!writeStringToFile(salt, dir + "/" + kFn_salt)) return false;
     }
     std::string appId;
-    if (!generateAppId(auth, stretching, salt, secdiscardable, &appId)) return false;
+    if (!generateAppId(auth, stretching, salt, secdiscardable_hash, &appId)) return false;
     std::string encryptedKey;
     if (auth.usesKeymaster()) {
         Keymaster keymaster;
@@ -467,8 +482,8 @@ bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, KeyBuffe
         LOG(ERROR) << "Version mismatch, expected " << kCurrentVersion << " got " << version;
         return false;
     }
-    std::string secdiscardable;
-    if (!readFileToString(dir + "/" + kFn_secdiscardable, &secdiscardable)) return false;
+    std::string secdiscardable_hash;
+    if (!readSecdiscardable(dir + "/" + kFn_secdiscardable, &secdiscardable_hash)) return false;
     std::string stretching;
     if (!readFileToString(dir + "/" + kFn_stretching, &stretching)) return false;
     std::string salt;
@@ -476,7 +491,7 @@ bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, KeyBuffe
         if (!readFileToString(dir + "/" + kFn_salt, &salt)) return false;
     }
     std::string appId;
-    if (!generateAppId(auth, stretching, salt, secdiscardable, &appId)) return false;
+    if (!generateAppId(auth, stretching, salt, secdiscardable_hash, &appId)) return false;
     std::string encryptedMessage;
     if (!readFileToString(dir + "/" + kFn_encrypted_key, &encryptedMessage)) return false;
     if (auth.usesKeymaster()) {
@@ -496,19 +511,6 @@ static bool deleteKey(const std::string& dir) {
     Keymaster keymaster;
     if (!keymaster) return false;
     if (!keymaster.deleteKey(kmKey)) return false;
-    return true;
-}
-
-static bool runSecdiscard(const std::string& dir) {
-    if (ForkExecvp(
-            std::vector<std::string>{kSecdiscardPath, "--",
-                dir + "/" + kFn_encrypted_key,
-                dir + "/" + kFn_keymaster_key_blob,
-                dir + "/" + kFn_secdiscardable,
-                }) != 0) {
-        LOG(ERROR) << "secdiscard failed";
-        return false;
-    }
     return true;
 }
 
@@ -533,8 +535,20 @@ static bool recursiveDeleteKey(const std::string& dir) {
 bool destroyKey(const std::string& dir) {
     bool success = true;
     // Try each thing, even if previous things failed.
-    success &= deleteKey(dir);
-    success &= runSecdiscard(dir);
+    bool uses_km = pathExists(dir + "/" + kFn_keymaster_key_blob);
+    if (uses_km) {
+        success &= deleteKey(dir);
+    }
+    auto secdiscard_cmd = std::vector<std::string>{
+        kSecdiscardPath, "--", dir + "/" + kFn_encrypted_key, dir + "/" + kFn_secdiscardable,
+    };
+    if (uses_km) {
+        secdiscard_cmd.emplace_back(dir + "/" + kFn_keymaster_key_blob);
+    }
+    if (ForkExecvp(secdiscard_cmd) != 0) {
+        LOG(ERROR) << "secdiscard failed";
+        success = false;
+    }
     success &= recursiveDeleteKey(dir);
     return success;
 }

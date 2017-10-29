@@ -79,6 +79,9 @@ const std::string user_key_dir = std::string() + DATA_MNT_POINT + "/misc/vold/us
 const std::string user_key_temp = user_key_dir + "/temp";
 const std::string prepare_subdirs_path = "/system/bin/vold_prepare_subdirs";
 
+const std::string systemwide_volume_key_dir =
+    std::string() + DATA_MNT_POINT + "/misc/vold/volume_keys";
+
 bool s_global_de_initialized = false;
 
 // Some users are ephemeral, don't try to wipe their keys from disk
@@ -336,8 +339,8 @@ bool e4crypt_initialize_global_de() {
     }
 
     PolicyKeyRef device_ref;
-    if (!android::vold::retrieveAndInstallKey(true, device_key_path, device_key_temp,
-                                              &device_ref.key_raw_ref))
+    if (!android::vold::retrieveAndInstallKey(true, kEmptyAuthentication, device_key_path,
+                                              device_key_temp, &device_ref.key_raw_ref))
         return false;
     get_data_file_encryption_modes(&device_ref);
 
@@ -503,14 +506,32 @@ static std::string volkey_path(const std::string& misc_path, const std::string& 
     return misc_path + "/vold/volume_keys/" + volume_uuid + "/default";
 }
 
+static std::string volume_secdiscardable_path(const std::string& volume_uuid) {
+    return systemwide_volume_key_dir + "/" + volume_uuid + "/secdiscardable";
+}
+
 static bool read_or_create_volkey(const std::string& misc_path, const std::string& volume_uuid,
                                   PolicyKeyRef* key_ref) {
+    auto secdiscardable_path = volume_secdiscardable_path(volume_uuid);
+    std::string secdiscardable_hash;
+    if (android::vold::pathExists(secdiscardable_path)) {
+        if (!android::vold::readSecdiscardable(secdiscardable_path, &secdiscardable_hash))
+            return false;
+    } else {
+        if (fs_mkdirs(secdiscardable_path.c_str(), 0700) != 0) {
+            PLOG(ERROR) << "Creating directories for: " << secdiscardable_path;
+            return false;
+        }
+        if (!android::vold::createSecdiscardable(secdiscardable_path, &secdiscardable_hash))
+            return false;
+    }
     auto key_path = volkey_path(misc_path, volume_uuid);
     if (fs_mkdirs(key_path.c_str(), 0700) != 0) {
         PLOG(ERROR) << "Creating directories for: " << key_path;
         return false;
     }
-    if (!android::vold::retrieveAndInstallKey(true, key_path, key_path + "_tmp",
+    android::vold::KeyAuthentication auth("", secdiscardable_hash);
+    if (!android::vold::retrieveAndInstallKey(true, auth, key_path, key_path + "_tmp",
                                               &key_ref->key_raw_ref))
         return false;
     key_ref->contents_mode =
@@ -521,7 +542,9 @@ static bool read_or_create_volkey(const std::string& misc_path, const std::strin
 }
 
 static bool destroy_volkey(const std::string& misc_path, const std::string& volume_uuid) {
-    return android::vold::destroyKey(volkey_path(misc_path, volume_uuid));
+    auto path = volkey_path(misc_path, volume_uuid);
+    if (!android::vold::pathExists(path)) return true;
+    return android::vold::destroyKey(path);
 }
 
 bool e4crypt_add_user_key_auth(userid_t user_id, int serial, const std::string& token_hex,
@@ -764,6 +787,42 @@ bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
         }
     }
 
+    return res;
+}
+
+static bool destroy_volume_keys(const std::string& directory_path, const std::string& volume_uuid) {
+    auto dirp = std::unique_ptr<DIR, int (*)(DIR*)>(opendir(directory_path.c_str()), closedir);
+    if (!dirp) {
+        PLOG(ERROR) << "Unable to open directory: " + directory_path;
+        return false;
+    }
+    bool res = true;
+    for (;;) {
+        errno = 0;
+        auto const entry = readdir(dirp.get());
+        if (!entry) {
+            if (errno) {
+                PLOG(ERROR) << "Unable to read directory: " + directory_path;
+                return false;
+            }
+            break;
+        }
+        if (entry->d_type != DT_DIR || entry->d_name[0] == '.') {
+            LOG(DEBUG) << "Skipping non-user " << entry->d_name;
+            continue;
+        }
+        res &= destroy_volkey(directory_path + "/" + entry->d_name, volume_uuid);
+    }
+    return res;
+}
+
+bool e4crypt_destroy_volume_keys(const std::string& volume_uuid) {
+    bool res = true;
+    LOG(DEBUG) << "e4crypt_destroy_volume_keys for volume " << escape_empty(volume_uuid);
+    auto secdiscardable_path = volume_secdiscardable_path(volume_uuid);
+    res &= android::vold::runSecdiscardSingle(secdiscardable_path);
+    res &= destroy_volume_keys("/data/misc_ce", volume_uuid);
+    res &= destroy_volume_keys("/data/misc_de", volume_uuid);
     return res;
 }
 

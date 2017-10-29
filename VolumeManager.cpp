@@ -48,18 +48,21 @@
 
 #include <private/android_filesystem_config.h>
 
-#include "model/EmulatedVolume.h"
-#include "model/ObbVolume.h"
-#include "VolumeManager.h"
-#include "NetlinkManager.h"
+#include <ext4_utils/ext4_crypt.h>
+
+#include "Devmapper.h"
+#include "Ext4Crypt.h"
 #include "Loop.h"
+#include "NetlinkManager.h"
+#include "Process.h"
+#include "Utils.h"
+#include "VoldUtil.h"
+#include "VolumeManager.h"
+#include "cryptfs.h"
 #include "fs/Ext4.h"
 #include "fs/Vfat.h"
-#include "Utils.h"
-#include "Devmapper.h"
-#include "Process.h"
-#include "VoldUtil.h"
-#include "cryptfs.h"
+#include "model/EmulatedVolume.h"
+#include "model/ObbVolume.h"
 
 using android::base::StringPrintf;
 using android::base::unique_fd;
@@ -300,13 +303,18 @@ int VolumeManager::forgetPartition(const std::string& partGuid, const std::strin
         return -1;
     }
 
+    bool success = true;
     std::string keyPath = android::vold::BuildKeyPath(normalizedGuid);
     if (unlink(keyPath.c_str()) != 0) {
         LOG(ERROR) << "Failed to unlink " << keyPath;
-        return -1;
+        success = false;
     }
-
-    return 0;
+    if (e4crypt_is_native()) {
+        if (!e4crypt_destroy_volume_keys(fsUuid)) {
+            success = false;
+        }
+    }
+    return success ? 0 : -1;
 }
 
 int VolumeManager::linkPrimary(userid_t userId) {
