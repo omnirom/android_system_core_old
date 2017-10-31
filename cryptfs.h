@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+#ifndef ANDROID_VOLD_CRYPTFS_H
+#define ANDROID_VOLD_CRYPTFS_H
+
 /* This structure starts 16,384 bytes before the end of a hardware
  * partition that is encrypted, or in a separate partition.  It's location
  * is specified by a property set in init.<device>.rc.
@@ -218,34 +221,28 @@ struct crypt_persist_data {
 #define PERSIST_DEL_KEY_ERROR_OTHER       (-1)
 #define PERSIST_DEL_KEY_ERROR_NO_FIELD    (-2)
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+int match_multi_entry(const char* key, const char* field, unsigned index);
+int wait_and_unmount(const char* mountpoint, bool kill);
 
-  int match_multi_entry(const char *key, const char *field, unsigned index);
-  int wait_and_unmount(const char *mountpoint, bool kill);
+typedef int (*kdf_func)(const char* passwd, const unsigned char* salt, unsigned char* ikey,
+                        void* params);
 
-  typedef int (*kdf_func)(const char *passwd, const unsigned char *salt,
-                          unsigned char *ikey, void *params);
+int cryptfs_crypto_complete(void);
+int cryptfs_check_passwd(const char* pw);
+int cryptfs_verify_passwd(const char* pw);
+int cryptfs_restart(void);
+int cryptfs_enable(const char* flag, int type, const char* passwd, int no_ui);
+int cryptfs_changepw(int type, const char* newpw);
+int cryptfs_enable_default(const char* flag, int no_ui);
+int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const unsigned char* key,
+                             int keysize, char* out_crypto_blkdev);
+int cryptfs_revert_ext_volume(const char* label);
+int cryptfs_getfield(const char* fieldname, char* value, int len);
+int cryptfs_setfield(const char* fieldname, const char* value);
+int cryptfs_mount_default_encrypted(void);
+int cryptfs_get_password_type(void);
+const char* cryptfs_get_password(void);
+void cryptfs_clear_password(void);
+int cryptfs_isConvertibleToFBE(void);
 
-  int cryptfs_crypto_complete(void);
-  int cryptfs_check_passwd(const char *pw);
-  int cryptfs_verify_passwd(const char *pw);
-  int cryptfs_restart(void);
-  int cryptfs_enable(const char *flag, int type, const char *passwd, int no_ui);
-  int cryptfs_changepw(int type, const char *newpw);
-  int cryptfs_enable_default(const char *flag, int no_ui);
-  int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
-          const unsigned char* key, int keysize, char* out_crypto_blkdev);
-  int cryptfs_revert_ext_volume(const char* label);
-  int cryptfs_getfield(const char *fieldname, char *value, int len);
-  int cryptfs_setfield(const char *fieldname, const char *value);
-  int cryptfs_mount_default_encrypted(void);
-  int cryptfs_get_password_type(void);
-  const char* cryptfs_get_password(void);
-  void cryptfs_clear_password(void);
-  int cryptfs_isConvertibleToFBE(void);
-
-#ifdef __cplusplus
-}
-#endif
+#endif /* ANDROID_VOLD_CRYPTFS_H */
