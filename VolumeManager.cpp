@@ -599,11 +599,6 @@ int VolumeManager::unmountAll() {
     return 0;
 }
 
-extern "C" int vold_unmountAll(void) {
-    VolumeManager *vm = VolumeManager::Instance();
-    return vm->unmountAll();
-}
-
 int VolumeManager::mkdirs(const std::string& path) {
     // Only offer to create directories for paths managed by vold
     if (android::base::StartsWith(path, "/storage/")) {

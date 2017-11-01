@@ -21,8 +21,6 @@
 #include <fnmatch.h>
 #include <stdlib.h>
 
-#ifdef __cplusplus
-
 #include <list>
 #include <mutex>
 #include <string>
@@ -153,13 +151,5 @@ private:
 
     int mNextObbId;
 };
-
-extern "C" {
-#endif /* __cplusplus */
-#define UNMOUNT_NOT_MOUNTED_ERR (-2)
-    int vold_unmountAll(void);
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -2051,6 +2051,11 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
     return rc;
 }
 
+static int vold_unmountAll(void) {
+    VolumeManager* vm = VolumeManager::Instance();
+    return vm->unmountAll();
+}
+
 int cryptfs_enable_internal(const char *howarg, int crypt_type, const char *passwd,
                             int no_ui)
 {
