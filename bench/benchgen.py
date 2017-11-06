@@ -157,6 +157,7 @@ with open("BenchmarkGen.h", 'w') as bench:
 #include <fcntl.h>
 
 #include <algorithm>
+#include <functional>
 #include <string>
 
 #include <Utils.h>
@@ -164,7 +165,8 @@ with open("BenchmarkGen.h", 'w') as bench:
 namespace android {
 namespace vold {
 
-static status_t BenchmarkRun() {
+static status_t BenchmarkRun(std::function<bool(int)> checkpoint) {
+
 """
 
     print >>bench, "char* buf = (char*) malloc(%d);" % (bufsize)
@@ -175,13 +177,19 @@ static status_t BenchmarkRun() {
     events = sorted(events, key=lambda e: e.time)
     active = set()
     defined = set()
+    i = 0
+    total = len(events)
     for e in events:
+        i += 1
+        if i % 256 == 0:
+            print >>bench, "if (!checkpoint(%d)) return -1;" % (50 + ((i * 50) / total))
+
         if e.call == "openat":
             fd, f, handle = extract_file(e, e.ret)
             if f:
                 active.add(handle)
                 if handle not in defined:
-                    print >>bench, "int ",
+                    print >>bench, "int",
                     defined.add(handle)
                 create_mode = ''
                 if 'O_CREAT' in e.args[2]:
@@ -297,11 +305,17 @@ static status_t CreateFile(const char* name, int len) {
     return OK;
 }
 
-static status_t BenchmarkCreate() {
+static status_t BenchmarkCreate(std::function<bool(int)> checkpoint) {
 status_t res = 0;
 res |= CreateFile("stub", 0);
 """
+    i = 0
+    total = len(files.values())
     for f in files.values():
+        i += 1
+        if i % 12 == 0:
+            print >>bench, "if (!checkpoint(%d)) return -1;" % ((i * 50) / total)
+
         print >>bench, 'res |= CreateFile("file%s", %d);' % (f.ident, f.size)
 
     print >>bench, """
