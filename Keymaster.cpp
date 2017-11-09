@@ -17,9 +17,10 @@
 #include "Keymaster.h"
 
 #include <android-base/logging.h>
-#include <keystore/keymaster_tags.h>
-#include <keystore/authorization_set.h>
-#include <keystore/keystore_hidl_support.h>
+
+#include "authorization_set.h"
+#include "keymaster_tags.h"
+#include "keystore_hidl_support.h"
 
 using namespace ::keystore;
 using android::hardware::hidl_string;

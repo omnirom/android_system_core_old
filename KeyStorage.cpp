@@ -40,13 +40,14 @@
 
 #include <hardware/hw_auth_token.h>
 
-#include <keystore/authorization_set.h>
-#include <keystore/keystore_hidl_support.h>
 
 extern "C" {
 
 #include "crypto_scrypt.h"
 }
+
+#include "authorization_set.h"
+#include "keystore_hidl_support.h"
 
 namespace android {
 namespace vold {
