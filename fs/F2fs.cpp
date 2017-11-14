@@ -18,7 +18,9 @@
 #include "Utils.h"
 
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
+#include <ext4_utils/ext4_crypt.h>
 
 #include <vector>
 #include <string>
@@ -72,8 +74,19 @@ status_t Mount(const std::string& source, const std::string& target) {
 status_t Format(const std::string& source) {
     std::vector<std::string> cmd;
     cmd.push_back(kMkfsPath);
-    cmd.push_back(source);
 
+    cmd.push_back("-f");
+    cmd.push_back("-d1");
+
+    if (android::base::GetBoolProperty("vold.has_quota", false)) {
+        cmd.push_back("-O");
+        cmd.push_back("quota");
+    }
+    if (e4crypt_is_native()) {
+        cmd.push_back("-O");
+        cmd.push_back("encrypt");
+    }
+    cmd.push_back(source);
     return ForkExecvp(cmd);
 }
 
