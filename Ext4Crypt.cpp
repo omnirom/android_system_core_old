@@ -30,6 +30,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <limits.h>
 #include <selinux/android.h>
 #include <sys/mount.h>
@@ -54,7 +55,9 @@
 #include <android-base/stringprintf.h>
 
 using android::base::StringPrintf;
+using android::base::WriteStringToFile;
 using android::vold::kEmptyAuthentication;
+using android::vold::KeyBuffer;
 
 // NOTE: keep in sync with StorageManager
 static constexpr int FLAG_STORAGE_DE = 1 << 0;
@@ -78,7 +81,7 @@ std::set<userid_t> s_ephemeral_users;
 std::map<userid_t, std::string> s_de_key_raw_refs;
 std::map<userid_t, std::string> s_ce_key_raw_refs;
 // TODO abolish this map, per b/26948053
-std::map<userid_t, std::string> s_ce_keys;
+std::map<userid_t, KeyBuffer> s_ce_keys;
 
 }
 
@@ -168,7 +171,7 @@ static void fixate_user_ce_key(const std::string& directory_path, const std::str
 
 static bool read_and_fixate_user_ce_key(userid_t user_id,
                                         const android::vold::KeyAuthentication& auth,
-                                        std::string *ce_key) {
+                                        KeyBuffer *ce_key) {
     auto const directory_path = get_ce_key_directory_path(user_id);
     auto const paths = get_ce_key_paths(directory_path);
     for (auto const ce_key_path: paths) {
@@ -186,11 +189,11 @@ static bool read_and_fixate_user_ce_key(userid_t user_id,
 static bool read_and_install_user_ce_key(userid_t user_id,
                                          const android::vold::KeyAuthentication& auth) {
     if (s_ce_key_raw_refs.count(user_id) != 0) return true;
-    std::string ce_key;
+    KeyBuffer ce_key;
     if (!read_and_fixate_user_ce_key(user_id, auth, &ce_key)) return false;
     std::string ce_raw_ref;
     if (!android::vold::installKey(ce_key, &ce_raw_ref)) return false;
-    s_ce_keys[user_id] = ce_key;
+    s_ce_keys[user_id] = std::move(ce_key);
     s_ce_key_raw_refs[user_id] = ce_raw_ref;
     LOG(DEBUG) << "Installed ce key for user " << user_id;
     return true;
@@ -217,7 +220,7 @@ static bool destroy_dir(const std::string& dir) {
 // NB this assumes that there is only one thread listening for crypt commands, because
 // it creates keys in a fixed location.
 static bool create_and_install_user_keys(userid_t user_id, bool create_ephemeral) {
-    std::string de_key, ce_key;
+    KeyBuffer de_key, ce_key;
     if (!android::vold::randomKey(&de_key)) return false;
     if (!android::vold::randomKey(&ce_key)) return false;
     if (create_ephemeral) {
@@ -304,7 +307,7 @@ static bool load_all_de_keys() {
         userid_t user_id = atoi(entry->d_name);
         if (s_de_key_raw_refs.count(user_id) == 0) {
             auto key_path = de_dir + "/" + entry->d_name;
-            std::string key;
+            KeyBuffer key;
             if (!android::vold::retrieveKey(key_path, kEmptyAuthentication, &key)) return false;
             std::string raw_ref;
             if (!android::vold::installKey(key, &raw_ref)) return false;
@@ -399,13 +402,23 @@ bool e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) 
     return true;
 }
 
+static void drop_caches() {
+    // Clean any dirty pages (otherwise they won't be dropped).
+    sync();
+    // Drop inode and page caches.
+    if (!WriteStringToFile("3", "/proc/sys/vm/drop_caches")) {
+        PLOG(ERROR) << "Failed to drop caches during key eviction";
+    }
+}
+
 static bool evict_ce_key(userid_t user_id) {
-   s_ce_keys.erase(user_id);
+    s_ce_keys.erase(user_id);
     bool success = true;
     std::string raw_ref;
     // If we haven't loaded the CE key, no need to evict it.
     if (lookup_key_ref(s_ce_key_raw_refs, user_id, &raw_ref)) {
         success &= android::vold::evictKey(raw_ref);
+        drop_caches();
     }
     s_ce_key_raw_refs.erase(user_id);
     return success;
@@ -497,7 +510,7 @@ bool e4crypt_add_user_key_auth(userid_t user_id, int serial, const char* token_h
         LOG(ERROR) << "Key not loaded into memory, can't change for user " << user_id;
         return false;
     }
-    auto ce_key = it->second;
+    const auto &ce_key = it->second;
     auto const directory_path = get_ce_key_directory_path(user_id);
     auto const paths = get_ce_key_paths(directory_path);
     std::string ce_key_path;
@@ -599,8 +612,7 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
         if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return false;
         if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
-        // For now, FBE is only supported on internal storage
-        if (e4crypt_is_native() && volume_uuid == nullptr) {
+        if (e4crypt_is_native()) {
             std::string de_raw_ref;
             if (!lookup_key_ref(s_de_key_raw_refs, user_id, &de_raw_ref)) return false;
             if (!ensure_policy(de_raw_ref, system_de_path)) return false;
@@ -621,8 +633,7 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
         if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return false;
         if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
-        // For now, FBE is only supported on internal storage
-        if (e4crypt_is_native() && volume_uuid == nullptr) {
+        if (e4crypt_is_native()) {
             std::string ce_raw_ref;
             if (!lookup_key_ref(s_ce_key_raw_refs, user_id, &ce_raw_ref)) return false;
             if (!ensure_policy(ce_raw_ref, system_ce_path)) return false;

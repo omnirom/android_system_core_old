@@ -351,18 +351,20 @@ pid_t ForkExecvpAsync(const std::vector<std::string>& args) {
 }
 
 status_t ReadRandomBytes(size_t bytes, std::string& out) {
-    out.clear();
+    out.resize(bytes);
+    return ReadRandomBytes(bytes, &out[0]);
+}
 
+status_t ReadRandomBytes(size_t bytes, char* buf) {
     int fd = TEMP_FAILURE_RETRY(open("/dev/urandom", O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
     if (fd == -1) {
         return -errno;
     }
 
-    char buf[BUFSIZ];
     size_t n;
-    while ((n = TEMP_FAILURE_RETRY(read(fd, &buf[0], std::min(sizeof(buf), bytes)))) > 0) {
-        out.append(buf, n);
+    while ((n = TEMP_FAILURE_RETRY(read(fd, &buf[0], bytes))) > 0) {
         bytes -= n;
+        buf += n;
     }
     close(fd);
 
@@ -371,6 +373,17 @@ status_t ReadRandomBytes(size_t bytes, std::string& out) {
     } else {
         return -EIO;
     }
+}
+
+status_t GenerateRandomUuid(std::string& out) {
+    status_t res = ReadRandomBytes(16, out);
+    if (res == OK) {
+        out[6] &= 0x0f;  /* clear version        */
+        out[6] |= 0x40;  /* set to version 4     */
+        out[8] &= 0x3f;  /* clear variant        */
+        out[8] |= 0x80;  /* set to IETF variant  */
+    }
+    return res;
 }
 
 status_t HexToStr(const std::string& hex, std::string& str) {
@@ -419,6 +432,15 @@ status_t StrToHex(const std::string& str, std::string& hex) {
     for (size_t i = 0; i < str.size(); i++) {
         hex.push_back(kLookup[(str[i] & 0xF0) >> 4]);
         hex.push_back(kLookup[str[i] & 0x0F]);
+    }
+    return OK;
+}
+
+status_t StrToHex(const KeyBuffer& str, KeyBuffer& hex) {
+    hex.clear();
+    for (size_t i = 0; i < str.size(); i++) {
+        hex.push_back(kLookup[(str.data()[i] & 0xF0) >> 4]);
+        hex.push_back(kLookup[str.data()[i] & 0x0F]);
     }
     return OK;
 }

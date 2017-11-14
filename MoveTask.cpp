@@ -62,7 +62,8 @@ static void notifyProgress(int progress) {
             StringPrintf("%d", progress).c_str(), false);
 }
 
-static status_t pushBackContents(const std::string& path, std::vector<std::string>& cmd) {
+static status_t pushBackContents(const std::string& path, std::vector<std::string>& cmd,
+        bool addWildcard) {
     DIR* dir = opendir(path.c_str());
     if (dir == NULL) {
         return -1;
@@ -73,7 +74,11 @@ static status_t pushBackContents(const std::string& path, std::vector<std::strin
         if ((!strcmp(ent->d_name, ".")) || (!strcmp(ent->d_name, ".."))) {
             continue;
         }
-        cmd.push_back(StringPrintf("%s/%s", path.c_str(), ent->d_name));
+        if (addWildcard) {
+            cmd.push_back(StringPrintf("%s/%s/*", path.c_str(), ent->d_name));
+        } else {
+            cmd.push_back(StringPrintf("%s/%s", path.c_str(), ent->d_name));
+        }
         found = true;
     }
     closedir(dir);
@@ -90,7 +95,7 @@ static status_t execRm(const std::string& path, int startProgress, int stepProgr
     cmd.push_back(kRmPath);
     cmd.push_back("-f"); /* force: remove without confirmation, no error if it doesn't exist */
     cmd.push_back("-R"); /* recursive: remove directory contents */
-    if (pushBackContents(path, cmd) != OK) {
+    if (pushBackContents(path, cmd, true) != OK) {
         LOG(WARNING) << "No contents in " << path;
         return OK;
     }
@@ -140,7 +145,7 @@ static status_t execCp(const std::string& fromPath, const std::string& toPath,
     cmd.push_back("-R"); /* recurse into subdirectories (DEST must be a directory) */
     cmd.push_back("-P"); /* Do not follow symlinks [default] */
     cmd.push_back("-d"); /* don't dereference symlinks */
-    if (pushBackContents(fromPath, cmd) != OK) {
+    if (pushBackContents(fromPath, cmd, false) != OK) {
         LOG(WARNING) << "No contents in " << fromPath;
         return OK;
     }

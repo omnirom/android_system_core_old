@@ -17,6 +17,8 @@
 #ifndef ANDROID_VOLD_UTILS_H
 #define ANDROID_VOLD_UTILS_H
 
+#include "KeyBuffer.h"
+
 #include <utils/Errors.h>
 #include <cutils/multiuser.h>
 #include <selinux/selinux.h>
@@ -78,11 +80,15 @@ status_t ForkExecvp(const std::vector<std::string>& args,
 pid_t ForkExecvpAsync(const std::vector<std::string>& args);
 
 status_t ReadRandomBytes(size_t bytes, std::string& out);
+status_t ReadRandomBytes(size_t bytes, char* buffer);
+status_t GenerateRandomUuid(std::string& out);
 
 /* Converts hex string to raw bytes, ignoring [ :-] */
 status_t HexToStr(const std::string& hex, std::string& str);
 /* Converts raw bytes to hex string */
 status_t StrToHex(const std::string& str, std::string& hex);
+/* Converts raw key bytes to hex string */
+status_t StrToHex(const KeyBuffer& str, KeyBuffer& hex);
 /* Normalize given hex string into consistent format */
 status_t NormalizeHex(const std::string& in, std::string& out);
 

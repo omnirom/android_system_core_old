@@ -133,7 +133,7 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
     const char* c_source = source.c_str();
     const char* c_target = target.c_str();
 
-    flags = MS_NODEV | MS_NOSUID | MS_DIRSYNC;
+    flags = MS_NODEV | MS_NOSUID | MS_DIRSYNC | MS_NOATIME;
 
     flags |= (executable ? 0 : MS_NOEXEC);
     flags |= (ro ? MS_RDONLY : 0);

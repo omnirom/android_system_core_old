@@ -29,8 +29,9 @@
 #include <mntent.h>
 
 #include <android-base/logging.h>
+#include <android-base/unique_fd.h>
 
-#include <AutoCloseFD.h>
+#include "FileDeviceUtils.h"
 
 namespace {
 
@@ -44,10 +45,7 @@ constexpr uint32_t max_extents = 32;
 bool read_command_line(int argc, const char * const argv[], Options &options);
 void usage(const char *progname);
 bool secdiscard_path(const std::string &path);
-std::unique_ptr<struct fiemap> path_fiemap(const std::string &path, uint32_t extent_count);
 bool check_fiemap(const struct fiemap &fiemap, const std::string &path);
-std::unique_ptr<struct fiemap> alloc_fiemap(uint32_t extent_count);
-std::string block_device_for_path(const std::string &path);
 bool overwrite_with_zeros(int fd, off64_t start, off64_t length);
 
 }
@@ -99,16 +97,17 @@ void usage(const char *progname) {
 
 // BLKSECDISCARD all content in "path", if it's small enough.
 bool secdiscard_path(const std::string &path) {
-    auto fiemap = path_fiemap(path, max_extents);
+    auto fiemap = android::vold::PathFiemap(path, max_extents);
     if (!fiemap || !check_fiemap(*fiemap, path)) {
         return false;
     }
-    auto block_device = block_device_for_path(path);
+    auto block_device = android::vold::BlockDeviceForPath(path);
     if (block_device.empty()) {
         return false;
     }
-    AutoCloseFD fs_fd(block_device, O_RDWR | O_LARGEFILE);
-    if (!fs_fd) {
+    android::base::unique_fd fs_fd(TEMP_FAILURE_RETRY(open(
+        block_device.c_str(), O_RDWR | O_LARGEFILE | O_CLOEXEC, 0)));
+    if (fs_fd == -1) {
         PLOG(ERROR) << "Failed to open device " << block_device;
         return false;
     }
@@ -123,32 +122,6 @@ bool secdiscard_path(const std::string &path) {
         }
     }
     return true;
-}
-
-// Read the file's FIEMAP
-std::unique_ptr<struct fiemap> path_fiemap(const std::string &path, uint32_t extent_count)
-{
-    AutoCloseFD fd(path);
-    if (!fd) {
-        if (errno == ENOENT) {
-            PLOG(DEBUG) << "Unable to open " << path;
-        } else {
-            PLOG(ERROR) << "Unable to open " << path;
-        }
-        return nullptr;
-    }
-    auto fiemap = alloc_fiemap(extent_count);
-    if (ioctl(fd.get(), FS_IOC_FIEMAP, fiemap.get()) != 0) {
-        PLOG(ERROR) << "Unable to FIEMAP " << path;
-        return nullptr;
-    }
-    auto mapped = fiemap->fm_mapped_extents;
-    if (mapped < 1 || mapped > extent_count) {
-        LOG(ERROR) << "Extent count not in bounds 1 <= " << mapped << " <= " << extent_count
-            << " in " << path;
-        return nullptr;
-    }
-    return fiemap;
 }
 
 // Ensure that the FIEMAP covers the file and is OK to discard
@@ -166,48 +139,6 @@ bool check_fiemap(const struct fiemap &fiemap, const std::string &path) {
         }
     }
     return true;
-}
-
-std::unique_ptr<struct fiemap> alloc_fiemap(uint32_t extent_count)
-{
-    size_t allocsize = offsetof(struct fiemap, fm_extents[extent_count]);
-    std::unique_ptr<struct fiemap> res(new (::operator new (allocsize)) struct fiemap);
-    memset(res.get(), 0, allocsize);
-    res->fm_start = 0;
-    res->fm_length = UINT64_MAX;
-    res->fm_flags = 0;
-    res->fm_extent_count = extent_count;
-    res->fm_mapped_extents = 0;
-    return res;
-}
-
-// Given a file path, look for the corresponding block device in /proc/mount
-std::string block_device_for_path(const std::string &path)
-{
-    std::unique_ptr<FILE, int(*)(FILE*)> mnts(setmntent("/proc/mounts", "re"), endmntent);
-    if (!mnts) {
-        PLOG(ERROR) << "Unable to open /proc/mounts";
-        return "";
-    }
-    std::string result;
-    size_t best_length = 0;
-    struct mntent *mnt; // getmntent returns a thread local, so it's safe.
-    while ((mnt = getmntent(mnts.get())) != nullptr) {
-        auto l = strlen(mnt->mnt_dir);
-        if (l > best_length &&
-            path.size() > l &&
-            path[l] == '/' &&
-            path.compare(0, l, mnt->mnt_dir) == 0) {
-                result = mnt->mnt_fsname;
-                best_length = l;
-        }
-    }
-    if (result.empty()) {
-        LOG(ERROR) <<"Didn't find a mountpoint to match path " << path;
-        return "";
-    }
-    LOG(DEBUG) << "For path " << path << " block device is " << result;
-    return result;
 }
 
 bool overwrite_with_zeros(int fd, off64_t start, off64_t length) {

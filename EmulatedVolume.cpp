@@ -84,6 +84,7 @@ status_t EmulatedVolume::doMount() {
                 "-g", "1023", // AID_MEDIA_RW
                 "-m",
                 "-w",
+                "-G",
                 mRawPath.c_str(),
                 label.c_str(),
                 NULL)) {
@@ -103,6 +104,8 @@ status_t EmulatedVolume::doMount() {
         LOG(VERBOSE) << "Waiting for FUSE to spin up...";
         usleep(50000); // 50ms
     }
+    /* sdcardfs will have exited already. FUSE will still be running */
+    TEMP_FAILURE_RETRY(waitpid(mFusePid, nullptr, WNOHANG));
 
     return OK;
 }

@@ -17,6 +17,8 @@
 #ifndef ANDROID_VOLD_KEYSTORAGE_H
 #define ANDROID_VOLD_KEYSTORAGE_H
 
+#include "KeyBuffer.h"
+
 #include <string>
 
 namespace android {
@@ -46,17 +48,17 @@ bool pathExists(const std::string& path);
 // in such a way that it can only be retrieved via Keymaster and
 // can be securely deleted.
 // It's safe to move/rename the directory after creation.
-bool storeKey(const std::string& dir, const KeyAuthentication& auth, const std::string& key);
+bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBuffer& key);
 
 // Create a directory at the named path, and store "key" in it as storeKey
 // This version creates the key in "tmp_path" then atomically renames "tmp_path"
 // to "key_path" thereby ensuring that the key is either stored entirely or
 // not at all.
 bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path,
-                        const KeyAuthentication& auth, const std::string& key);
+                        const KeyAuthentication& auth, const KeyBuffer& key);
 
 // Retrieve the key from the named directory.
-bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, std::string* key);
+bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, KeyBuffer* key);
 
 // Securely destroy the key stored in the named directory and delete the directory.
 bool destroyKey(const std::string& dir);
