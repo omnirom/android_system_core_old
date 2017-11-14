@@ -1944,15 +1944,17 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
         SLOGI("Making empty filesystem with command %s %s %s %s %s %s\n",
               args[0], args[1], args[2], args[3], args[4], args[5]);
     } else if (type == F2FS_FS) {
-        args[0] = "/system/bin/mkfs.f2fs";
+        args[0] = "/system/bin/make_f2fs";
         args[1] = "-t";
         args[2] = "-d1";
-        args[3] = crypto_blkdev;
+        args[3] = "-f";
+        args[4] = "-O encrypt";
+        args[5] = crypto_blkdev;
         snprintf(size_str, sizeof(size_str), "%" PRId64, size);
-        args[4] = size_str;
-        num_args = 5;
-        SLOGI("Making empty filesystem with command %s %s %s %s %s\n",
-              args[0], args[1], args[2], args[3], args[4]);
+        args[6] = size_str;
+        num_args = 7;
+        SLOGI("Making empty filesystem with command %s %s %s %s %s %s %s\n",
+              args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
     } else {
         SLOGE("cryptfs_enable_wipe(): unknown filesystem type %d\n", type);
         return -1;
