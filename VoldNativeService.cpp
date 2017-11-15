@@ -481,6 +481,28 @@ binder::Status VoldNativeService::fstrim(int32_t fstrimFlags,
     return ok();
 }
 
+binder::Status VoldNativeService::runIdleMaint(
+        const android::sp<android::os::IVoldTaskListener>& listener) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    std::thread([=]() {
+        android::vold::RunIdleMaint(listener);
+    }).detach();
+    return ok();
+}
+
+binder::Status VoldNativeService::abortIdleMaint(
+        const android::sp<android::os::IVoldTaskListener>& listener) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    std::thread([=]() {
+        android::vold::AbortIdleMaint(listener);
+    }).detach();
+    return ok();
+}
+
 binder::Status VoldNativeService::mountAppFuse(int32_t uid, int32_t pid, int32_t mountId,
         android::base::unique_fd* _aidl_return) {
     ENFORCE_UID(AID_SYSTEM);

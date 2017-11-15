@@ -23,6 +23,8 @@ namespace android {
 namespace vold {
 
 void Trim(const android::sp<android::os::IVoldTaskListener>& listener);
+int RunIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
+int AbortIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
 
 }  // namespace vold
 }  // namespace android

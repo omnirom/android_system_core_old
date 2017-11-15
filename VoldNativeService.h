@@ -66,6 +66,10 @@ public:
 
     binder::Status fstrim(int32_t fstrimFlags,
             const android::sp<android::os::IVoldTaskListener>& listener);
+    binder::Status runIdleMaint(
+            const android::sp<android::os::IVoldTaskListener>& listener);
+    binder::Status abortIdleMaint(
+            const android::sp<android::os::IVoldTaskListener>& listener);
 
     binder::Status mountAppFuse(int32_t uid, int32_t pid, int32_t mountId,
             android::base::unique_fd* _aidl_return);
