@@ -96,6 +96,8 @@ extern "C" {
 #define RETRY_MOUNT_ATTEMPTS 10
 #define RETRY_MOUNT_DELAY_SECONDS 1
 
+static int put_crypt_ftr_and_key(struct crypt_mnt_ftr* crypt_ftr);
+
 static unsigned char saved_master_key[KEY_LEN_BYTES];
 static char *saved_mount_point;
 static int  master_key_saved = 0;
@@ -120,7 +122,7 @@ static int keymaster_create_key(struct crypt_mnt_ftr *ftr)
             &ftr->keymaster_blob_size);
     if (rc) {
         if (ftr->keymaster_blob_size > KEYMASTER_BLOB_SIZE) {
-            SLOGE("Keymaster key blob to large)");
+            SLOGE("Keymaster key blob too large");
             ftr->keymaster_blob_size = 0;
         }
         SLOGE("Failed to generate keypair");
@@ -169,8 +171,31 @@ static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
             SLOGE("Unknown KDF type %d", ftr->kdf_type);
             return -1;
     }
-    return keymaster_sign_object_for_cryptfs_scrypt(ftr->keymaster_blob, ftr->keymaster_blob_size,
-            KEYMASTER_CRYPTFS_RATE_LIMIT, to_sign, to_sign_size, signature, signature_size);
+    for (;;) {
+        auto result = keymaster_sign_object_for_cryptfs_scrypt(
+            ftr->keymaster_blob, ftr->keymaster_blob_size, KEYMASTER_CRYPTFS_RATE_LIMIT, to_sign,
+            to_sign_size, signature, signature_size);
+        switch (result) {
+            case KeymasterSignResult::ok:
+                return 0;
+            case KeymasterSignResult::upgrade:
+                break;
+            default:
+                return -1;
+        }
+        SLOGD("Upgrading key");
+        if (keymaster_upgrade_key_for_cryptfs_scrypt(
+                RSA_KEY_SIZE, RSA_EXPONENT, KEYMASTER_CRYPTFS_RATE_LIMIT, ftr->keymaster_blob,
+                ftr->keymaster_blob_size, ftr->keymaster_blob, KEYMASTER_BLOB_SIZE,
+                &ftr->keymaster_blob_size) != 0) {
+            SLOGE("Failed to upgrade key");
+            return -1;
+        }
+        if (put_crypt_ftr_and_key(ftr) != 0) {
+            SLOGE("Failed to write upgraded key to disk");
+        }
+        SLOGD("Key upgraded successfully");
+    }
 }
 
 /* Store password when userdata is successfully decrypted and mounted.

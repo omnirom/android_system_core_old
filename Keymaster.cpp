@@ -206,71 +206,83 @@ int keymaster_compatibility_cryptfs_scrypt() {
     return dev.isSecure();
 }
 
-int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size,
-                                            uint64_t rsa_exponent,
-                                            uint32_t ratelimit,
-                                            uint8_t* key_buffer,
-                                            uint32_t key_buffer_size,
-                                            uint32_t* key_out_size)
-{
-    Keymaster dev;
-    std::string key;
-    if (!dev) {
-        LOG(ERROR) << "Failed to initiate keymaster session";
-        return -1;
+static bool write_string_to_buf(const std::string& towrite, uint8_t* buffer, uint32_t buffer_size,
+                                uint32_t* out_size) {
+    if (!buffer || !out_size) {
+        LOG(ERROR) << "Missing target pointers";
+        return false;
     }
-    if (!key_buffer || !key_out_size) {
-        LOG(ERROR) << __FILE__ << ":" << __LINE__ << ":Invalid argument";
-        return -1;
+    *out_size = towrite.size();
+    if (buffer_size < towrite.size()) {
+        LOG(ERROR) << "Buffer too small " << buffer_size << " < " << towrite.size();
+        return false;
     }
+    memset(buffer, '\0', buffer_size);
+    std::copy(towrite.begin(), towrite.end(), buffer);
+    return true;
+}
+
+static AuthorizationSet keyParams(uint32_t rsa_key_size, uint64_t rsa_exponent, uint32_t ratelimit) {
+    return AuthorizationSetBuilder()
+        .Authorization(TAG_ALGORITHM, Algorithm::RSA)
+        .Authorization(TAG_KEY_SIZE, rsa_key_size)
+        .Authorization(TAG_RSA_PUBLIC_EXPONENT, rsa_exponent)
+        .Authorization(TAG_PURPOSE, KeyPurpose::SIGN)
+        .Authorization(TAG_PADDING, PaddingMode::NONE)
+        .Authorization(TAG_DIGEST, Digest::NONE)
+        .Authorization(TAG_BLOB_USAGE_REQUIREMENTS, KeyBlobUsageRequirements::STANDALONE)
+        .Authorization(TAG_NO_AUTH_REQUIRED)
+        .Authorization(TAG_MIN_SECONDS_BETWEEN_OPS, ratelimit);
+}
+
+int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size, uint64_t rsa_exponent,
+                                            uint32_t ratelimit, uint8_t* key_buffer,
+                                            uint32_t key_buffer_size, uint32_t* key_out_size) {
     if (key_out_size) {
         *key_out_size = 0;
     }
-
-    auto paramBuilder = AuthorizationSetBuilder()
-                            .Authorization(TAG_ALGORITHM, Algorithm::RSA)
-                            .Authorization(TAG_KEY_SIZE, rsa_key_size)
-                            .Authorization(TAG_RSA_PUBLIC_EXPONENT, rsa_exponent)
-                            .Authorization(TAG_PURPOSE, KeyPurpose::SIGN)
-                            .Authorization(TAG_PADDING, PaddingMode::NONE)
-                            .Authorization(TAG_DIGEST, Digest::NONE)
-                            .Authorization(TAG_BLOB_USAGE_REQUIREMENTS,
-                                    KeyBlobUsageRequirements::STANDALONE)
-                            .Authorization(TAG_NO_AUTH_REQUIRED)
-                            .Authorization(TAG_MIN_SECONDS_BETWEEN_OPS, ratelimit);
-
-    if (!dev.generateKey(paramBuilder, &key)) {
-        return -1;
-    }
-
-    if (key_out_size) {
-        *key_out_size = key.size();
-    }
-
-    if (key_buffer_size < key.size()) {
-        return -1;
-    }
-
-    std::copy(key.data(), key.data() + key.size(), key_buffer);
-    return 0;
-}
-
-int keymaster_sign_object_for_cryptfs_scrypt(const uint8_t* key_blob,
-                                             size_t key_blob_size,
-                                             uint32_t ratelimit,
-                                             const uint8_t* object,
-                                             const size_t object_size,
-                                             uint8_t** signature_buffer,
-                                             size_t* signature_buffer_size)
-{
     Keymaster dev;
     if (!dev) {
         LOG(ERROR) << "Failed to initiate keymaster session";
         return -1;
     }
+    std::string key;
+    if (!dev.generateKey(keyParams(rsa_key_size, rsa_exponent, ratelimit), &key)) return -1;
+    if (!write_string_to_buf(key, key_buffer, key_buffer_size, key_out_size)) return -1;
+    return 0;
+}
+
+int keymaster_upgrade_key_for_cryptfs_scrypt(uint32_t rsa_key_size, uint64_t rsa_exponent,
+                                             uint32_t ratelimit, const uint8_t* key_blob,
+                                             size_t key_blob_size, uint8_t* key_buffer,
+                                             uint32_t key_buffer_size, uint32_t* key_out_size) {
+    if (key_out_size) {
+        *key_out_size = 0;
+    }
+    Keymaster dev;
+    if (!dev) {
+        LOG(ERROR) << "Failed to initiate keymaster session";
+        return -1;
+    }
+    std::string old_key(reinterpret_cast<const char*>(key_blob), key_blob_size);
+    std::string new_key;
+    if (!dev.upgradeKey(old_key, keyParams(rsa_key_size, rsa_exponent, ratelimit), &new_key))
+        return -1;
+    if (!write_string_to_buf(new_key, key_buffer, key_buffer_size, key_out_size)) return -1;
+    return 0;
+}
+
+KeymasterSignResult keymaster_sign_object_for_cryptfs_scrypt(
+    const uint8_t* key_blob, size_t key_blob_size, uint32_t ratelimit, const uint8_t* object,
+    const size_t object_size, uint8_t** signature_buffer, size_t* signature_buffer_size) {
+    Keymaster dev;
+    if (!dev) {
+        LOG(ERROR) << "Failed to initiate keymaster session";
+        return KeymasterSignResult::error;
+    }
     if (!key_blob || !object || !signature_buffer || !signature_buffer_size) {
         LOG(ERROR) << __FILE__ << ":" << __LINE__ << ":Invalid argument";
-        return -1;
+        return KeymasterSignResult::error;
     }
 
     AuthorizationSet outParams;
@@ -291,28 +303,33 @@ int keymaster_sign_object_for_cryptfs_scrypt(const uint8_t* key_blob,
         } else break;
     }
 
+    if (op.errorCode() == ErrorCode::KEY_REQUIRES_UPGRADE) {
+        LOG(ERROR) << "Keymaster key requires upgrade";
+        return KeymasterSignResult::upgrade;
+    }
+
     if (op.errorCode() != ErrorCode::OK) {
         LOG(ERROR) << "Error starting keymaster signature transaction: " << int32_t(op.errorCode());
-        return -1;
+        return KeymasterSignResult::error;
     }
 
     if (!op.updateCompletely(input, &output)) {
         LOG(ERROR) << "Error sending data to keymaster signature transaction: "
                    << uint32_t(op.errorCode());
-        return -1;
+        return KeymasterSignResult::error;
     }
 
     if (!op.finish(&output)) {
         LOG(ERROR) << "Error finalizing keymaster signature transaction: " << int32_t(op.errorCode());
-        return -1;
+        return KeymasterSignResult::error;
     }
 
     *signature_buffer = reinterpret_cast<uint8_t*>(malloc(output.size()));
     if (*signature_buffer == nullptr) {
         LOG(ERROR) << "Error allocation buffer for keymaster signature";
-        return -1;
+        return KeymasterSignResult::error;
     }
     *signature_buffer_size = output.size();
     std::copy(output.data(), output.data() + output.size(), *signature_buffer);
-    return 0;
+    return KeymasterSignResult::ok;
 }
