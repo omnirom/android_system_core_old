@@ -80,6 +80,11 @@ cc_library_static {
     },
 }
 
+cc_library_headers {
+    name: "libvold_headers",
+    export_include_dirs: ["."],
+}
+
 // Static library factored out to support testing
 cc_library_static {
     name: "libvold",
@@ -123,6 +128,16 @@ cc_library_static {
         "model/VolumeBase.cpp",
         "secontext.cpp",
     ],
+    product_variables: {
+        arc: {
+            exclude_srcs: [
+                "model/ObbVolume.cpp",
+            ],
+            static_libs: [
+                "libarcobbvolume",
+            ],
+        },
+    },
 }
 
 cc_binary {
@@ -134,6 +149,13 @@ cc_binary {
 
     srcs: ["main.cpp"],
     static_libs: ["libvold"],
+    product_variables: {
+        arc: {
+            static_libs: [
+                "libarcobbvolume",
+            ]
+        },
+    },
     init_rc: ["vold.rc"],
 
     required: [
