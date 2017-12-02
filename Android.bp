@@ -65,9 +65,7 @@ cc_library_static {
     defaults: ["vold_default_flags"],
 
     srcs: [
-        "binder/android/os/IVold.aidl",
-        "binder/android/os/IVoldListener.aidl",
-        "binder/android/os/IVoldTaskListener.aidl",
+        ":vold_aidl",
     ],
     shared_libs: [
         "libbinder",
@@ -206,6 +204,15 @@ cc_binary {
     ],
     static_libs: [
         "libvold_binder",
+    ],
+}
+
+filegroup {
+    name: "vold_aidl",
+    srcs: [
+        "binder/android/os/IVold.aidl",
+        "binder/android/os/IVoldListener.aidl",
+        "binder/android/os/IVoldTaskListener.aidl",
     ],
 }
 
