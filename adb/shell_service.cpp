@@ -86,6 +86,7 @@
 #include <pty.h>
 #include <pwd.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <termios.h>
 
 #include <memory>
@@ -105,6 +106,10 @@
 #include "adb_unique_fd.h"
 #include "adb_utils.h"
 #include "security_log_tags.h"
+
+#ifndef _PATH_BSHELL2
+#define _PATH_BSHELL2 "/sbin/sh"
+#endif
 
 namespace {
 
@@ -343,12 +348,22 @@ bool Subprocess::ForkAndExec(std::string* error) {
                 adb_write(oom_score_adj_fd, oom_score_adj_value, strlen(oom_score_adj_value)));
         }
 
-        if (command_.empty()) {
-            execle(_PATH_BSHELL, _PATH_BSHELL, "-", nullptr, cenv.data());
-        } else {
-            execle(_PATH_BSHELL, _PATH_BSHELL, "-c", command_.c_str(), nullptr, cenv.data());
+        std::string shell_command = android::base::GetProperty("persist.sys.adb.shell", "");
+        if (shell_command.empty()) {
+            struct stat st;
+            if (stat(_PATH_BSHELL2, &st) == 0) {
+                shell_command = _PATH_BSHELL2;
+            } else {
+                shell_command = _PATH_BSHELL;
+            }
         }
-        WriteFdExactly(child_error_sfd, "exec '" _PATH_BSHELL "' failed: ");
+
+        if (command_.empty()) {
+            execle(shell_command.c_str(), shell_command.c_str(), "-", nullptr, cenv.data());
+        } else {
+            execle(shell_command.c_str(), shell_command.c_str(), "-c", command_.c_str(), nullptr, cenv.data());
+        }
+        WriteFdExactly(child_error_sfd, "exec '" + shell_command + "' failed: ");
         WriteFdExactly(child_error_sfd, strerror(errno));
         child_error_sfd.reset(-1);
         _Exit(1);
