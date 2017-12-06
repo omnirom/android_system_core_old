@@ -26,6 +26,7 @@ common_src_files := \
 	MoveTask.cpp \
 	Benchmark.cpp \
 	TrimTask.cpp \
+	KeyBuffer.cpp \
 	Keymaster.cpp \
 	KeyStorage.cpp \
 	KeyUtil.cpp \
@@ -86,6 +87,8 @@ ifeq ($(TARGET_USERIMAGES_USE_EXT4), true)
     vold_cflags += -DTARGET_USES_MKE2FS
     required_modules += mke2fs
   else
+    # Adoptable storage has fully moved to mke2fs, so we need both tools
+    required_modules += mke2fs
     required_modules += make_ext4fs
   endif
 endif
@@ -156,7 +159,10 @@ LOCAL_CLANG := true
 LOCAL_TIDY := true
 LOCAL_TIDY_FLAGS := $(common_local_tidy_flags)
 LOCAL_TIDY_CHECKS := $(common_local_tidy_checks)
-LOCAL_SRC_FILES:= secdiscard.cpp
+LOCAL_SRC_FILES:= \
+    FileDeviceUtils.cpp \
+    secdiscard.cpp \
+
 LOCAL_MODULE:= secdiscard
 LOCAL_SHARED_LIBRARIES := libbase
 LOCAL_CFLAGS := $(vold_cflags)

@@ -195,7 +195,7 @@ static KeymasterOperation begin(Keymaster& keymaster, const std::string& dir,
 
 static bool encryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir,
                                     const AuthorizationSet &keyParams,
-                                    const std::string& message, std::string* ciphertext) {
+                                    const KeyBuffer& message, std::string* ciphertext) {
     AuthorizationSet opParams;
     AuthorizationSet outParams;
     auto opHandle = begin(keymaster, dir, KeyPurpose::ENCRYPT, keyParams, opParams, &outParams);
@@ -220,7 +220,7 @@ static bool encryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir
 
 static bool decryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir,
                                     const AuthorizationSet &keyParams,
-                                    const std::string& ciphertext, std::string* message) {
+                                    const std::string& ciphertext, KeyBuffer* message) {
     auto nonce = ciphertext.substr(0, GCM_NONCE_BYTES);
     auto bodyAndMac = ciphertext.substr(GCM_NONCE_BYTES);
     auto opParams = AuthorizationSetBuilder()
@@ -305,7 +305,7 @@ static void logOpensslError() {
 }
 
 static bool encryptWithoutKeymaster(const std::string& preKey,
-                                    const std::string& plaintext, std::string* ciphertext) {
+                                    const KeyBuffer& plaintext, std::string* ciphertext) {
     auto key = hashWithPrefix(kHashPrefix_keygen, preKey);
     key.resize(AES_KEY_BYTES);
     if (!readRandomBytesOrLog(GCM_NONCE_BYTES, ciphertext)) return false;
@@ -351,7 +351,7 @@ static bool encryptWithoutKeymaster(const std::string& preKey,
 }
 
 static bool decryptWithoutKeymaster(const std::string& preKey,
-                                    const std::string& ciphertext, std::string* plaintext) {
+                                    const std::string& ciphertext, KeyBuffer* plaintext) {
     if (ciphertext.size() < GCM_NONCE_BYTES + GCM_MAC_BYTES) {
         LOG(ERROR) << "GCM ciphertext too small: " << ciphertext.size();
         return false;
@@ -370,7 +370,7 @@ static bool decryptWithoutKeymaster(const std::string& preKey,
         logOpensslError();
         return false;
     }
-    plaintext->resize(ciphertext.size() - GCM_NONCE_BYTES - GCM_MAC_BYTES);
+    *plaintext = KeyBuffer(ciphertext.size() - GCM_NONCE_BYTES - GCM_MAC_BYTES);
     int outlen;
     if (1 != EVP_DecryptUpdate(ctx.get(),
         reinterpret_cast<uint8_t*>(&(*plaintext)[0]), &outlen,
@@ -404,7 +404,7 @@ bool pathExists(const std::string& path) {
     return access(path.c_str(), F_OK) == 0;
 }
 
-bool storeKey(const std::string& dir, const KeyAuthentication& auth, const std::string& key) {
+bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBuffer& key) {
     if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), 0700)) == -1) {
         PLOG(ERROR) << "key mkdir " << dir;
         return false;
@@ -442,7 +442,7 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const std::
 }
 
 bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path,
-                        const KeyAuthentication& auth, const std::string& key) {
+                        const KeyAuthentication& auth, const KeyBuffer& key) {
     if (pathExists(key_path)) {
         LOG(ERROR) << "Already exists, cannot create key at: " << key_path;
         return false;
@@ -460,7 +460,7 @@ bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path
     return true;
 }
 
-bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, std::string* key) {
+bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, KeyBuffer* key) {
     std::string version;
     if (!readFileToString(dir + "/" + kFn_version, &version)) return false;
     if (version != kCurrentVersion) {

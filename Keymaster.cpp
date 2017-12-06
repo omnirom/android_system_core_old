@@ -31,25 +31,23 @@ KeymasterOperation::~KeymasterOperation() {
     if (mDevice.get()) mDevice->abort(mOpHandle);
 }
 
-bool KeymasterOperation::updateCompletely(const std::string& input, std::string* output) {
-    if (output)
-        output->clear();
-    auto it = input.begin();
-    uint32_t inputConsumed;
+bool KeymasterOperation::updateCompletely(const char* input, size_t inputLen,
+        const std::function<void(const char*, size_t)> consumer) {
+    uint32_t inputConsumed = 0;
 
     ErrorCode km_error;
-    auto hidlCB = [&] (ErrorCode ret, uint32_t _inputConsumed,
+    auto hidlCB = [&] (ErrorCode ret, uint32_t inputConsumedDelta,
             const hidl_vec<KeyParameter>& /*ignored*/, const hidl_vec<uint8_t>& _output) {
         km_error = ret;
         if (km_error != ErrorCode::OK) return;
-        inputConsumed = _inputConsumed;
-        if (output)
-            output->append(reinterpret_cast<const char*>(&_output[0]), _output.size());
+        inputConsumed += inputConsumedDelta;
+        consumer(reinterpret_cast<const char*>(&_output[0]), _output.size());
     };
 
-    while (it != input.end()) {
-        size_t toRead = static_cast<size_t>(input.end() - it);
-        auto inputBlob = blob2hidlVec(reinterpret_cast<const uint8_t*>(&*it), toRead);
+    while (inputConsumed != inputLen) {
+        size_t toRead = static_cast<size_t>(inputLen - inputConsumed);
+        auto inputBlob =
+                blob2hidlVec(reinterpret_cast<const uint8_t*>(&input[inputConsumed]), toRead);
         auto error = mDevice->update(mOpHandle, hidl_vec<KeyParameter>(), inputBlob, hidlCB);
         if (!error.isOk()) {
             LOG(ERROR) << "update failed: " << error.description();
@@ -61,12 +59,11 @@ bool KeymasterOperation::updateCompletely(const std::string& input, std::string*
             mDevice = nullptr;
             return false;
         }
-        if (inputConsumed > toRead) {
+        if (inputConsumed > inputLen) {
             LOG(ERROR) << "update reported too much input consumed";
             mDevice = nullptr;
             return false;
         }
-        it += inputConsumed;
     }
     return true;
 }

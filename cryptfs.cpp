@@ -1326,29 +1326,24 @@ int wait_and_unmount(const char *mountpoint, bool kill)
     return rc;
 }
 
-static int prep_data_fs(void)
+static void prep_data_fs(void)
 {
-    int i;
-
     // NOTE: post_fs_data results in init calling back around to vold, so all
     // callers to this method must be async
 
     /* Do the prep of the /data filesystem */
     property_set("vold.post_fs_data_done", "0");
     property_set("vold.decrypt", "trigger_post_fs_data");
-    SLOGD("Just triggered post_fs_data\n");
+    SLOGD("Just triggered post_fs_data");
 
     /* Wait a max of 50 seconds, hopefully it takes much less */
-    if (!android::base::WaitForProperty("vold.post_fs_data_done",
+    while (!android::base::WaitForProperty("vold.post_fs_data_done",
                                         "1",
-                                        std::chrono::seconds(50))) {
-        /* Ugh, we failed to prep /data in time.  Bail. */
-        SLOGE("post_fs_data timed out!\n");
-        return -1;
-    } else {
-        SLOGD("post_fs_data done\n");
-        return 0;
+                                        std::chrono::seconds(15))) {
+        /* We timed out to prep /data in time.  Continue wait. */
+        SLOGE("waited 15s for vold.post_fs_data_done, still waiting...");
     }
+    SLOGD("post_fs_data done");
 }
 
 static void cryptfs_set_corrupt()
@@ -1499,9 +1494,7 @@ static int cryptfs_restart_internal(int restart_main)
         }
 
         /* Create necessary paths on /data */
-        if (prep_data_fs()) {
-            return -1;
-        }
+        prep_data_fs();
         property_set("vold.decrypt", "trigger_load_persist_props");
 
         /* startup service classes main and late_start */
@@ -2240,9 +2233,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
 
         /* restart the framework. */
         /* Create necessary paths on /data */
-        if (prep_data_fs()) {
-            goto error_shutting_down;
-        }
+        prep_data_fs();
 
         /* Ugh, shutting down the framework is not synchronous, so until it
          * can be fixed, this horrible hack will wait a moment for it all to
