@@ -32,8 +32,23 @@
 namespace android {
 namespace vold {
 
-bool randomKey(std::string* key) {
-    if (ReadRandomBytes(EXT4_AES_256_XTS_KEY_SIZE, *key) != 0) {
+// ext4enc:TODO get this const from somewhere good
+const int EXT4_KEY_DESCRIPTOR_SIZE = 8;
+
+// ext4enc:TODO Include structure from somewhere sensible
+// MUST be in sync with ext4_crypto.c in kernel
+constexpr int EXT4_ENCRYPTION_MODE_AES_256_XTS = 1;
+constexpr int EXT4_AES_256_XTS_KEY_SIZE = 64;
+constexpr int EXT4_MAX_KEY_SIZE = 64;
+struct ext4_encryption_key {
+    uint32_t mode;
+    char raw[EXT4_MAX_KEY_SIZE];
+    uint32_t size;
+};
+
+bool randomKey(KeyBuffer* key) {
+    *key = KeyBuffer(EXT4_AES_256_XTS_KEY_SIZE);
+    if (ReadRandomBytes(key->size(), key->data()) != 0) {
         // TODO status_t plays badly with PLOG, fix it.
         LOG(ERROR) << "Random read failed";
         return false;
@@ -60,7 +75,7 @@ static std::string generateKeyRef(const char* key, int length) {
     return std::string((char*)key_ref2, EXT4_KEY_DESCRIPTOR_SIZE);
 }
 
-static bool fillKey(const std::string& key, ext4_encryption_key* ext4_key) {
+static bool fillKey(const KeyBuffer& key, ext4_encryption_key* ext4_key) {
     if (key.size() != EXT4_AES_256_XTS_KEY_SIZE) {
         LOG(ERROR) << "Wrong size key " << key.size();
         return false;
@@ -83,7 +98,7 @@ static char const* const NAME_PREFIXES[] = {
 static std::string keyname(const std::string& prefix, const std::string& raw_ref) {
     std::ostringstream o;
     o << prefix << ":";
-    for (auto i : raw_ref) {
+    for (unsigned char i : raw_ref) {
         o << std::hex << std::setw(2) << std::setfill('0') << (int)i;
     }
     return o.str();
@@ -101,8 +116,11 @@ static bool e4cryptKeyring(key_serial_t* device_keyring) {
 
 // Install password into global keyring
 // Return raw key reference for use in policy
-bool installKey(const std::string& key, std::string* raw_ref) {
-    ext4_encryption_key ext4_key;
+bool installKey(const KeyBuffer& key, std::string* raw_ref) {
+    // Place ext4_encryption_key into automatically zeroing buffer.
+    KeyBuffer ext4KeyBuffer(sizeof(ext4_encryption_key));
+    ext4_encryption_key &ext4_key = *reinterpret_cast<ext4_encryption_key*>(ext4KeyBuffer.data());
+
     if (!fillKey(key, &ext4_key)) return false;
     *raw_ref = generateKeyRef(ext4_key.raw, ext4_key.size);
     key_serial_t device_keyring;
@@ -145,7 +163,7 @@ bool evictKey(const std::string& raw_ref) {
 
 bool retrieveAndInstallKey(bool create_if_absent, const std::string& key_path,
                            const std::string& tmp_path, std::string* key_ref) {
-    std::string key;
+    KeyBuffer key;
     if (pathExists(key_path)) {
         LOG(DEBUG) << "Key exists, using: " << key_path;
         if (!retrieveKey(key_path, kEmptyAuthentication, &key)) return false;
@@ -168,7 +186,7 @@ bool retrieveAndInstallKey(bool create_if_absent, const std::string& key_path,
 }
 
 bool retrieveKey(bool create_if_absent, const std::string& key_path,
-                 const std::string& tmp_path, std::string* key) {
+                 const std::string& tmp_path, KeyBuffer* key) {
     if (pathExists(key_path)) {
         LOG(DEBUG) << "Key exists, using: " << key_path;
         if (!retrieveKey(key_path, kEmptyAuthentication, key)) return false;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2017 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,24 +14,20 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_VOLD_KEYUTIL_H
-#define ANDROID_VOLD_KEYUTIL_H
-
-#include "KeyBuffer.h"
+#ifndef ANDROID_VOLD_FILEDEVICEUTILS_H
+#define ANDROID_VOLD_FILEDEVICEUTILS_H
 
 #include <string>
-#include <memory>
+#include <linux/fiemap.h>
 
 namespace android {
 namespace vold {
 
-bool randomKey(KeyBuffer* key);
-bool installKey(const KeyBuffer& key, std::string* raw_ref);
-bool evictKey(const std::string& raw_ref);
-bool retrieveAndInstallKey(bool create_if_absent, const std::string& key_path,
-                           const std::string& tmp_path, std::string* key_ref);
-bool retrieveKey(bool create_if_absent, const std::string& key_path,
-                 const std::string& tmp_path, KeyBuffer* key);
+// Given a file path, look for the corresponding block device in /proc/mount
+std::string BlockDeviceForPath(const std::string &path);
+
+// Read the file's FIEMAP
+std::unique_ptr<struct fiemap> PathFiemap(const std::string &path, uint32_t extent_count);
 
 }  // namespace vold
 }  // namespace android

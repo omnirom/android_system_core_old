@@ -14,11 +14,13 @@
  * limitations under the License.
  */
 
+#include "KeyBuffer.h"
 #include "MetadataCrypt.h"
 
 #include <string>
 #include <thread>
 #include <vector>
+#include <algorithm>
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -29,10 +31,10 @@
 #include <linux/dm-ioctl.h>
 
 #include <android-base/logging.h>
+#include <android-base/unique_fd.h>
 #include <cutils/properties.h>
 #include <fs_mgr.h>
 
-#include "AutoCloseFD.h"
 #include "EncryptInplace.h"
 #include "KeyStorage.h"
 #include "KeyUtil.h"
@@ -44,6 +46,8 @@ extern struct fstab *fstab;
 #define DM_CRYPT_BUF_SIZE 4096
 #define TABLE_LOAD_RETRIES 10
 #define DEFAULT_KEY_TARGET_TYPE "default-key"
+
+using android::vold::KeyBuffer;
 
 static const std::string kDmNameUserdata = "userdata";
 
@@ -68,7 +72,7 @@ static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
     return true;
 }
 
-static bool read_key(bool create_if_absent, std::string* key) {
+static bool read_key(bool create_if_absent, KeyBuffer* key) {
     auto data_rec = fs_mgr_get_crypt_entry(fstab);
     if (!data_rec) {
         LOG(ERROR) << "Failed to get data_rec";
@@ -93,20 +97,21 @@ static bool read_key(bool create_if_absent, std::string* key) {
     return true;
 }
 
-static std::string default_key_params(const std::string& real_blkdev, const std::string& key) {
-    std::string hex_key;
+static KeyBuffer default_key_params(const std::string& real_blkdev, const KeyBuffer& key) {
+    KeyBuffer hex_key;
     if (android::vold::StrToHex(key, hex_key) != android::OK) {
         LOG(ERROR) << "Failed to turn key to hex";
-        return "";
+        return KeyBuffer();
     }
-    auto res = std::string() + "AES-256-XTS " + hex_key + " " + real_blkdev + " 0";
-    LOG(DEBUG) << "crypt_params: " << res;
+    auto res = KeyBuffer() + "AES-256-XTS " + hex_key + " " + real_blkdev.c_str() + " 0";
+    LOG(DEBUG) << "crypt_params: " << std::string(res.data(), res.size());
     return res;
 }
 
 static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t *nr_sec) {
-    AutoCloseFD dev_fd(real_blkdev, O_RDONLY);
-    if (!dev_fd) {
+    android::base::unique_fd dev_fd(TEMP_FAILURE_RETRY(open(
+        real_blkdev.c_str(), O_RDONLY | O_CLOEXEC, 0)));
+    if (dev_fd == -1) {
         PLOG(ERROR) << "Unable to open " << real_blkdev << " to measure size";
         return false;
     }
@@ -141,10 +146,11 @@ static struct dm_ioctl* dm_ioctl_init(char *buffer, size_t buffer_size,
 }
 
 static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
-                                  const std::string& target_type, const std::string& crypt_params,
+                                  const std::string& target_type, const KeyBuffer& crypt_params,
                                   std::string* crypto_blkdev) {
-    AutoCloseFD dm_fd("/dev/device-mapper", O_RDWR);
-    if (!dm_fd) {
+    android::base::unique_fd dm_fd(TEMP_FAILURE_RETRY(open(
+        "/dev/device-mapper", O_RDWR | O_CLOEXEC, 0)));
+    if (dm_fd == -1) {
         PLOG(ERROR) << "Cannot open device-mapper";
         return false;
     }
@@ -165,9 +171,9 @@ static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
         (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00));
 
     io = dm_ioctl_init(buffer, sizeof(buffer), dm_name);
-    unsigned long paramix = io->data_start + sizeof(struct dm_target_spec);
-    unsigned long nullix = paramix + crypt_params.size();
-    unsigned long endix = (nullix + 1 + 7) & 8; // Add room for \0 and align to 8 byte boundary
+    size_t paramix = io->data_start + sizeof(struct dm_target_spec);
+    size_t nullix = paramix + crypt_params.size();
+    size_t endix = (nullix + 1 + 7) & 8; // Add room for \0 and align to 8 byte boundary
 
     if (endix > sizeof(buffer)) {
         LOG(ERROR) << "crypt_params too big for DM_CRYPT_BUF_SIZE";
@@ -180,7 +186,8 @@ static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
     tgt->sector_start = 0;
     tgt->length = nr_sec;
     target_type.copy(tgt->target_type, sizeof(tgt->target_type));
-    crypt_params.copy(buffer + paramix, sizeof(buffer) - paramix);
+    memcpy(buffer + paramix, crypt_params.data(),
+            std::min(crypt_params.size(), sizeof(buffer) - paramix));
     buffer[nullix] = '\0';
     tgt->next = endix;
 
@@ -244,7 +251,7 @@ static void async_kick_off() {
 
 bool e4crypt_mount_metadata_encrypted() {
     LOG(DEBUG) << "e4crypt_mount_default_encrypted";
-    std::string key;
+    KeyBuffer key;
     if (!read_key(false, &key)) return false;
     auto data_rec = fs_mgr_get_crypt_entry(fstab);
     if (!data_rec) {
@@ -273,7 +280,7 @@ bool e4crypt_enable_crypto() {
         return false;
     }
 
-    std::string key_ref;
+    KeyBuffer key_ref;
     if (!read_key(true, &key_ref)) return false;
 
     auto data_rec = fs_mgr_get_crypt_entry(fstab);
