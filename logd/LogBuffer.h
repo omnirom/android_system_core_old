@@ -27,6 +27,7 @@
 #include <sysutils/SocketClient.h>
 
 #include "LogBufferElement.h"
+#include "LogBufferInterface.h"
 #include "LogStatistics.h"
 #include "LogTags.h"
 #include "LogTimes.h"
@@ -74,9 +75,9 @@ static bool isMonotonic(const log_time& mono) {
 
 typedef std::list<LogBufferElement*> LogBufferElementCollection;
 
-class LogBuffer {
+class LogBuffer : public LogBufferInterface {
     LogBufferElementCollection mLogElements;
-    pthread_mutex_t mLogElementsLock;
+    pthread_rwlock_t mLogElementsLock;
 
     LogStatistics stats;
 
@@ -107,14 +108,14 @@ class LogBuffer {
     LastLogTimes& mTimes;
 
     explicit LogBuffer(LastLogTimes* times);
-    ~LogBuffer();
+    ~LogBuffer() override;
     void init();
     bool isMonotonic() {
         return monotonic;
     }
 
     int log(log_id_t log_id, log_time realtime, uid_t uid, pid_t pid, pid_t tid,
-            const char* msg, unsigned short len);
+            const char* msg, unsigned short len) override;
     // lastTid is an optional context to help detect if the last previous
     // valid message was from the same source so we can differentiate chatty
     // filter types (identical or expired)
@@ -154,21 +155,27 @@ class LogBuffer {
         return tags.tagToName(tag);
     }
 
-    // helper must be protected directly or implicitly by lock()/unlock()
+    // helper must be protected directly or implicitly by wrlock()/unlock()
     const char* pidToName(pid_t pid) {
         return stats.pidToName(pid);
     }
-    uid_t pidToUid(pid_t pid) {
+    virtual uid_t pidToUid(pid_t pid) override {
         return stats.pidToUid(pid);
+    }
+    virtual pid_t tidToPid(pid_t tid) override {
+        return stats.tidToPid(tid);
     }
     const char* uidToName(uid_t uid) {
         return stats.uidToName(uid);
     }
-    void lock() {
-        pthread_mutex_lock(&mLogElementsLock);
+    void wrlock() {
+        pthread_rwlock_wrlock(&mLogElementsLock);
+    }
+    void rdlock() {
+        pthread_rwlock_rdlock(&mLogElementsLock);
     }
     void unlock() {
-        pthread_mutex_unlock(&mLogElementsLock);
+        pthread_rwlock_unlock(&mLogElementsLock);
     }
 
    private:
@@ -177,6 +184,9 @@ class LogBuffer {
     static const log_time pruneMargin;
 
     void maybePrune(log_id_t id);
+    bool isBusy(log_time watermark);
+    void kickMe(LogTimeEntry* me, log_id_t id, unsigned long pruneRows);
+
     bool prune(log_id_t id, unsigned long pruneRows, uid_t uid = AID_ROOT);
     LogBufferElementCollection::iterator erase(
         LogBufferElementCollection::iterator it, bool coalesce = false);

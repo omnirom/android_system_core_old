@@ -157,7 +157,12 @@ bool mkdirs(const std::string& path) {
 }
 
 std::string dump_hex(const void* data, size_t byte_count) {
-    byte_count = std::min(byte_count, size_t(16));
+    size_t truncate_len = 16;
+    bool truncated = false;
+    if (byte_count > truncate_len) {
+        byte_count = truncate_len;
+        truncated = true;
+    }
 
     const uint8_t* p = reinterpret_cast<const uint8_t*>(data);
 
@@ -170,6 +175,10 @@ std::string dump_hex(const void* data, size_t byte_count) {
     for (size_t i = 0; i < byte_count; ++i) {
         int ch = p[i];
         line.push_back(isprint(ch) ? ch : '.');
+    }
+
+    if (truncated) {
+        line += " [truncated]";
     }
 
     return line;
@@ -267,8 +276,8 @@ void AdbCloser::Close(int fd) {
     adb_close(fd);
 }
 
-int usage(const char* fmt, ...) {
-    fprintf(stderr, "adb: ");
+int syntax_error(const char* fmt, ...) {
+    fprintf(stderr, "adb: usage: ");
 
     va_list ap;
     va_start(ap, fmt);
@@ -277,4 +286,30 @@ int usage(const char* fmt, ...) {
 
     fprintf(stderr, "\n");
     return 1;
+}
+
+std::string GetLogFilePath() {
+#if defined(_WIN32)
+    const char log_name[] = "adb.log";
+    WCHAR temp_path[MAX_PATH];
+
+    // https://msdn.microsoft.com/en-us/library/windows/desktop/aa364992%28v=vs.85%29.aspx
+    DWORD nchars = GetTempPathW(arraysize(temp_path), temp_path);
+    if (nchars >= arraysize(temp_path) || nchars == 0) {
+        // If string truncation or some other error.
+        fatal("cannot retrieve temporary file path: %s\n",
+              android::base::SystemErrorCodeToString(GetLastError()).c_str());
+    }
+
+    std::string temp_path_utf8;
+    if (!android::base::WideToUTF8(temp_path, &temp_path_utf8)) {
+        fatal_errno("cannot convert temporary file path from UTF-16 to UTF-8");
+    }
+
+    return temp_path_utf8 + log_name;
+#else
+    const char* tmp_dir = getenv("TMPDIR");
+    if (tmp_dir == nullptr) tmp_dir = "/tmp";
+    return android::base::StringPrintf("%s/adb.%u.log", tmp_dir, getuid());
+#endif
 }

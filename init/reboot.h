@@ -17,6 +17,11 @@
 #ifndef _INIT_REBOOT_H
 #define _INIT_REBOOT_H
 
+#include <string>
+
+namespace android {
+namespace init {
+
 /* Reboot / shutdown the system.
  * cmd ANDROID_RB_* as defined in android_reboot.h
  * reason Reason string like "reboot", "userrequested"
@@ -29,5 +34,8 @@ void DoReboot(unsigned int cmd, const std::string& reason, const std::string& re
 
 // Parses and handles a setprop sys.powerctl message.
 bool HandlePowerctlMessage(const std::string& command);
+
+}  // namespace init
+}  // namespace android
 
 #endif

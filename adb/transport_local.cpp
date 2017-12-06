@@ -62,22 +62,22 @@ static atransport*  local_transports[ ADB_LOCAL_TRANSPORT_MAX ];
 
 static int remote_read(apacket *p, atransport *t)
 {
-    if(!ReadFdExactly(t->sfd, &p->msg, sizeof(amessage))){
+    if (!ReadFdExactly(t->sfd, &p->msg, sizeof(amessage))) {
         D("remote local: read terminated (message)");
         return -1;
     }
 
-    if(check_header(p, t)) {
+    if (!check_header(p, t)) {
         D("bad header: terminated (data)");
         return -1;
     }
 
-    if(!ReadFdExactly(t->sfd, p->data, p->msg.data_length)){
+    if (!ReadFdExactly(t->sfd, p->data, p->msg.data_length)) {
         D("remote local: terminated (data)");
         return -1;
     }
 
-    if(check_data(p)) {
+    if (!check_data(p)) {
         D("bad data: terminated (data)");
         return -1;
     }
@@ -199,7 +199,7 @@ static std::vector<RetryPort>& retry_ports = *new std::vector<RetryPort>;
 std::mutex &retry_ports_lock = *new std::mutex;
 std::condition_variable &retry_ports_cond = *new std::condition_variable;
 
-static void client_socket_thread(void* x) {
+static void client_socket_thread(int) {
     adb_thread_setname("client_socket_thread");
     D("transport: client_socket_thread() starting");
     PollAllLocalPortsForEmulator();
@@ -244,9 +244,8 @@ static void client_socket_thread(void* x) {
 
 #else // ADB_HOST
 
-static void server_socket_thread(void* arg) {
+static void server_socket_thread(int port) {
     int serverfd, fd;
-    int port = (int) (uintptr_t) arg;
 
     adb_thread_setname("server socket");
     D("transport: server_socket_thread() starting");
@@ -289,7 +288,7 @@ static void server_socket_thread(void* arg) {
 #define open    adb_open
 #define read    adb_read
 #define write   adb_write
-#include <system/qemu_pipe.h>
+#include <qemu_pipe.h>
 #undef open
 #undef read
 #undef write
@@ -325,7 +324,7 @@ static void server_socket_thread(void* arg) {
  *   the transport registration is completed. That's why we need to send the
  *   'start' request after the transport is registered.
  */
-static void qemu_socket_thread(void* arg) {
+static void qemu_socket_thread(int port) {
     /* 'accept' request to the adb QEMUD service. */
     static const char _accept_req[] = "accept";
     /* 'start' request to the adb QEMUD service. */
@@ -333,7 +332,6 @@ static void qemu_socket_thread(void* arg) {
     /* 'ok' reply from the adb QEMUD service. */
     static const char _ok_resp[] = "ok";
 
-    const int port = (int) (uintptr_t) arg;
     int fd;
     char tmp[256];
     char con_name[32];
@@ -350,7 +348,7 @@ static void qemu_socket_thread(void* arg) {
         /* This could be an older version of the emulator, that doesn't
          * implement adb QEMUD service. Fall back to the old TCP way. */
         D("adb service is not available. Falling back to TCP socket.");
-        adb_thread_create(server_socket_thread, arg);
+        std::thread(server_socket_thread, port).detach();
         return;
     }
 
@@ -390,11 +388,30 @@ static void qemu_socket_thread(void* arg) {
     D("transport: qemu_socket_thread() exiting");
     return;
 }
+
+// If adbd is running inside the emulator, it will normally use QEMUD pipe (aka
+// goldfish) as the transport. This can either be explicitly set by the
+// service.adb.transport property, or be inferred from ro.kernel.qemu that is
+// set to "1" for ranchu/goldfish.
+static bool use_qemu_goldfish() {
+    // Legacy way to detect if adbd should use the goldfish pipe is to check for
+    // ro.kernel.qemu, keep that behaviour for backward compatibility.
+    if (android::base::GetBoolProperty("ro.kernel.qemu", false)) {
+        return true;
+    }
+    // If service.adb.transport is present and is set to "goldfish", use the
+    // QEMUD pipe.
+    if (android::base::GetProperty("service.adb.transport", "") == "goldfish") {
+        return true;
+    }
+    return false;
+}
+
 #endif  // !ADB_HOST
 
 void local_init(int port)
 {
-    adb_thread_func_t func;
+    void (*func)(int);
     const char* debug_name = "";
 
 #if ADB_HOST
@@ -403,20 +420,12 @@ void local_init(int port)
 #else
     // For the adbd daemon in the system image we need to distinguish
     // between the device, and the emulator.
-    if (android::base::GetBoolProperty("ro.kernel.qemu", false)) {
-        // Running inside the emulator: use QEMUD pipe as the transport.
-        func = qemu_socket_thread;
-    } else {
-        // Running inside the device: use TCP socket as the transport.
-        func = server_socket_thread;
-    }
+    func = use_qemu_goldfish() ? qemu_socket_thread : server_socket_thread;
     debug_name = "server";
 #endif // !ADB_HOST
 
     D("transport: local %s init", debug_name);
-    if (!adb_thread_create(func, (void *) (uintptr_t) port)) {
-        fatal_errno("cannot create local socket %s thread", debug_name);
-    }
+    std::thread(func, port).detach();
 }
 
 static void remote_kick(atransport *t)
@@ -519,12 +528,11 @@ int init_socket_transport(atransport *t, int s, int adb_port, int local)
     int  fail = 0;
 
     t->SetKickFunction(remote_kick);
+    t->SetWriteFunction(remote_write);
     t->close = remote_close;
     t->read_from_remote = remote_read;
-    t->write_to_remote = remote_write;
     t->sfd = s;
     t->sync_token = 1;
-    t->connection_state = kCsOffline;
     t->type = kTransportLocal;
 
 #if ADB_HOST

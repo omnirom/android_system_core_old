@@ -23,12 +23,17 @@
 #define LOG_TAG "unwind"
 #include <log/log.h>
 
-#include "Elf.h"
-#include "ElfInterface.h"
+#include <unwindstack/Elf.h>
+#include <unwindstack/ElfInterface.h>
+#include <unwindstack/MapInfo.h>
+#include <unwindstack/Memory.h>
+#include <unwindstack/Regs.h>
+
 #include "ElfInterfaceArm.h"
 #include "Machine.h"
-#include "Memory.h"
-#include "Regs.h"
+#include "Symbols.h"
+
+namespace unwindstack {
 
 bool Elf::Init() {
   if (!memory_) {
@@ -47,6 +52,59 @@ bool Elf::Init() {
     interface_.reset(nullptr);
   }
   return valid_;
+}
+
+// It is expensive to initialize the .gnu_debugdata section. Provide a method
+// to initialize this data separately.
+void Elf::InitGnuDebugdata() {
+  if (!valid_ || interface_->gnu_debugdata_offset() == 0) {
+    return;
+  }
+
+  gnu_debugdata_memory_.reset(interface_->CreateGnuDebugdataMemory());
+  gnu_debugdata_interface_.reset(CreateInterfaceFromMemory(gnu_debugdata_memory_.get()));
+  ElfInterface* gnu = gnu_debugdata_interface_.get();
+  if (gnu == nullptr) {
+    return;
+  }
+  if (gnu->Init()) {
+    gnu->InitHeaders();
+  } else {
+    // Free all of the memory associated with the gnu_debugdata section.
+    gnu_debugdata_memory_.reset(nullptr);
+    gnu_debugdata_interface_.reset(nullptr);
+  }
+}
+
+bool Elf::GetSoname(std::string* name) {
+  return valid_ && interface_->GetSoname(name);
+}
+
+uint64_t Elf::GetRelPc(uint64_t pc, const MapInfo* map_info) {
+  uint64_t load_bias = 0;
+  if (valid()) {
+    load_bias = interface_->load_bias();
+  }
+
+  return pc - map_info->start + load_bias + map_info->elf_offset;
+}
+
+bool Elf::GetFunctionName(uint64_t addr, std::string* name, uint64_t* func_offset) {
+  return valid_ && (interface_->GetFunctionName(addr, name, func_offset) ||
+                    (gnu_debugdata_interface_ &&
+                     gnu_debugdata_interface_->GetFunctionName(addr, name, func_offset)));
+}
+
+bool Elf::Step(uint64_t rel_pc, Regs* regs, Memory* process_memory) {
+  return valid_ && (regs->StepIfSignalHandler(rel_pc, this, process_memory) ||
+                    interface_->Step(rel_pc, regs, process_memory) ||
+                    (gnu_debugdata_interface_ &&
+                     gnu_debugdata_interface_->Step(rel_pc, regs, process_memory)));
+}
+
+uint64_t Elf::GetLoadBias() {
+  if (!valid_) return 0;
+  return interface_->load_bias();
 }
 
 bool Elf::IsValidElf(Memory* memory) {
@@ -90,24 +148,27 @@ ElfInterface* Elf::CreateInterfaceFromMemory(Memory* memory) {
     machine_type_ = e_machine;
     if (e_machine == EM_ARM) {
       interface.reset(new ElfInterfaceArm(memory));
-    } else {
+    } else if (e_machine == EM_386) {
       interface.reset(new ElfInterface32(memory));
+    } else {
+      ALOGI("32 bit elf that is neither arm nor x86: e_machine = %d\n", e_machine);
+      return nullptr;
     }
   } else if (class_type_ == ELFCLASS64) {
     Elf64_Half e_machine;
     if (!memory->Read(EI_NIDENT + sizeof(Elf64_Half), &e_machine, sizeof(e_machine))) {
       return nullptr;
     }
-
     if (e_machine != EM_AARCH64 && e_machine != EM_X86_64) {
       // Unsupported.
       ALOGI("64 bit elf that is neither aarch64 nor x86_64: e_machine = %d\n", e_machine);
       return nullptr;
     }
-
     machine_type_ = e_machine;
     interface.reset(new ElfInterface64(memory));
   }
 
   return interface.release();
 }
+
+}  // namespace unwindstack

@@ -19,50 +19,45 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/loop.h>
+#include <linux/module.h>
 #include <mntent.h>
 #include <net/if.h>
-#include <signal.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <sys/mount.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/system_properties.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <linux/loop.h>
-#include <linux/module.h>
 
-#include <string>
-#include <thread>
-
-#include <selinux/android.h>
-#include <selinux/selinux.h>
-#include <selinux/label.h>
-
+#include <android-base/chrono_utils.h>
 #include <android-base/file.h>
+#include <android-base/logging.h>
 #include <android-base/parseint.h>
 #include <android-base/properties.h>
-#include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <bootloader_message/bootloader_message.h>
 #include <cutils/android_reboot.h>
 #include <ext4_utils/ext4_crypt.h>
 #include <ext4_utils/ext4_crypt_init_extensions.h>
 #include <fs_mgr.h>
-#include <logwrap/logwrap.h>
+#include <selinux/android.h>
+#include <selinux/label.h>
+#include <selinux/selinux.h>
 
 #include "action.h"
 #include "bootchart.h"
-#include "devices.h"
 #include "init.h"
 #include "init_parser.h"
-#include "log.h"
 #include "property_service.h"
 #include "reboot.h"
 #include "service.h"
@@ -72,6 +67,9 @@
 using namespace std::literals::string_literals;
 
 #define chmod DO_NOT_USE_CHMOD_USE_FCHMODAT_SYMLINK_NOFOLLOW
+
+namespace android {
+namespace init {
 
 static constexpr std::chrono::nanoseconds kCommandRetryTimeout = 5s;
 
@@ -122,7 +120,7 @@ static int reboot_into_recovery(const std::vector<std::string>& options) {
         LOG(ERROR) << "failed to set bootloader message: " << err;
         return -1;
     }
-    DoReboot(ANDROID_RB_RESTART2, "reboot", "recovery", false);
+    property_set("sys.powerctl", "reboot,recovery");
     return 0;
 }
 
@@ -155,7 +153,12 @@ static int do_class_restart(const std::vector<std::string>& args) {
 }
 
 static int do_domainname(const std::vector<std::string>& args) {
-    return write_file("/proc/sys/kernel/domainname", args[1]) ? 0 : 1;
+    std::string err;
+    if (!WriteFile("/proc/sys/kernel/domainname", args[1], &err)) {
+        LOG(ERROR) << err;
+        return -1;
+    }
+    return 0;
 }
 
 static int do_enable(const std::vector<std::string>& args) {
@@ -179,7 +182,12 @@ static int do_export(const std::vector<std::string>& args) {
 }
 
 static int do_hostname(const std::vector<std::string>& args) {
-    return write_file("/proc/sys/kernel/hostname", args[1]) ? 0 : 1;
+    std::string err;
+    if (!WriteFile("/proc/sys/kernel/hostname", args[1], &err)) {
+        LOG(ERROR) << err;
+        return -1;
+    }
+    return 0;
 }
 
 static int do_ifup(const std::vector<std::string>& args) {
@@ -210,7 +218,7 @@ static int do_mkdir(const std::vector<std::string>& args) {
         mode = std::strtoul(args[2].c_str(), 0, 8);
     }
 
-    ret = make_dir(args[1].c_str(), mode);
+    ret = make_dir(args[1].c_str(), mode, sehandle);
     /* chmod in case the directory already exists */
     if (ret == -1 && errno == EEXIST) {
         ret = fchmodat(AT_FDCWD, args[1].c_str(), mode, AT_SYMLINK_NOFOLLOW);
@@ -220,11 +228,19 @@ static int do_mkdir(const std::vector<std::string>& args) {
     }
 
     if (args.size() >= 4) {
-        uid_t uid = decode_uid(args[3].c_str());
+        uid_t uid;
+        std::string decode_uid_err;
+        if (!DecodeUid(args[3], &uid, &decode_uid_err)) {
+            LOG(ERROR) << "Unable to find UID for '" << args[3] << "': " << decode_uid_err;
+            return -1;
+        }
         gid_t gid = -1;
 
         if (args.size() == 5) {
-            gid = decode_uid(args[4].c_str());
+            if (!DecodeUid(args[4], &gid, &decode_uid_err)) {
+                LOG(ERROR) << "Unable to find GID for '" << args[3] << "': " << decode_uid_err;
+                return -1;
+            }
         }
 
         if (lchown(args[1].c_str(), uid, gid) == -1) {
@@ -246,7 +262,7 @@ static int do_mkdir(const std::vector<std::string>& args) {
                 "--prompt_and_wipe_data",
                 "--reason=set_policy_failed:"s + args[1]};
             reboot_into_recovery(options);
-            return -1;
+            return 0;
         }
     }
     return 0;
@@ -395,7 +411,7 @@ static void import_late(const std::vector<std::string>& args, size_t start_index
 
     // Turning this on and letting the INFO logging be discarded adds 0.2s to
     // Nexus 9 boot time, so it's disabled by default.
-    if (false) parser.DumpState();
+    if (false) DumpState();
 }
 
 /* mount_fstab
@@ -474,7 +490,8 @@ static int queue_fs_event(int code) {
         /* Setup a wipe via recovery, and reboot into recovery */
         PLOG(ERROR) << "fs_mgr_mount_all suggested recovery, so wiping data via recovery.";
         const std::vector<std::string> options = {"--wipe_data", "--reason=fs_mgr_mount_all" };
-        ret = reboot_into_recovery(options);
+        reboot_into_recovery(options);
+        return 0;
         /* If reboot worked, there is no return. */
     } else if (code == FS_MGR_MNTALL_DEV_FILE_ENCRYPTED) {
         if (e4crypt_install_keyring()) {
@@ -486,6 +503,23 @@ static int queue_fs_event(int code) {
         // Although encrypted, we have device key, so we do not need to
         // do anything different from the nonencrypted case.
         ActionManager::GetInstance().QueueEventTrigger("nonencrypted");
+    } else if (code == FS_MGR_MNTALL_DEV_IS_METADATA_ENCRYPTED) {
+        if (e4crypt_install_keyring()) {
+            return -1;
+        }
+        property_set("ro.crypto.state", "encrypted");
+        property_set("ro.crypto.type", "file");
+
+        // defaultcrypto detects file/block encryption. init flow is same for each.
+        ActionManager::GetInstance().QueueEventTrigger("defaultcrypto");
+    } else if (code == FS_MGR_MNTALL_DEV_NEEDS_METADATA_ENCRYPTION) {
+        if (e4crypt_install_keyring()) {
+            return -1;
+        }
+        property_set("ro.crypto.type", "file");
+
+        // encrypt detects file/block encryption. init flow is same for each.
+        ActionManager::GetInstance().QueueEventTrigger("encrypt");
     } else if (code > 0) {
         PLOG(ERROR) << "fs_mgr_mount_all returned unexpected error " << code;
     }
@@ -522,11 +556,10 @@ static int do_mount_all(const std::vector<std::string>& args) {
         }
     }
 
-    std::string prop_name = android::base::StringPrintf("ro.boottime.init.mount_all.%s",
-                                                        prop_post_fix);
-    Timer t;
+    std::string prop_name = "ro.boottime.init.mount_all."s + prop_post_fix;
+    android::base::Timer t;
     int ret =  mount_fstab(fstabfile, mount_mode);
-    property_set(prop_name.c_str(), std::to_string(t.duration_ms()).c_str());
+    property_set(prop_name, std::to_string(t.duration().count()));
 
     if (import_rc) {
         /* Paths of .rc files are specified at the 2nd argument and beyond */
@@ -554,9 +587,7 @@ static int do_swapon_all(const std::vector<std::string>& args) {
 }
 
 static int do_setprop(const std::vector<std::string>& args) {
-    const char* name = args[1].c_str();
-    const char* value = args[2].c_str();
-    property_set(name, value);
+    property_set(args[1], args[2]);
     return 0;
 }
 
@@ -639,8 +670,7 @@ static int do_verity_load_state(const std::vector<std::string>& args) {
 
 static void verity_update_property(fstab_rec *fstab, const char *mount_point,
                                    int mode, int status) {
-    property_set(android::base::StringPrintf("partition.%s.verified", mount_point).c_str(),
-                 android::base::StringPrintf("%d", mode).c_str());
+    property_set("partition."s + mount_point + ".verified", std::to_string(mode));
 }
 
 static int do_verity_update_state(const std::vector<std::string>& args) {
@@ -648,29 +678,49 @@ static int do_verity_update_state(const std::vector<std::string>& args) {
 }
 
 static int do_write(const std::vector<std::string>& args) {
-    return write_file(args[1], args[2]) ? 0 : 1;
+    std::string err;
+    if (!WriteFile(args[1], args[2], &err)) {
+        LOG(ERROR) << err;
+        return -1;
+    }
+    return 0;
 }
 
 static int do_copy(const std::vector<std::string>& args) {
     std::string data;
-    if (read_file(args[1], &data)) {
-        return write_file(args[2], data) ? 0 : 1;
+    std::string err;
+    if (!ReadFile(args[1], &data, &err)) {
+        LOG(ERROR) << err;
+        return -1;
     }
-    return 1;
+    if (!WriteFile(args[2], data, &err)) {
+        LOG(ERROR) << err;
+        return -1;
+    }
+    return 0;
 }
 
 static int do_chown(const std::vector<std::string>& args) {
-    /* GID is optional. */
-    if (args.size() == 3) {
-        if (lchown(args[2].c_str(), decode_uid(args[1].c_str()), -1) == -1)
-            return -errno;
-    } else if (args.size() == 4) {
-        if (lchown(args[3].c_str(), decode_uid(args[1].c_str()),
-                   decode_uid(args[2].c_str())) == -1)
-            return -errno;
-    } else {
+    uid_t uid;
+    std::string decode_uid_err;
+    if (!DecodeUid(args[1], &uid, &decode_uid_err)) {
+        LOG(ERROR) << "Unable to find UID for '" << args[1] << "': " << decode_uid_err;
         return -1;
     }
+
+    // GID is optional and pushes the index of path out by one if specified.
+    const std::string& path = (args.size() == 4) ? args[3] : args[2];
+    gid_t gid = -1;
+
+    if (args.size() == 4) {
+        if (!DecodeUid(args[2], &gid, &decode_uid_err)) {
+            LOG(ERROR) << "Unable to find GID for '" << args[2] << "': " << decode_uid_err;
+            return -1;
+        }
+    }
+
+    if (lchown(path.c_str(), uid, gid) == -1) return -errno;
+
     return 0;
 }
 
@@ -729,7 +779,7 @@ static int do_restorecon(const std::vector<std::string>& args) {
             }
         } else {
             in_flags = false;
-            if (restorecon(args[i].c_str(), flag) < 0) {
+            if (selinux_android_restorecon(args[i].c_str(), flag) < 0) {
                 ret = -errno;
             }
         }
@@ -814,7 +864,7 @@ static int do_wait_for_prop(const std::vector<std::string>& args) {
  * Callback to make a directory from the ext4 code
  */
 static int do_installkeys_ensure_dir_exists(const char* dir) {
-    if (make_dir(dir, 0700) && errno != EEXIST) {
+    if (make_dir(dir, 0700, sehandle) && errno != EEXIST) {
         return -1;
     }
 
@@ -840,10 +890,12 @@ static int do_installkey(const std::vector<std::string>& args) {
 }
 
 static int do_init_user0(const std::vector<std::string>& args) {
-    return e4crypt_do_init_user0();
+    std::vector<std::string> exec_args = {"exec", "/system/bin/vdc", "--wait", "cryptfs",
+                                          "init_user0"};
+    return do_exec(exec_args);
 }
 
-BuiltinFunctionMap::Map& BuiltinFunctionMap::map() const {
+const BuiltinFunctionMap::Map& BuiltinFunctionMap::map() const {
     constexpr std::size_t kMax = std::numeric_limits<std::size_t>::max();
     // clang-format off
     static const Map builtin_functions = {
@@ -894,3 +946,6 @@ BuiltinFunctionMap::Map& BuiltinFunctionMap::map() const {
     // clang-format on
     return builtin_functions;
 }
+
+}  // namespace init
+}  // namespace android

@@ -15,6 +15,7 @@
  */
 
 #include <ctype.h>
+#include <inttypes.h>
 #include <poll.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
@@ -110,7 +111,7 @@ bool LogReader::onDataAvailable(SocketClient* cli) {
     if (!fastcmp<strncmp>(buffer, "dumpAndClose", 12)) {
         // Allow writer to get some cycles, and wait for pending notifications
         sched_yield();
-        LogTimeEntry::lock();
+        LogTimeEntry::wrlock();
         LogTimeEntry::unlock();
         sched_yield();
         nonBlock = true;
@@ -192,6 +193,12 @@ bool LogReader::onDataAvailable(SocketClient* cli) {
         }
     }
 
+    android::prdebug(
+        "logdr: UID=%d GID=%d PID=%d %c tail=%lu logMask=%x pid=%d "
+        "start=%" PRIu64 "ns timeout=%" PRIu64 "ns\n",
+        cli->getUid(), cli->getGid(), cli->getPid(), nonBlock ? 'n' : 'b', tail,
+        logMask, (int)pid, sequence.nsec(), timeout);
+
     FlushCommand command(*this, nonBlock, tail, logMask, pid, sequence, timeout);
 
     // Set acceptable upper limit to wait for slow reader processing b/27242723
@@ -205,7 +212,7 @@ bool LogReader::onDataAvailable(SocketClient* cli) {
 
 void LogReader::doSocketDelete(SocketClient* cli) {
     LastLogTimes& times = mLogbuf.mTimes;
-    LogTimeEntry::lock();
+    LogTimeEntry::wrlock();
     LastLogTimes::iterator it = times.begin();
     while (it != times.end()) {
         LogTimeEntry* entry = (*it);

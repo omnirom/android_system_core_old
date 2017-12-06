@@ -29,8 +29,11 @@
 
 #include "fs_mgr_priv.h"
 
+const std::string kDefaultAndroidDtDir("/proc/device-tree/firmware/android");
+
 struct fs_mgr_flag_values {
     char *key_loc;
+    char* key_dir;
     char *verity_loc;
     long long part_length;
     char *label;
@@ -70,34 +73,35 @@ static struct flag_list mount_flags[] = {
 };
 
 static struct flag_list fs_mgr_flags[] = {
-    { "wait",               MF_WAIT },
-    { "check",              MF_CHECK },
-    { "encryptable=",       MF_CRYPT },
-    { "forceencrypt=",      MF_FORCECRYPT },
-    { "fileencryption=",    MF_FILEENCRYPTION },
-    { "forcefdeorfbe=",     MF_FORCEFDEORFBE },
-    { "nonremovable",       MF_NONREMOVABLE },
-    { "voldmanaged=",       MF_VOLDMANAGED},
-    { "length=",            MF_LENGTH },
-    { "recoveryonly",       MF_RECOVERYONLY },
-    { "swapprio=",          MF_SWAPPRIO },
-    { "zramsize=",          MF_ZRAMSIZE },
-    { "max_comp_streams=",  MF_MAX_COMP_STREAMS },
-    { "verifyatboot",       MF_VERIFYATBOOT },
-    { "verify",             MF_VERIFY },
-    { "avb",                MF_AVB },
-    { "noemulatedsd",       MF_NOEMULATEDSD },
-    { "notrim",             MF_NOTRIM },
-    { "formattable",        MF_FORMATTABLE },
-    { "slotselect",         MF_SLOTSELECT },
-    { "nofail",             MF_NOFAIL },
-    { "latemount",          MF_LATEMOUNT },
-    { "reservedsize=",      MF_RESERVEDSIZE },
-    { "quota",              MF_QUOTA },
-    { "eraseblk=",          MF_ERASEBLKSIZE },
-    { "logicalblk=",        MF_LOGICALBLKSIZE },
-    { "defaults",           0 },
-    { 0,                    0 },
+    {"wait", MF_WAIT},
+    {"check", MF_CHECK},
+    {"encryptable=", MF_CRYPT},
+    {"forceencrypt=", MF_FORCECRYPT},
+    {"fileencryption=", MF_FILEENCRYPTION},
+    {"forcefdeorfbe=", MF_FORCEFDEORFBE},
+    {"keydirectory=", MF_KEYDIRECTORY},
+    {"nonremovable", MF_NONREMOVABLE},
+    {"voldmanaged=", MF_VOLDMANAGED},
+    {"length=", MF_LENGTH},
+    {"recoveryonly", MF_RECOVERYONLY},
+    {"swapprio=", MF_SWAPPRIO},
+    {"zramsize=", MF_ZRAMSIZE},
+    {"max_comp_streams=", MF_MAX_COMP_STREAMS},
+    {"verifyatboot", MF_VERIFYATBOOT},
+    {"verify", MF_VERIFY},
+    {"avb", MF_AVB},
+    {"noemulatedsd", MF_NOEMULATEDSD},
+    {"notrim", MF_NOTRIM},
+    {"formattable", MF_FORMATTABLE},
+    {"slotselect", MF_SLOTSELECT},
+    {"nofail", MF_NOFAIL},
+    {"latemount", MF_LATEMOUNT},
+    {"reservedsize=", MF_RESERVEDSIZE},
+    {"quota", MF_QUOTA},
+    {"eraseblk=", MF_ERASEBLKSIZE},
+    {"logicalblk=", MF_LOGICALBLKSIZE},
+    {"defaults", 0},
+    {0, 0},
 };
 
 #define EM_AES_256_XTS  1
@@ -266,6 +270,11 @@ static int parse_flags(char *flags, struct flag_list *fl,
                     } else {
                         flag_vals->file_names_mode = EM_AES_256_CTS;
                     }
+                } else if ((fl[i].flag == MF_KEYDIRECTORY) && flag_vals) {
+                    /* The metadata flag is followed by an = and the
+                     * directory for the keys.  Get it and return it.
+                     */
+                    flag_vals->key_dir = strdup(strchr(p, '=') + 1);
                 } else if ((fl[i].flag == MF_LENGTH) && flag_vals) {
                     /* The length flag is followed by an = and the
                      * size of the partition.  Get it and return it.
@@ -358,9 +367,26 @@ static int parse_flags(char *flags, struct flag_list *fl,
     return f;
 }
 
+static std::string init_android_dt_dir() {
+    std::string android_dt_dir;
+    // The platform may specify a custom Android DT path in kernel cmdline
+    if (!fs_mgr_get_boot_config_from_kernel_cmdline("android_dt_dir", &android_dt_dir)) {
+        // Fall back to the standard procfs-based path
+        android_dt_dir = kDefaultAndroidDtDir;
+    }
+    return android_dt_dir;
+}
+
+// FIXME: The same logic is duplicated in system/core/init/
+const std::string& get_android_dt_dir() {
+    // Set once and saves time for subsequent calls to this function
+    static const std::string kAndroidDtDir = init_android_dt_dir();
+    return kAndroidDtDir;
+}
+
 static bool is_dt_fstab_compatible() {
     std::string dt_value;
-    std::string file_name = kAndroidDtDir + "/fstab/compatible";
+    std::string file_name = get_android_dt_dir() + "/fstab/compatible";
     if (read_dt_file(file_name, &dt_value)) {
         if (dt_value == "android,fstab") {
             return true;
@@ -376,22 +402,14 @@ static std::string read_fstab_from_dt() {
         return fstab;
     }
 
-    std::string fstabdir_name = kAndroidDtDir + "/fstab";
+    std::string fstabdir_name = get_android_dt_dir() + "/fstab";
     std::unique_ptr<DIR, int (*)(DIR*)> fstabdir(opendir(fstabdir_name.c_str()), closedir);
     if (!fstabdir) return fstab;
 
     dirent* dp;
     while ((dp = readdir(fstabdir.get())) != NULL) {
-        // skip over name and compatible
-        if (dp->d_type != DT_DIR) {
-            continue;
-        }
-
-        // skip if its not 'vendor', 'odm' or 'system'
-        if (strcmp(dp->d_name, "odm") && strcmp(dp->d_name, "system") &&
-            strcmp(dp->d_name, "vendor")) {
-            continue;
-        }
+        // skip over name, compatible and .
+        if (dp->d_type != DT_DIR || dp->d_name[0] == '.') continue;
 
         // create <dev> <mnt_point>  <type>  <mnt_flags>  <fsmgr_flags>\n
         std::vector<std::string> fstab_entry;
@@ -447,7 +465,7 @@ static std::string read_fstab_from_dt() {
 }
 
 bool is_dt_compatible() {
-    std::string file_name = kAndroidDtDir + "/compatible";
+    std::string file_name = get_android_dt_dir() + "/compatible";
     std::string dt_value;
     if (read_dt_file(file_name, &dt_value)) {
         if (dt_value == "android,firmware") {
@@ -566,6 +584,7 @@ static struct fstab *fs_mgr_read_fstab_file(FILE *fstab_file)
         fstab->recs[cnt].fs_mgr_flags = parse_flags(p, fs_mgr_flags,
                                                     &flag_vals, NULL, 0);
         fstab->recs[cnt].key_loc = flag_vals.key_loc;
+        fstab->recs[cnt].key_dir = flag_vals.key_dir;
         fstab->recs[cnt].verity_loc = flag_vals.verity_loc;
         fstab->recs[cnt].length = flag_vals.part_length;
         fstab->recs[cnt].label = flag_vals.label;
@@ -725,6 +744,7 @@ void fs_mgr_free_fstab(struct fstab *fstab)
         free(fstab->recs[i].fs_type);
         free(fstab->recs[i].fs_options);
         free(fstab->recs[i].key_loc);
+        free(fstab->recs[i].key_dir);
         free(fstab->recs[i].label);
     }
 
@@ -863,32 +883,26 @@ int fs_mgr_is_noemulatedsd(const struct fstab_rec *fstab)
     return fstab->fs_mgr_flags & MF_NOEMULATEDSD;
 }
 
-int fs_mgr_is_notrim(struct fstab_rec *fstab)
-{
+int fs_mgr_is_notrim(const struct fstab_rec* fstab) {
     return fstab->fs_mgr_flags & MF_NOTRIM;
 }
 
-int fs_mgr_is_formattable(struct fstab_rec *fstab)
-{
+int fs_mgr_is_formattable(const struct fstab_rec* fstab) {
     return fstab->fs_mgr_flags & (MF_FORMATTABLE);
 }
 
-int fs_mgr_is_slotselect(struct fstab_rec *fstab)
-{
+int fs_mgr_is_slotselect(const struct fstab_rec* fstab) {
     return fstab->fs_mgr_flags & MF_SLOTSELECT;
 }
 
-int fs_mgr_is_nofail(struct fstab_rec *fstab)
-{
+int fs_mgr_is_nofail(const struct fstab_rec* fstab) {
     return fstab->fs_mgr_flags & MF_NOFAIL;
 }
 
-int fs_mgr_is_latemount(struct fstab_rec *fstab)
-{
+int fs_mgr_is_latemount(const struct fstab_rec* fstab) {
     return fstab->fs_mgr_flags & MF_LATEMOUNT;
 }
 
-int fs_mgr_is_quota(struct fstab_rec *fstab)
-{
+int fs_mgr_is_quota(const struct fstab_rec* fstab) {
     return fstab->fs_mgr_flags & MF_QUOTA;
 }

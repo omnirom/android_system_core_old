@@ -26,9 +26,6 @@ cc_library_headers {
     host_supported: true,
     export_include_dirs: ["include"],
 
-    header_libs: ["libutils_headers"],
-    export_header_lib_headers: ["libutils_headers"],
-
     target: {
         linux_bionic: {
             enabled: true,
@@ -44,6 +41,10 @@ cc_library {
     vendor_available: true,
     clang: true,
     host_supported: true,
+    vndk: {
+        enabled: true,
+        support_system_process: true,
+    },
     srcs: [
         "file.cpp",
         "logging.cpp",
@@ -54,7 +55,9 @@ cc_library {
         "test_utils.cpp",
     ],
 
-    header_libs: ["libbase_headers"],
+    header_libs: [
+        "libbase_headers",
+    ],
     export_header_lib_headers: ["libbase_headers"],
 
     cppflags: libbase_cppflags,
@@ -64,24 +67,36 @@ cc_library {
             srcs: [
                 "errors_unix.cpp",
                 "properties.cpp",
+                "chrono_utils.cpp",
             ],
             cppflags: ["-Wexit-time-destructors"],
             sanitize: {
                 misc_undefined: ["integer"],
             },
+
         },
         darwin: {
-            srcs: ["errors_unix.cpp"],
+            srcs: [
+                "chrono_utils.cpp",
+                "errors_unix.cpp",
+            ],
             cppflags: ["-Wexit-time-destructors"],
         },
         linux_bionic: {
-            srcs: ["errors_unix.cpp"],
+            srcs: [
+                "chrono_utils.cpp",
+                "errors_unix.cpp",
+            ],
             cppflags: ["-Wexit-time-destructors"],
             enabled: true,
         },
         linux: {
-            srcs: ["errors_unix.cpp"],
+            srcs: [
+                "chrono_utils.cpp",
+                "errors_unix.cpp",
+            ],
             cppflags: ["-Wexit-time-destructors"],
+            host_ldlibs: ["-lrt"],
         },
         windows: {
             srcs: [
@@ -108,16 +123,24 @@ cc_test {
         "parseint_test.cpp",
         "parsenetaddress_test.cpp",
         "quick_exit_test.cpp",
+        "scopeguard_test.cpp",
         "stringprintf_test.cpp",
         "strings_test.cpp",
         "test_main.cpp",
     ],
     target: {
         android: {
-            srcs: ["properties_test.cpp"],
+            srcs: [
+                "chrono_utils_test.cpp",
+                "properties_test.cpp"
+            ],
             sanitize: {
                 misc_undefined: ["integer"],
             },
+        },
+        linux: {
+            srcs: ["chrono_utils_test.cpp"],
+            host_ldlibs: ["-lrt"],
         },
         windows: {
             srcs: ["utf8_test.cpp"],

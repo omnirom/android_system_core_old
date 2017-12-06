@@ -65,6 +65,9 @@ struct usb_handle {
   /// Interface name
   wchar_t*      interface_name;
 
+  /// Maximum packet size.
+  unsigned max_packet_size;
+
   /// Mask for determining when to use zero length packets
   unsigned zero_mask;
 };
@@ -103,7 +106,7 @@ static void kick_devices();
 
 /// Entry point for thread that polls (every second) for new usb interfaces.
 /// This routine calls find_devices in infinite loop.
-static void device_poll_thread(void*);
+static void device_poll_thread();
 
 /// Initializes this module
 void usb_init();
@@ -174,7 +177,7 @@ int register_new_device(usb_handle* handle) {
   return 1;
 }
 
-void device_poll_thread(void*) {
+void device_poll_thread() {
   adb_thread_setname("Device Poll");
   D("Created device thread");
 
@@ -203,7 +206,7 @@ static LRESULT CALLBACK _power_window_proc(HWND hwnd, UINT uMsg, WPARAM wParam,
   return DefWindowProcW(hwnd, uMsg, wParam, lParam);
 }
 
-static void _power_notification_thread(void*) {
+static void _power_notification_thread() {
   // This uses a thread with its own window message pump to get power
   // notifications. If adb runs from a non-interactive service account, this
   // might not work (not sure). If that happens to not work, we could use
@@ -258,13 +261,11 @@ static void _power_notification_thread(void*) {
 }
 
 void usb_init() {
-  if (!adb_thread_create(device_poll_thread, nullptr)) {
-    fatal_errno("cannot create device poll thread");
-  }
-  if (!adb_thread_create(_power_notification_thread, nullptr)) {
-    fatal_errno("cannot create power notification thread");
-  }
+  std::thread(device_poll_thread).detach();
+  std::thread(_power_notification_thread).detach();
 }
+
+void usb_cleanup() {}
 
 usb_handle* do_usb_open(const wchar_t* interface_name) {
   unsigned long name_len = 0;
@@ -419,6 +420,7 @@ int usb_read(usb_handle *handle, void* data, int len) {
   unsigned long time_out = 0;
   unsigned long read = 0;
   int err = 0;
+  int orig_len = len;
 
   D("usb_read %d", len);
   if (NULL == handle) {
@@ -427,9 +429,8 @@ int usb_read(usb_handle *handle, void* data, int len) {
     goto fail;
   }
 
-  while (len > 0) {
-    if (!AdbReadEndpointSync(handle->adb_read_pipe, data, len, &read,
-                             time_out)) {
+  while (len == orig_len) {
+    if (!AdbReadEndpointSync(handle->adb_read_pipe, data, len, &read, time_out)) {
       D("AdbReadEndpointSync failed: %s",
         android::base::SystemErrorCodeToString(GetLastError()).c_str());
       err = EIO;
@@ -437,11 +438,11 @@ int usb_read(usb_handle *handle, void* data, int len) {
     }
     D("usb_read got: %ld, expected: %d", read, len);
 
-    data = (char *)data + read;
+    data = (char*)data + read;
     len -= read;
   }
 
-  return 0;
+  return orig_len - len;
 
 fail:
   // Any failure should cause us to kick the device instead of leaving it a
@@ -526,6 +527,10 @@ int usb_close(usb_handle* handle) {
   return 0;
 }
 
+size_t usb_get_max_packet_size(usb_handle* handle) {
+    return handle->max_packet_size;
+}
+
 int recognized_device(usb_handle* handle) {
   if (NULL == handle)
     return 0;
@@ -561,6 +566,7 @@ int recognized_device(usb_handle* handle) {
       AdbEndpointInformation endpoint_info;
       // assuming zero is a valid bulk endpoint ID
       if (AdbGetEndpointInformation(handle->adb_interface, 0, &endpoint_info)) {
+        handle->max_packet_size = endpoint_info.max_packet_size;
         handle->zero_mask = endpoint_info.max_packet_size - 1;
         D("device zero_mask: 0x%x", handle->zero_mask);
       } else {

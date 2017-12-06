@@ -17,44 +17,122 @@
 #ifndef _INIT_DEVICES_H
 #define _INIT_DEVICES_H
 
-#include <functional>
 #include <sys/stat.h>
+#include <sys/types.h>
 
-enum coldboot_action_t {
-    // coldboot continues without creating the device for the uevent
-    COLDBOOT_CONTINUE = 0,
-    // coldboot continues after creating the device for the uevent
-    COLDBOOT_CREATE,
-    // coldboot stops after creating the device for uevent but doesn't
-    // create the COLDBOOT_DONE file
-    COLDBOOT_STOP,
-    // same as COLDBOOT_STOP, but creates the COLDBOOT_DONE file
-    COLDBOOT_FINISH
+#include <algorithm>
+#include <string>
+#include <vector>
+
+#include <android-base/file.h>
+#include <selinux/label.h>
+
+#include "uevent.h"
+
+namespace android {
+namespace init {
+
+class Permissions {
+  public:
+    Permissions(const std::string& name, mode_t perm, uid_t uid, gid_t gid);
+
+    bool Match(const std::string& path) const;
+
+    mode_t perm() const { return perm_; }
+    uid_t uid() const { return uid_; }
+    gid_t gid() const { return gid_; }
+
+  protected:
+    const std::string& name() const { return name_; }
+
+  private:
+    std::string name_;
+    mode_t perm_;
+    uid_t uid_;
+    gid_t gid_;
+    bool prefix_;
+    bool wildcard_;
 };
 
-struct uevent {
-    const char* action;
-    const char* path;
-    const char* subsystem;
-    const char* firmware;
-    const char* partition_name;
-    const char* device_name;
-    int partition_num;
-    int major;
-    int minor;
+class SysfsPermissions : public Permissions {
+  public:
+    SysfsPermissions(const std::string& name, const std::string& attribute, mode_t perm, uid_t uid,
+                     gid_t gid)
+        : Permissions(name, perm, uid, gid), attribute_(attribute) {}
+
+    bool MatchWithSubsystem(const std::string& path, const std::string& subsystem) const;
+    void SetPermissions(const std::string& path) const;
+
+  private:
+    const std::string attribute_;
 };
 
-typedef std::function<coldboot_action_t(struct uevent* uevent)> coldboot_callback;
-extern coldboot_action_t handle_device_fd(coldboot_callback fn = nullptr);
-extern void device_init(const char* path = nullptr, coldboot_callback fn = nullptr);
-extern void device_close();
+class Subsystem {
+  public:
+    friend class SubsystemParser;
 
-extern int add_dev_perms(const char *name, const char *attr,
-                         mode_t perm, unsigned int uid,
-                         unsigned int gid, unsigned short prefix,
-                         unsigned short wildcard);
-int get_device_fd();
+    Subsystem() {}
 
-char** get_block_device_symlinks(struct uevent* uevent);
+    // Returns the full path for a uevent of a device that is a member of this subsystem,
+    // according to the rules parsed from ueventd.rc
+    std::string ParseDevPath(const Uevent& uevent) const {
+        std::string devname = devname_source_ == DevnameSource::DEVNAME_UEVENT_DEVNAME
+                                  ? uevent.device_name
+                                  : android::base::Basename(uevent.path);
 
-#endif	/* _INIT_DEVICES_H */
+        return dir_name_ + "/" + devname;
+    }
+
+    bool operator==(const std::string& string_name) const { return name_ == string_name; }
+
+  private:
+    enum class DevnameSource {
+        DEVNAME_UEVENT_DEVNAME,
+        DEVNAME_UEVENT_DEVPATH,
+    };
+
+    std::string name_;
+    std::string dir_name_ = "/dev";
+    DevnameSource devname_source_;
+};
+
+class DeviceHandler {
+  public:
+    friend class DeviceHandlerTester;
+
+    DeviceHandler();
+    DeviceHandler(std::vector<Permissions> dev_permissions,
+                  std::vector<SysfsPermissions> sysfs_permissions,
+                  std::vector<Subsystem> subsystems, bool skip_restorecon);
+    ~DeviceHandler(){};
+
+    void HandleDeviceEvent(const Uevent& uevent);
+
+    std::vector<std::string> GetBlockDeviceSymlinks(const Uevent& uevent) const;
+    void set_skip_restorecon(bool value) { skip_restorecon_ = value; }
+
+  private:
+    bool FindPlatformDevice(std::string path, std::string* platform_device_path) const;
+    std::tuple<mode_t, uid_t, gid_t> GetDevicePermissions(
+        const std::string& path, const std::vector<std::string>& links) const;
+    void MakeDevice(const std::string& path, bool block, int major, int minor,
+                    const std::vector<std::string>& links) const;
+    void HandleDevice(const std::string& action, const std::string& devpath, bool block, int major,
+                      int minor, const std::vector<std::string>& links) const;
+    void FixupSysPermissions(const std::string& upath, const std::string& subsystem) const;
+
+    std::vector<Permissions> dev_permissions_;
+    std::vector<SysfsPermissions> sysfs_permissions_;
+    std::vector<Subsystem> subsystems_;
+    selabel_handle* sehandle_;
+    bool skip_restorecon_;
+    std::string sysfs_mount_point_;
+};
+
+// Exposed for testing
+void SanitizePartitionName(std::string* string);
+
+}  // namespace init
+}  // namespace android
+
+#endif

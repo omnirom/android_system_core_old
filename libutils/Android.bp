@@ -17,8 +17,16 @@ cc_library_headers {
     vendor_available: true,
     host_supported: true,
 
-    header_libs: ["libsystem_headers",],
-    export_header_lib_headers: ["libsystem_headers",],
+    header_libs: [
+        "liblog_headers",
+        "libsystem_headers",
+        "libcutils_headers"
+    ],
+    export_header_lib_headers: [
+        "liblog_headers",
+        "libsystem_headers",
+        "libcutils_headers"
+    ],
     export_include_dirs: ["include"],
 
     target: {
@@ -38,13 +46,16 @@ cc_library_headers {
 cc_library {
     name: "libutils",
     vendor_available: true,
+    vndk: {
+        enabled: true,
+        support_system_process: true,
+    },
     host_supported: true,
 
     srcs: [
         "CallStack.cpp",
         "FileMap.cpp",
         "JenkinsHash.cpp",
-        "Log.cpp",
         "NativeHandle.cpp",
         "Printer.cpp",
         "PropertyMap.cpp",
@@ -73,6 +84,10 @@ cc_library {
         "libutils_headers",
     ],
 
+    shared_libs: [
+        "liblog",
+    ],
+
     arch: {
         mips: {
             cflags: ["-DALIGN_DOUBLE"],
@@ -93,7 +108,6 @@ cc_library {
                 "libbacktrace",
                 "libcutils",
                 "libdl",
-                "liblog",
                 "libvndksupport",
             ],
 

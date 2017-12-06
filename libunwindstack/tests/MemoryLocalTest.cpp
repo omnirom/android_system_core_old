@@ -21,7 +21,9 @@
 
 #include <gtest/gtest.h>
 
-#include "Memory.h"
+#include <unwindstack/Memory.h>
+
+namespace unwindstack {
 
 TEST(MemoryLocalTest, read) {
   std::vector<uint8_t> src(1024);
@@ -47,25 +49,6 @@ TEST(MemoryLocalTest, read) {
   }
 }
 
-TEST(MemoryLocalTest, read_string) {
-  std::string name("string_in_memory");
-
-  MemoryLocal local;
-
-  std::vector<uint8_t> dst(1024);
-  std::string dst_name;
-  ASSERT_TRUE(local.ReadString(reinterpret_cast<uint64_t>(name.c_str()), &dst_name));
-  ASSERT_EQ("string_in_memory", dst_name);
-
-  ASSERT_TRUE(local.ReadString(reinterpret_cast<uint64_t>(&name[7]), &dst_name));
-  ASSERT_EQ("in_memory", dst_name);
-
-  ASSERT_TRUE(local.ReadString(reinterpret_cast<uint64_t>(&name[7]), &dst_name, 10));
-  ASSERT_EQ("in_memory", dst_name);
-
-  ASSERT_FALSE(local.ReadString(reinterpret_cast<uint64_t>(&name[7]), &dst_name, 9));
-}
-
 TEST(MemoryLocalTest, read_illegal) {
   MemoryLocal local;
 
@@ -73,3 +56,15 @@ TEST(MemoryLocalTest, read_illegal) {
   ASSERT_FALSE(local.Read(0, dst.data(), 1));
   ASSERT_FALSE(local.Read(0, dst.data(), 100));
 }
+
+TEST(MemoryLocalTest, read_overflow) {
+  MemoryLocal local;
+
+  // On 32 bit this test doesn't necessarily cause an overflow. The 64 bit
+  // version will always go through the overflow check.
+  std::vector<uint8_t> dst(100);
+  uint64_t value;
+  ASSERT_FALSE(local.Read(reinterpret_cast<uint64_t>(&value), dst.data(), SIZE_MAX));
+}
+
+}  // namespace unwindstack

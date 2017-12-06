@@ -176,15 +176,19 @@ struct LogAbortAfterFullExpr {
 // Provides an expression that evaluates to the truthiness of `x`, automatically
 // aborting if `c` is true.
 #define ABORT_AFTER_LOG_EXPR_IF(c, x) (((c) && ::android::base::LogAbortAfterFullExpr()) || (x))
+// Note to the static analyzer that we always execute FATAL logs in practice.
+#define MUST_LOG_MESSAGE(severity) (SEVERITY_LAMBDA(severity) == ::android::base::FATAL)
 #else
 #define ABORT_AFTER_LOG_FATAL
 #define ABORT_AFTER_LOG_EXPR_IF(c, x) (x)
+#define MUST_LOG_MESSAGE(severity) false
 #endif
 #define ABORT_AFTER_LOG_FATAL_EXPR(x) ABORT_AFTER_LOG_EXPR_IF(true, x)
 
 // Defines whether the given severity will be logged or silently swallowed.
 #define WOULD_LOG(severity) \
-  UNLIKELY((SEVERITY_LAMBDA(severity)) >= ::android::base::GetMinimumLogSeverity())
+  (UNLIKELY((SEVERITY_LAMBDA(severity)) >= ::android::base::GetMinimumLogSeverity()) || \
+   MUST_LOG_MESSAGE(severity))
 
 // Get an ostream that can be used for logging at the given severity and to the default
 // destination.
@@ -315,7 +319,7 @@ struct LogAbortAfterFullExpr {
 // DCHECKs are debug variants of CHECKs only enabled in debug builds. Generally
 // CHECK should be used unless profiling identifies a CHECK as being in
 // performance critical code.
-#if defined(NDEBUG)
+#if defined(NDEBUG) && !defined(__clang_analyzer__)
 static constexpr bool kEnableDChecks = false;
 #else
 static constexpr bool kEnableDChecks = true;
@@ -339,7 +343,7 @@ static constexpr bool kEnableDChecks = true;
   if (::android::base::kEnableDChecks) CHECK_STREQ(s1, s2)
 #define DCHECK_STRNE(s1, s2) \
   if (::android::base::kEnableDChecks) CHECK_STRNE(s1, s2)
-#if defined(NDEBUG)
+#if defined(NDEBUG) && !defined(__clang_analyzer__)
 #define DCHECK_CONSTEXPR(x, out, dummy)
 #else
 #define DCHECK_CONSTEXPR(x, out, dummy) CHECK_CONSTEXPR(x, out, dummy)

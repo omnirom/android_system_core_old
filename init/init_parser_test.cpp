@@ -16,15 +16,17 @@
 
 #include "init_parser.h"
 
+#include <string>
+#include <vector>
+
+#include <gtest/gtest.h>
+
 #include "init.h"
 #include "service.h"
 #include "util.h"
 
-#include <errno.h>
-#include <gtest/gtest.h>
-
-#include <string>
-#include <vector>
+namespace android {
+namespace init {
 
 TEST(init_parser, make_exec_oneshot_service_invalid_syntax) {
     ServiceManager& sm = ServiceManager::GetInstance();
@@ -88,19 +90,29 @@ static void Test_make_exec_oneshot_service(bool dash_dash, bool seclabel, bool u
         ASSERT_EQ("", svc->seclabel());
     }
     if (uid) {
-        ASSERT_EQ(decode_uid("log"), svc->uid());
+        uid_t decoded_uid;
+        std::string err;
+        ASSERT_TRUE(DecodeUid("log", &decoded_uid, &err));
+        ASSERT_EQ(decoded_uid, svc->uid());
     } else {
         ASSERT_EQ(0U, svc->uid());
     }
     if (gid) {
-        ASSERT_EQ(decode_uid("shell"), svc->gid());
+        uid_t decoded_uid;
+        std::string err;
+        ASSERT_TRUE(DecodeUid("shell", &decoded_uid, &err));
+        ASSERT_EQ(decoded_uid, svc->gid());
     } else {
         ASSERT_EQ(0U, svc->gid());
     }
     if (supplementary_gids) {
         ASSERT_EQ(2U, svc->supp_gids().size());
-        ASSERT_EQ(decode_uid("system"), svc->supp_gids()[0]);
-        ASSERT_EQ(decode_uid("adb"), svc->supp_gids()[1]);
+        uid_t decoded_uid;
+        std::string err;
+        ASSERT_TRUE(DecodeUid("system", &decoded_uid, &err));
+        ASSERT_EQ(decoded_uid, svc->supp_gids()[0]);
+        ASSERT_TRUE(DecodeUid("adb", &decoded_uid, &err));
+        ASSERT_EQ(decoded_uid, svc->supp_gids()[1]);
     } else {
         ASSERT_EQ(0U, svc->supp_gids().size());
     }
@@ -133,3 +145,6 @@ TEST(init_parser, make_exec_oneshot_service_with_just_command) {
 TEST(init_parser, make_exec_oneshot_service_with_just_command_no_dash) {
     Test_make_exec_oneshot_service(false, false, false, false, false);
 }
+
+}  // namespace init
+}  // namespace android

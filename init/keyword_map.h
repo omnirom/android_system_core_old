@@ -22,19 +22,27 @@
 
 #include <android-base/stringprintf.h>
 
+namespace android {
+namespace init {
+
 template <typename Function>
 class KeywordMap {
-public:
+  public:
     using FunctionInfo = std::tuple<std::size_t, std::size_t, Function>;
-    using Map = const std::map<std::string, FunctionInfo>;
+    using Map = std::map<std::string, FunctionInfo>;
 
     virtual ~KeywordMap() {
     }
 
-    const Function FindFunction(const std::string& keyword,
-                                size_t num_args,
-                                std::string* err) const {
+    const Function FindFunction(const std::vector<std::string>& args, std::string* err) const {
         using android::base::StringPrintf;
+
+        if (args.empty()) {
+            *err = "keyword needed, but not provided";
+            return nullptr;
+        }
+        auto& keyword = args[0];
+        auto num_args = args.size() - 1;
 
         auto function_info_it = map().find(keyword);
         if (function_info_it == map().end()) {
@@ -68,10 +76,13 @@ public:
         return std::get<Function>(function_info);
     }
 
-private:
-//Map of keyword ->
-//(minimum number of arguments, maximum number of arguments, function pointer)
-    virtual Map& map() const = 0;
+  private:
+    // Map of keyword ->
+    // (minimum number of arguments, maximum number of arguments, function pointer)
+    virtual const Map& map() const = 0;
 };
+
+}  // namespace init
+}  // namespace android
 
 #endif

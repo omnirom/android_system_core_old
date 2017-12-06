@@ -19,6 +19,14 @@
 
 #include <string>
 
+#include <selinux/label.h>
+
+namespace android {
+namespace init {
+
+// Note: These globals are *only* valid in init, so they should not be used in ueventd,
+// watchdogd, or any files that may be included in those, such as devices.cpp and util.cpp.
+// TODO: Have an Init class and remove all globals.
 extern const char *ENV[32];
 extern std::string default_console;
 extern struct selabel_handle *sehandle;
@@ -33,5 +41,12 @@ void register_epoll_handler(int fd, void (*fn)());
 int add_environment(const char* key, const char* val);
 
 bool start_waiting_for_property(const char *name, const char *value);
+
+void DumpState();
+
+void ResetWaitForProp();
+
+}  // namespace init
+}  // namespace android
 
 #endif  /* _INIT_INIT_H */

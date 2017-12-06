@@ -34,7 +34,7 @@ extern bool cpusets_enabled();
  * Check if Linux kernel enables SCHEDTUNE feature (only available in Android
  * common kernel or Linaro LSK, not in mainline Linux as of v4.9)
  *
- * Return value: 1 if Linux kernel CONFIG_SCHEDTUNE=y; 0 otherwise.
+ * Return value: 1 if Linux kernel CONFIG_CGROUP_SCHEDTUNE=y; 0 otherwise.
  */
 extern bool schedboost_enabled();
 
@@ -47,6 +47,7 @@ typedef enum {
     SP_AUDIO_APP  = 3,
     SP_AUDIO_SYS  = 4,
     SP_TOP_APP    = 5,
+    SP_RT_APP     = 6,
     SP_CNT,
     SP_MAX        = SP_CNT - 1,
     SP_SYSTEM_DEFAULT = SP_FOREGROUND,

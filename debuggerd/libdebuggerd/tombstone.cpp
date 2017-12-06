@@ -168,6 +168,26 @@ static const char* get_sigcode(int signo, int code) {
         case TRAP_BRANCH: return "TRAP_BRANCH";
         case TRAP_HWBKPT: return "TRAP_HWBKPT";
       }
+      if ((code & 0xff) == SIGTRAP) {
+        switch ((code >> 8) & 0xff) {
+          case PTRACE_EVENT_FORK:
+            return "PTRACE_EVENT_FORK";
+          case PTRACE_EVENT_VFORK:
+            return "PTRACE_EVENT_VFORK";
+          case PTRACE_EVENT_CLONE:
+            return "PTRACE_EVENT_CLONE";
+          case PTRACE_EVENT_EXEC:
+            return "PTRACE_EVENT_EXEC";
+          case PTRACE_EVENT_VFORK_DONE:
+            return "PTRACE_EVENT_VFORK_DONE";
+          case PTRACE_EVENT_EXIT:
+            return "PTRACE_EVENT_EXIT";
+          case PTRACE_EVENT_SECCOMP:
+            return "PTRACE_EVENT_SECCOMP";
+          case PTRACE_EVENT_STOP:
+            return "PTRACE_EVENT_STOP";
+        }
+      }
       static_assert(NSIGTRAP == TRAP_HWBKPT, "missing TRAP_* si_code");
       break;
   }
@@ -395,15 +415,17 @@ static void dump_all_maps(Backtrace* backtrace, BacktraceMap* map, log_t* log, p
   }
 
   ScopedBacktraceMapIteratorLock lock(map);
-  _LOG(log, logtype::MAPS, "\n");
-  if (!print_fault_address_marker) {
-    _LOG(log, logtype::MAPS, "memory map:\n");
-  } else {
-    _LOG(log, logtype::MAPS, "memory map: (fault address prefixed with --->)\n");
+  _LOG(log, logtype::MAPS,
+       "\n"
+       "memory map (%zu entries):\n",
+       map->size());
+  if (print_fault_address_marker) {
     if (map->begin() != map->end() && addr < map->begin()->start) {
       _LOG(log, logtype::MAPS, "--->Fault address falls at %s before any mapped regions\n",
            get_addr_string(addr).c_str());
       print_fault_address_marker = false;
+    } else {
+      _LOG(log, logtype::MAPS, "(fault address prefixed with --->)\n");
     }
   }
 
@@ -446,11 +468,11 @@ static void dump_all_maps(Backtrace* backtrace, BacktraceMap* map, log_t* log, p
         line += " (BuildId: " + build_id + ")";
       }
     }
-    if (it->load_base != 0) {
+    if (it->load_bias != 0) {
       if (space_needed) {
         line += ' ';
       }
-      line += StringPrintf(" (load base 0x%" PRIxPTR ")", it->load_base);
+      line += StringPrintf(" (load bias 0x%" PRIxPTR ")", it->load_bias);
     }
     _LOG(log, logtype::MAPS, "%s\n", line.c_str());
   }
@@ -763,10 +785,22 @@ void engrave_tombstone_ucontext(int tombstone_fd, uintptr_t abort_msg_address, s
   dump_abort_message(backtrace.get(), &log, abort_msg_address);
   dump_registers(&log, ucontext);
 
-  // TODO: Dump registers from the ucontext.
   if (backtrace->Unwind(0, ucontext)) {
     dump_backtrace_and_stack(backtrace.get(), &log);
   } else {
     ALOGE("Unwind failed: pid = %d, tid = %d", pid, tid);
+  }
+
+  // TODO: Make this match the format of dump_all_maps above.
+  _LOG(&log, logtype::MAPS, "memory map:\n");
+  android::base::unique_fd maps_fd(open("/proc/self/maps", O_RDONLY | O_CLOEXEC));
+  if (maps_fd == -1) {
+    _LOG(&log, logtype::MAPS, "    failed to open /proc/self/maps: %s", strerror(errno));
+  } else {
+    char buf[256];
+    ssize_t rc;
+    while ((rc = TEMP_FAILURE_RETRY(read(maps_fd.get(), buf, sizeof(buf)))) > 0) {
+      android::base::WriteFully(tombstone_fd, buf, rc);
+    }
   }
 }

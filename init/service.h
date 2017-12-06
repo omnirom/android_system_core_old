@@ -19,19 +19,19 @@
 
 #include <sys/types.h>
 
-#include <cutils/iosched_policy.h>
-
 #include <memory>
 #include <set>
 #include <string>
 #include <vector>
+
+#include <android-base/chrono_utils.h>
+#include <cutils/iosched_policy.h>
 
 #include "action.h"
 #include "capabilities.h"
 #include "descriptors.h"
 #include "init_parser.h"
 #include "keyword_map.h"
-#include "util.h"
 
 #define SVC_DISABLED 0x001        // do not autostart with class
 #define SVC_ONESHOT 0x002         // do not restart on exit
@@ -54,8 +54,8 @@
 
 #define NR_SVC_SUPP_GIDS 12    // twelve supplementary groups
 
-class Action;
-class ServiceManager;
+namespace android {
+namespace init {
 
 struct ServiceEnvironmentInfo {
     ServiceEnvironmentInfo();
@@ -75,7 +75,7 @@ class Service {
 
     bool IsRunning() { return (flags_ & SVC_RUNNING) != 0; }
     bool ParseLine(const std::vector<std::string>& args, std::string* err);
-    bool ExecStart(std::unique_ptr<Timer>* exec_waiter);
+    bool ExecStart(std::unique_ptr<android::base::Timer>* exec_waiter);
     bool Start();
     bool StartIfNotDisabled();
     bool Enable();
@@ -88,6 +88,7 @@ class Service {
     void DumpState() const;
     void SetShutdownCritical() { flags_ |= SVC_SHUTDOWN_CRITICAL; }
     bool IsShutdownCritical() const { return (flags_ & SVC_SHUTDOWN_CRITICAL) != 0; }
+    void UnSetExec() { flags_ &= ~SVC_EXEC; }
 
     const std::string& name() const { return name_; }
     const std::set<std::string>& classnames() const { return classnames_; }
@@ -106,6 +107,7 @@ class Service {
     int ioprio_pri() const { return ioprio_pri_; }
     int priority() const { return priority_; }
     int oom_score_adjust() const { return oom_score_adjust_; }
+    bool process_cgroup_empty() const { return process_cgroup_empty_; }
     const std::vector<std::string>& args() const { return args_; }
 
   private:
@@ -132,9 +134,13 @@ class Service {
     bool ParseOneshot(const std::vector<std::string>& args, std::string* err);
     bool ParseOnrestart(const std::vector<std::string>& args, std::string* err);
     bool ParseOomScoreAdjust(const std::vector<std::string>& args, std::string* err);
+    bool ParseMemcgLimitInBytes(const std::vector<std::string>& args, std::string* err);
+    bool ParseMemcgSoftLimitInBytes(const std::vector<std::string>& args, std::string* err);
+    bool ParseMemcgSwappiness(const std::vector<std::string>& args, std::string* err);
     bool ParseNamespace(const std::vector<std::string>& args, std::string* err);
     bool ParseSeclabel(const std::vector<std::string>& args, std::string* err);
     bool ParseSetenv(const std::vector<std::string>& args, std::string* err);
+    bool ParseShutdown(const std::vector<std::string>& args, std::string* err);
     bool ParseSocket(const std::vector<std::string>& args, std::string* err);
     bool ParseFile(const std::vector<std::string>& args, std::string* err);
     bool ParseUser(const std::vector<std::string>& args, std::string* err);
@@ -149,8 +155,8 @@ class Service {
 
     unsigned flags_;
     pid_t pid_;
-    boot_clock::time_point time_started_; // time of last start
-    boot_clock::time_point time_crashed_; // first crash within inspection window
+    android::base::boot_clock::time_point time_started_;  // time of last start
+    android::base::boot_clock::time_point time_crashed_;  // first crash within inspection window
     int crash_count_;                     // number of times crashed within window
 
     uid_t uid_;
@@ -178,11 +184,17 @@ class Service {
 
     int oom_score_adjust_;
 
+    int swappiness_;
+    int soft_limit_in_bytes_;
+    int limit_in_bytes_;
+
+    bool process_cgroup_empty_ = false;
+
     std::vector<std::string> args_;
 };
 
 class ServiceManager {
-public:
+  public:
     static ServiceManager& GetInstance();
 
     // Exposed for testing
@@ -204,34 +216,36 @@ public:
     void ReapAnyOutstandingChildren();
     void RemoveService(const Service& svc);
     void DumpState() const;
+    void ClearExecWait();
 
-private:
+  private:
     // Cleans up a child process that exited.
     // Returns true iff a children was cleaned up.
     bool ReapOneProcess();
 
     static int exec_count_; // Every service needs a unique name.
-    std::unique_ptr<Timer> exec_waiter_;
+    std::unique_ptr<android::base::Timer> exec_waiter_;
 
     std::vector<std::unique_ptr<Service>> services_;
 };
 
 class ServiceParser : public SectionParser {
-public:
-    ServiceParser() : service_(nullptr) {
-    }
-    bool ParseSection(const std::vector<std::string>& args,
+  public:
+    ServiceParser(ServiceManager* service_manager)
+        : service_manager_(service_manager), service_(nullptr) {}
+    bool ParseSection(std::vector<std::string>&& args, const std::string& filename, int line,
                       std::string* err) override;
-    bool ParseLineSection(const std::vector<std::string>& args,
-                          const std::string& filename, int line,
-                          std::string* err) const override;
+    bool ParseLineSection(std::vector<std::string>&& args, int line, std::string* err) override;
     void EndSection() override;
-    void EndFile(const std::string&) override {
-    }
-private:
+
+  private:
     bool IsValidName(const std::string& name) const;
 
+    ServiceManager* service_manager_;
     std::unique_ptr<Service> service_;
 };
+
+}  // namespace init
+}  // namespace android
 
 #endif

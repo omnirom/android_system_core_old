@@ -1,6 +1,5 @@
 cc_defaults {
     name: "debuggerd_defaults",
-    defaults: ["linux_bionic_supported"],
     cflags: [
         "-Wall",
         "-Wextra",
@@ -9,27 +8,56 @@ cc_defaults {
         "-Os",
     ],
 
-    // util.cpp gets async signal safe logging via libc_logging,
-    // which defines its interface in bionic private headers.
-    include_dirs: ["bionic/libc"],
-
     local_include_dirs: ["include"],
+}
+
+cc_library_headers {
+    name: "libdebuggerd_common_headers",
+    export_include_dirs: ["common/include"]
+}
+
+cc_library_shared {
+    name: "libtombstoned_client",
+    defaults: ["debuggerd_defaults"],
+    srcs: [
+        "tombstoned/tombstoned_client.cpp",
+        "util.cpp",
+    ],
+
+    header_libs: ["libdebuggerd_common_headers"],
+
+    static_libs: [
+        "libasync_safe",
+    ],
+
+    shared_libs: [
+        "libbase",
+        "libcutils",
+    ],
+
+    export_header_lib_headers: ["libdebuggerd_common_headers"],
+    export_include_dirs: ["tombstoned/include"]
 }
 
 // Utility library to tombstoned and get an output fd.
 cc_library_static {
-    name: "libtombstoned_client",
+    name: "libtombstoned_client_static",
     defaults: ["debuggerd_defaults"],
     srcs: [
-        "tombstoned_client.cpp",
+        "tombstoned/tombstoned_client.cpp",
         "util.cpp",
     ],
 
+    header_libs: ["libdebuggerd_common_headers"],
+
     whole_static_libs: [
-        "libc_logging",
+        "libasync_safe",
         "libcutils",
         "libbase",
     ],
+
+    export_header_lib_headers: ["libdebuggerd_common_headers"],
+    export_include_dirs: ["tombstoned/include"]
 }
 
 // Core implementation, linked into libdebuggerd_handler and the dynamic linker.
@@ -38,11 +66,14 @@ cc_library_static {
     defaults: ["debuggerd_defaults"],
     srcs: ["handler/debuggerd_handler.cpp"],
 
+    header_libs: ["libdebuggerd_common_headers"],
+
     whole_static_libs: [
-        "libc_logging",
+        "libasync_safe",
         "libdebuggerd",
     ],
 
+    export_header_lib_headers: ["libdebuggerd_common_headers"],
     export_include_dirs: ["include"],
 }
 
@@ -69,7 +100,8 @@ cc_library_static {
 
     whole_static_libs: [
         "libdebuggerd_handler_core",
-        "libtombstoned_client",
+        "libtombstoned_client_static",
+        "libasync_safe",
         "libbase",
         "libdebuggerd",
         "libbacktrace",
@@ -89,11 +121,14 @@ cc_library {
         "util.cpp",
     ],
 
+    header_libs: ["libdebuggerd_common_headers"],
+
     shared_libs: [
         "libbase",
         "libcutils",
     ],
 
+    export_header_lib_headers: ["libdebuggerd_common_headers"],
     export_include_dirs: ["include"],
 }
 
@@ -163,9 +198,8 @@ cc_test {
             srcs: [
                 "client/debuggerd_client_test.cpp",
                 "debuggerd_test.cpp",
-                "tombstoned_client.cpp",
-                "util.cpp"
             ],
+            static_libs: ["libasync_safe", "libtombstoned_client_static"],
         },
     },
 
@@ -174,11 +208,12 @@ cc_test {
         "libbase",
         "libcutils",
         "libdebuggerd_client",
+        "liblog",
+        "libnativehelper"
     ],
 
     static_libs: [
         "libdebuggerd",
-        "libc_logging",
     ],
 
     local_include_dirs: [
@@ -215,7 +250,7 @@ cc_binary {
     },
 
     static_libs: [
-        "libtombstoned_client",
+        "libtombstoned_client_static",
         "libdebuggerd",
         "libcutils",
     ],
@@ -225,7 +260,6 @@ cc_binary {
         "libbase",
         "liblog",
         "libprocinfo",
-        "libselinux",
     ],
 }
 
@@ -240,7 +274,7 @@ cc_binary {
         "libbase",
         "libdebuggerd_client",
         "liblog",
-        "libselinux",
+        "libprocinfo",
     ],
 
     local_include_dirs: ["include"],
@@ -254,6 +288,8 @@ cc_binary {
         "tombstoned/tombstoned.cpp",
     ],
     defaults: ["debuggerd_defaults"],
+
+    header_libs: ["libdebuggerd_common_headers"],
 
     static_libs: [
         "libbase",

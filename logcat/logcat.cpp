@@ -530,6 +530,7 @@ static void show_format_help(android_logcat_context_internal* context) {
         "  process    — Display PID only.\n"
         "  raw        — Display the raw log message, with no other metadata fields.\n"
         "  tag        — Display the priority/tag only.\n"
+        "  thread     — Display priority, PID and TID of process issuing the message.\n"
         "  threadtime — Display the date, invocation time, priority, tag, and the PID\n"
         "               and TID of the thread issuing the message. (the default format).\n"
         "  time       — Display the date, invocation time, priority/tag, and PID of the\n"
@@ -1637,7 +1638,7 @@ static int __logcat(android_logcat_context_internal* context) {
                 logcat_panic(context, HELP_FALSE, "read: unexpected length.\n");
                 break;
             }
-            logcat_panic(context, HELP_FALSE, "logcat read failure");
+            logcat_panic(context, HELP_FALSE, "logcat read failure\n");
             break;
         }
 

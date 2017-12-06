@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <private/android_filesystem_config.h>
+#include <cutils/android_filesystem_config.h>
 
 #include "ipc.h"
 #include "log.h"
@@ -229,7 +229,6 @@ static void parse_args(int argc, char *argv[])
 int main(int argc, char *argv[])
 {
     int rc;
-    uint retry_cnt;
 
     /* drop privileges */
     if (drop_privs() < 0)

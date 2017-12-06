@@ -348,10 +348,13 @@ out:
 
 static int was_verity_restart()
 {
-    static const char *files[] = {
+    static const char* files[] = {
+        // clang-format off
+        "/sys/fs/pstore/console-ramoops-0",
         "/sys/fs/pstore/console-ramoops",
         "/proc/last_kmsg",
         NULL
+        // clang-format on
     };
     int i;
 
@@ -766,7 +769,7 @@ int fs_mgr_setup_verity(struct fstab_rec *fstab, bool wait_for_verity_dev)
     // setup is needed at all.
     if (!is_device_secure()) {
         LINFO << "Verity setup skipped for " << mount_point;
-        return FS_MGR_SETUP_VERITY_SUCCESS;
+        return FS_MGR_SETUP_VERITY_SKIPPED;
     }
 
     if (fec_open(&f, fstab->blk_device, O_RDONLY, FEC_VERITY_DISABLE,
@@ -779,8 +782,8 @@ int fs_mgr_setup_verity(struct fstab_rec *fstab, bool wait_for_verity_dev)
     if (fec_verity_get_metadata(f, &verity) < 0) {
         PERROR << "Failed to get verity metadata '" << fstab->blk_device << "'";
         // Allow verity disabled when the device is unlocked without metadata
-        if ("0" == android::base::GetProperty("ro.boot.flash.locked", "")) {
-            retval = FS_MGR_SETUP_VERITY_DISABLED;
+        if (fs_mgr_is_device_unlocked()) {
+            retval = FS_MGR_SETUP_VERITY_SKIPPED;
             LWARNING << "Allow invalid metadata when the device is unlocked";
         }
         goto out;
@@ -838,9 +841,15 @@ int fs_mgr_setup_verity(struct fstab_rec *fstab, bool wait_for_verity_dev)
 
     // verify the signature on the table
     if (verify_verity_signature(verity) < 0) {
+        // Allow signature verification error when the device is unlocked
+        if (fs_mgr_is_device_unlocked()) {
+            retval = FS_MGR_SETUP_VERITY_SKIPPED;
+            LWARNING << "Allow signature verification error when the device is unlocked";
+            goto out;
+        }
         if (params.mode == VERITY_MODE_LOGGING) {
             // the user has been warned, allow mounting without dm-verity
-            retval = FS_MGR_SETUP_VERITY_SUCCESS;
+            retval = FS_MGR_SETUP_VERITY_SKIPPED;
             goto out;
         }
 
@@ -926,7 +935,7 @@ loaded:
     }
 
     // make sure we've set everything up properly
-    if (wait_for_verity_dev && fs_mgr_test_access(fstab->blk_device) < 0) {
+    if (wait_for_verity_dev && !fs_mgr_wait_for_file(fstab->blk_device, 1s)) {
         goto out;
     }
 

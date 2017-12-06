@@ -115,7 +115,10 @@ ResultOrAgain WriteInternal(const FuseMessage<T>* self, int fd, int sockflag, co
                 case EAGAIN:
                     return ResultOrAgain::kAgain;
                 default:
-                    PLOG(ERROR) << "Failed to write a FUSE message";
+                    PLOG(ERROR) << "Failed to write a FUSE message: "
+                                << "fd=" << fd << " "
+                                << "sockflag=" << sockflag << " "
+                                << "data=" << data;
                     return ResultOrAgain::kFailure;
             }
         }
@@ -248,7 +251,9 @@ void FuseBuffer::HandleInit() {
 void FuseBuffer::HandleNotImpl() {
   LOG(VERBOSE) << "NOTIMPL op=" << request.header.opcode << " uniq="
       << request.header.unique << " nid=" << request.header.nodeid;
-  const uint64_t unique = request.header.unique;
+  // Add volatile as a workaround for compiler issue which removes the temporary
+  // variable.
+  const volatile uint64_t unique = request.header.unique;
   response.Reset(0, -ENOSYS, unique);
 }
 

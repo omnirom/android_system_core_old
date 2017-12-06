@@ -17,7 +17,6 @@
 #include "bootchart.h"
 
 #include <dirent.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,9 +30,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
-#include <string>
 #include <thread>
-#include <vector>
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
@@ -42,6 +39,9 @@
 
 using android::base::StringPrintf;
 using namespace std::chrono_literals;
+
+namespace android {
+namespace init {
 
 static std::thread* g_bootcharting_thread;
 
@@ -195,3 +195,6 @@ int do_bootchart(const std::vector<std::string>& args) {
   if (args[1] == "start") return do_bootchart_start();
   return do_bootchart_stop();
 }
+
+}  // namespace init
+}  // namespace android

@@ -102,7 +102,7 @@ class BugreportStandardStreamsCallback : public StandardStreamsCallbackInterface
             std::vector<const char*> srcs{src_file_.c_str()};
             SetLineMessage("pulling");
             status_ =
-                br_->DoSyncPull(srcs, destination.c_str(), true, line_message_.c_str()) ? 0 : 1;
+                br_->DoSyncPull(srcs, destination.c_str(), false, line_message_.c_str()) ? 0 : 1;
             if (status_ != 0) {
                 fprintf(stderr,
                         "Bug report finished but could not be copied to '%s'.\n"
@@ -137,7 +137,7 @@ class BugreportStandardStreamsCallback : public StandardStreamsCallbackInterface
             SetSrcFile(&line[strlen(BUGZ_OK_PREFIX)]);
         } else if (android::base::StartsWith(line, BUGZ_FAIL_PREFIX)) {
             const char* error_message = &line[strlen(BUGZ_FAIL_PREFIX)];
-            fprintf(stderr, "Device failed to take a zipped bugreport: %s\n", error_message);
+            fprintf(stderr, "adb: device failed to take a zipped bugreport: %s\n", error_message);
             status_ = -1;
         } else if (show_progress_ && android::base::StartsWith(line, BUGZ_PROGRESS_PREFIX)) {
             // progress_line should have the following format:
@@ -195,13 +195,13 @@ class BugreportStandardStreamsCallback : public StandardStreamsCallbackInterface
     DISALLOW_COPY_AND_ASSIGN(BugreportStandardStreamsCallback);
 };
 
-int Bugreport::DoIt(TransportType transport_type, const char* serial, int argc, const char** argv) {
-    if (argc > 2) return usage("usage: adb bugreport [PATH]");
+int Bugreport::DoIt(int argc, const char** argv) {
+    if (argc > 2) return syntax_error("adb bugreport [PATH]");
 
     // Gets bugreportz version.
     std::string bugz_stdout, bugz_stderr;
     DefaultStandardStreamsCallback version_callback(&bugz_stdout, &bugz_stderr);
-    int status = SendShellCommand(transport_type, serial, "bugreportz -v", false, &version_callback);
+    int status = SendShellCommand("bugreportz -v", false, &version_callback);
     std::string bugz_version = android::base::Trim(bugz_stderr);
     std::string bugz_output = android::base::Trim(bugz_stdout);
 
@@ -214,7 +214,7 @@ int Bugreport::DoIt(TransportType transport_type, const char* serial, int argc, 
             fprintf(stderr,
                     "Failed to get bugreportz version, which is only available on devices "
                     "running Android 7.0 or later.\nTrying a plain-text bug report instead.\n");
-            return SendShellCommand(transport_type, serial, "bugreport", false);
+            return SendShellCommand("bugreport", false);
         }
 
         // But if user explicitly asked for a zipped bug report, fails instead (otherwise calling
@@ -265,7 +265,7 @@ int Bugreport::DoIt(TransportType transport_type, const char* serial, int argc, 
         bugz_command = "bugreportz";
     }
     BugreportStandardStreamsCallback bugz_callback(dest_dir, dest_file, show_progress, this);
-    return SendShellCommand(transport_type, serial, bugz_command, false, &bugz_callback);
+    return SendShellCommand(bugz_command, false, &bugz_callback);
 }
 
 void Bugreport::UpdateProgress(const std::string& message, int progress_percentage) {
@@ -274,10 +274,9 @@ void Bugreport::UpdateProgress(const std::string& message, int progress_percenta
         LinePrinter::INFO);
 }
 
-int Bugreport::SendShellCommand(TransportType transport_type, const char* serial,
-                                const std::string& command, bool disable_shell_protocol,
+int Bugreport::SendShellCommand(const std::string& command, bool disable_shell_protocol,
                                 StandardStreamsCallbackInterface* callback) {
-    return send_shell_command(transport_type, serial, command, disable_shell_protocol, callback);
+    return send_shell_command(command, disable_shell_protocol, callback);
 }
 
 bool Bugreport::DoSyncPull(const std::vector<const char*>& srcs, const char* dst, bool copy_attrs,

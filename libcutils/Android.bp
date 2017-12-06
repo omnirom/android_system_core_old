@@ -24,7 +24,6 @@ libcutils_nonwindows_sources = [
     "socket_inaddr_any_server_unix.c",
     "socket_local_client_unix.c",
     "socket_local_server_unix.c",
-    "socket_loopback_server_unix.c",
     "socket_network_client_unix.c",
     "sockets_unix.cpp",
     "str_parms.c",
@@ -51,10 +50,14 @@ cc_library_headers {
 cc_library {
     name: "libcutils",
     vendor_available: true,
+    vndk: {
+        enabled: true,
+        support_system_process: true,
+    },
     host_supported: true,
     srcs: [
         "config_utils.c",
-        "fs_config.c",
+        "fs_config.cpp",
         "canned_fs_config.c",
         "hashmap.c",
         "iosched_policy.c",
@@ -95,6 +98,9 @@ cc_library {
             shared: {
                 enabled: false,
             },
+            cflags: [
+                "-D_GNU_SOURCE",
+            ],
         },
 
         android: {
@@ -148,6 +154,7 @@ cc_library {
         "libutils_headers",
     ],
     export_header_lib_headers: ["libcutils_headers"],
+    local_include_dirs: ["include"],
 
     cflags: [
         "-Werror",

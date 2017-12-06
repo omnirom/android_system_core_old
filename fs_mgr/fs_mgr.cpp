@@ -32,6 +32,7 @@
 #include <unistd.h>
 
 #include <memory>
+#include <thread>
 
 #include <android-base/file.h>
 #include <android-base/properties.h>
@@ -78,43 +79,33 @@ enum FsStatFlags {
     FS_STAT_E2FSCK_F_ALWAYS = 0x0004,
     FS_STAT_UNCLEAN_SHUTDOWN = 0x0008,
     FS_STAT_QUOTA_ENABLED = 0x0010,
-    FS_STAT_TUNE2FS_FAILED = 0x0020,
     FS_STAT_RO_MOUNT_FAILED = 0x0040,
     FS_STAT_RO_UNMOUNT_FAILED = 0x0080,
     FS_STAT_FULL_MOUNT_FAILED = 0x0100,
     FS_STAT_E2FSCK_FAILED = 0x0200,
     FS_STAT_E2FSCK_FS_FIXED = 0x0400,
     FS_STAT_EXT4_INVALID_MAGIC = 0x0800,
+    FS_STAT_TOGGLE_QUOTAS_FAILED = 0x10000,
+    FS_STAT_SET_RESERVED_BLOCKS_FAILED = 0x20000,
+    FS_STAT_ENABLE_ENCRYPTION_FAILED = 0x40000,
 };
 
-/*
- * gettime() - returns the time in seconds of the system's monotonic clock or
- * zero on error.
- */
-static time_t gettime(void)
-{
-    struct timespec ts;
-    int ret;
+// TODO: switch to inotify()
+bool fs_mgr_wait_for_file(const std::string& filename,
+                          const std::chrono::milliseconds relative_timeout) {
+    auto start_time = std::chrono::steady_clock::now();
 
-    ret = clock_gettime(CLOCK_MONOTONIC, &ts);
-    if (ret < 0) {
-        PERROR << "clock_gettime(CLOCK_MONOTONIC) failed";
-        return 0;
+    while (true) {
+        if (!access(filename.c_str(), F_OK) || errno != ENOENT) {
+            return true;
+        }
+
+        std::this_thread::sleep_for(50ms);
+
+        auto now = std::chrono::steady_clock::now();
+        auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time);
+        if (time_elapsed > relative_timeout) return false;
     }
-
-    return ts.tv_sec;
-}
-
-static int wait_for_file(const char *filename, int timeout)
-{
-    struct stat info;
-    time_t timeout_time = gettime() + timeout;
-    int ret = -1;
-
-    while (gettime() < timeout_time && ((ret = stat(filename, &info)) < 0))
-        usleep(10000);
-
-    return ret;
 }
 
 static void log_fs_stat(const char* blk_device, int fs_stat)
@@ -128,10 +119,16 @@ static void log_fs_stat(const char* blk_device, int fs_stat)
     }
 }
 
+static bool is_extfs(const std::string& fs_type) {
+    return fs_type == "ext4" || fs_type == "ext3" || fs_type == "ext2";
+}
+
 static bool should_force_check(int fs_stat) {
-    return fs_stat & (FS_STAT_E2FSCK_F_ALWAYS | FS_STAT_UNCLEAN_SHUTDOWN | FS_STAT_QUOTA_ENABLED |
-                      FS_STAT_TUNE2FS_FAILED | FS_STAT_RO_MOUNT_FAILED | FS_STAT_RO_UNMOUNT_FAILED |
-                      FS_STAT_FULL_MOUNT_FAILED | FS_STAT_E2FSCK_FAILED);
+    return fs_stat &
+           (FS_STAT_E2FSCK_F_ALWAYS | FS_STAT_UNCLEAN_SHUTDOWN | FS_STAT_QUOTA_ENABLED |
+            FS_STAT_RO_MOUNT_FAILED | FS_STAT_RO_UNMOUNT_FAILED | FS_STAT_FULL_MOUNT_FAILED |
+            FS_STAT_E2FSCK_FAILED | FS_STAT_TOGGLE_QUOTAS_FAILED |
+            FS_STAT_SET_RESERVED_BLOCKS_FAILED | FS_STAT_ENABLE_ENCRYPTION_FAILED);
 }
 
 static void check_fs(const char *blk_device, char *fs_type, char *target, int *fs_stat)
@@ -144,7 +141,7 @@ static void check_fs(const char *blk_device, char *fs_type, char *target, int *f
     const char* e2fsck_forced_argv[] = {E2FSCK_BIN, "-f", "-y", blk_device};
 
     /* Check for the types of filesystems we know how to check */
-    if (!strcmp(fs_type, "ext2") || !strcmp(fs_type, "ext3") || !strcmp(fs_type, "ext4")) {
+    if (is_extfs(fs_type)) {
         if (*fs_stat & FS_STAT_EXT4_INVALID_MAGIC) {  // will fail, so do not try
             return;
         }
@@ -242,186 +239,208 @@ static void check_fs(const char *blk_device, char *fs_type, char *target, int *f
     return;
 }
 
-/* Function to read the primary superblock */
-static int read_super_block(int fd, struct ext4_super_block *sb)
-{
-    off64_t ret;
-
-    ret = lseek64(fd, 1024, SEEK_SET);
-    if (ret < 0)
-        return ret;
-
-    ret = read(fd, sb, sizeof(*sb));
-    if (ret < 0)
-        return ret;
-    if (ret != sizeof(*sb))
-        return ret;
-
-    return 0;
-}
-
-static ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
-{
+static ext4_fsblk_t ext4_blocks_count(const struct ext4_super_block* es) {
     return ((ext4_fsblk_t)le32_to_cpu(es->s_blocks_count_hi) << 32) |
-            le32_to_cpu(es->s_blocks_count_lo);
+           le32_to_cpu(es->s_blocks_count_lo);
 }
 
-static ext4_fsblk_t ext4_r_blocks_count(struct ext4_super_block *es)
-{
+static ext4_fsblk_t ext4_r_blocks_count(const struct ext4_super_block* es) {
     return ((ext4_fsblk_t)le32_to_cpu(es->s_r_blocks_count_hi) << 32) |
-            le32_to_cpu(es->s_r_blocks_count_lo);
+           le32_to_cpu(es->s_r_blocks_count_lo);
 }
 
-static int do_quota_with_shutdown_check(char *blk_device, char *fs_type,
-                                        struct fstab_rec *rec, int *fs_stat)
-{
-    int force_check = 0;
-    if (!strcmp(fs_type, "ext4")) {
-        /*
-         * Some system images do not have tune2fs for licensing reasons
-         * Detect these and skip reserve blocks.
-         */
-        if (access(TUNE2FS_BIN, X_OK)) {
-            LERROR << "Not running " << TUNE2FS_BIN << " on "
-                   << blk_device << " (executable not in system image)";
-        } else {
-            const char* arg1 = nullptr;
-            const char* arg2 = nullptr;
-            int status = 0;
-            int ret = 0;
-            android::base::unique_fd fd(
-                TEMP_FAILURE_RETRY(open(blk_device, O_RDONLY | O_CLOEXEC)));
-            if (fd >= 0) {
-                struct ext4_super_block sb;
-                ret = read_super_block(fd, &sb);
-                if (ret < 0) {
-                    PERROR << "Can't read '" << blk_device << "' super block";
-                    return force_check;
-                }
-                if (sb.s_magic != EXT4_SUPER_MAGIC) {
-                    LINFO << "Invalid ext4 magic:0x" << std::hex << sb.s_magic << "," << blk_device;
-                    *fs_stat |= FS_STAT_EXT4_INVALID_MAGIC;
-                    return 0;  // not a valid fs, tune2fs, fsck, and mount  will all fail.
-                }
-                *fs_stat |= FS_STAT_IS_EXT4;
-                LINFO << "superblock s_max_mnt_count:" << sb.s_max_mnt_count << "," << blk_device;
-                if (sb.s_max_mnt_count == 0xffff) {  // -1 (int16) in ext2, but uint16 in ext4
-                    *fs_stat |= FS_STAT_NEW_IMAGE_VERSION;
-                }
-                if ((sb.s_feature_incompat & EXT4_FEATURE_INCOMPAT_RECOVER) != 0 ||
-                    (sb.s_state & EXT4_VALID_FS) == 0) {
-                    LINFO << __FUNCTION__ << "(): was not clealy shutdown, state flag:"
-                          << std::hex << sb.s_state
-                          << "incompat flag:" << std::hex << sb.s_feature_incompat;
-                    force_check = 1;
-                    *fs_stat |= FS_STAT_UNCLEAN_SHUTDOWN;
-                }
-                int has_quota = (sb.s_feature_ro_compat
-                        & cpu_to_le32(EXT4_FEATURE_RO_COMPAT_QUOTA)) != 0;
-                int want_quota = fs_mgr_is_quota(rec) != 0;
+// Read the primary superblock from an ext4 filesystem.  On failure return
+// false.  If it's not an ext4 filesystem, also set FS_STAT_EXT4_INVALID_MAGIC.
+static bool read_ext4_superblock(const char* blk_device, struct ext4_super_block* sb, int* fs_stat) {
+    android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(blk_device, O_RDONLY | O_CLOEXEC)));
 
-                if (has_quota == want_quota) {
-                    LINFO << "Requested quota status is match on " << blk_device;
-                    return force_check;
-                } else if (want_quota) {
-                    LINFO << "Enabling quota on " << blk_device;
-                    arg1 = "-Oquota";
-                    arg2 = "-Qusrquota,grpquota";
-                    force_check = 1;
-                    *fs_stat |= FS_STAT_QUOTA_ENABLED;
-                } else {
-                    LINFO << "Disabling quota on " << blk_device;
-                    arg1 = "-Q^usrquota,^grpquota";
-                    arg2 = "-O^quota";
-                }
-            } else {
-                PERROR << "Failed to open '" << blk_device << "'";
-                return force_check;
-            }
-
-            const char *tune2fs_argv[] = {
-                TUNE2FS_BIN,
-                arg1,
-                arg2,
-                blk_device,
-            };
-            ret = android_fork_execvp_ext(ARRAY_SIZE(tune2fs_argv),
-                                          const_cast<char **>(tune2fs_argv),
-                                          &status, true, LOG_KLOG | LOG_FILE,
-                                          true, NULL, NULL, 0);
-            if (ret < 0) {
-                /* No need to check for error in fork, we can't really handle it now */
-                LERROR << "Failed trying to run " << TUNE2FS_BIN;
-                *fs_stat |= FS_STAT_TUNE2FS_FAILED;
-            }
-        }
+    if (fd < 0) {
+        PERROR << "Failed to open '" << blk_device << "'";
+        return false;
     }
-    return force_check;
+
+    if (pread(fd, sb, sizeof(*sb), 1024) != sizeof(*sb)) {
+        PERROR << "Can't read '" << blk_device << "' superblock";
+        return false;
+    }
+
+    if (sb->s_magic != EXT4_SUPER_MAGIC) {
+        LINFO << "Invalid ext4 magic:0x" << std::hex << sb->s_magic << " "
+              << "on '" << blk_device << "'";
+        // not a valid fs, tune2fs, fsck, and mount  will all fail.
+        *fs_stat |= FS_STAT_EXT4_INVALID_MAGIC;
+        return false;
+    }
+    *fs_stat |= FS_STAT_IS_EXT4;
+    LINFO << "superblock s_max_mnt_count:" << sb->s_max_mnt_count << "," << blk_device;
+    if (sb->s_max_mnt_count == 0xffff) {  // -1 (int16) in ext2, but uint16 in ext4
+        *fs_stat |= FS_STAT_NEW_IMAGE_VERSION;
+    }
+    return true;
 }
 
-static void do_reserved_size(char *blk_device, char *fs_type, struct fstab_rec *rec, int *fs_stat)
-{
-    /* Check for the types of filesystems we know how to check */
-    if (!strcmp(fs_type, "ext2") || !strcmp(fs_type, "ext3") || !strcmp(fs_type, "ext4")) {
-        /*
-         * Some system images do not have tune2fs for licensing reasons
-         * Detect these and skip reserve blocks.
-         */
-        if (access(TUNE2FS_BIN, X_OK)) {
-            LERROR << "Not running " << TUNE2FS_BIN << " on "
-                   << blk_device << " (executable not in system image)";
+// Some system images do not have tune2fs for licensing reasons.
+// Detect these and skip running it.
+static bool tune2fs_available(void) {
+    return access(TUNE2FS_BIN, X_OK) == 0;
+}
+
+static bool run_tune2fs(const char* argv[], int argc) {
+    int ret;
+
+    ret = android_fork_execvp_ext(argc, const_cast<char**>(argv), nullptr, true,
+                                  LOG_KLOG | LOG_FILE, true, nullptr, nullptr, 0);
+    return ret == 0;
+}
+
+// Enable/disable quota support on the filesystem if needed.
+static void tune_quota(const char* blk_device, const struct fstab_rec* rec,
+                       const struct ext4_super_block* sb, int* fs_stat) {
+    bool has_quota = (sb->s_feature_ro_compat & cpu_to_le32(EXT4_FEATURE_RO_COMPAT_QUOTA)) != 0;
+    bool want_quota = fs_mgr_is_quota(rec) != 0;
+
+    if (has_quota == want_quota) {
+        return;
+    }
+
+    if (!tune2fs_available()) {
+        LERROR << "Unable to " << (want_quota ? "enable" : "disable") << " quotas on " << blk_device
+               << " because " TUNE2FS_BIN " is missing";
+        return;
+    }
+
+    const char* argv[] = {TUNE2FS_BIN, nullptr, nullptr, blk_device};
+
+    if (want_quota) {
+        LINFO << "Enabling quotas on " << blk_device;
+        argv[1] = "-Oquota";
+        argv[2] = "-Qusrquota,grpquota";
+        *fs_stat |= FS_STAT_QUOTA_ENABLED;
+    } else {
+        LINFO << "Disabling quotas on " << blk_device;
+        argv[1] = "-O^quota";
+        argv[2] = "-Q^usrquota,^grpquota";
+    }
+
+    if (!run_tune2fs(argv, ARRAY_SIZE(argv))) {
+        LERROR << "Failed to run " TUNE2FS_BIN " to " << (want_quota ? "enable" : "disable")
+               << " quotas on " << blk_device;
+        *fs_stat |= FS_STAT_TOGGLE_QUOTAS_FAILED;
+    }
+}
+
+// Set the number of reserved filesystem blocks if needed.
+static void tune_reserved_size(const char* blk_device, const struct fstab_rec* rec,
+                               const struct ext4_super_block* sb, int* fs_stat) {
+    if (!(rec->fs_mgr_flags & MF_RESERVEDSIZE)) {
+        return;
+    }
+
+    // The size to reserve is given in the fstab, but we won't reserve more
+    // than 2% of the filesystem.
+    const uint64_t max_reserved_blocks = ext4_blocks_count(sb) * 0.02;
+    uint64_t reserved_blocks = rec->reserved_size / EXT4_BLOCK_SIZE(sb);
+
+    if (reserved_blocks > max_reserved_blocks) {
+        LWARNING << "Reserved blocks " << reserved_blocks << " is too large; "
+                 << "capping to " << max_reserved_blocks;
+        reserved_blocks = max_reserved_blocks;
+    }
+
+    if (ext4_r_blocks_count(sb) == reserved_blocks) {
+        return;
+    }
+
+    if (!tune2fs_available()) {
+        LERROR << "Unable to set the number of reserved blocks on " << blk_device
+               << " because " TUNE2FS_BIN " is missing";
+        return;
+    }
+
+    char buf[32];
+    const char* argv[] = {TUNE2FS_BIN, "-r", buf, blk_device};
+
+    snprintf(buf, sizeof(buf), "%" PRIu64, reserved_blocks);
+    LINFO << "Setting reserved block count on " << blk_device << " to " << reserved_blocks;
+    if (!run_tune2fs(argv, ARRAY_SIZE(argv))) {
+        LERROR << "Failed to run " TUNE2FS_BIN " to set the number of reserved blocks on "
+               << blk_device;
+        *fs_stat |= FS_STAT_SET_RESERVED_BLOCKS_FAILED;
+    }
+}
+
+// Enable file-based encryption if needed.
+static void tune_encrypt(const char* blk_device, const struct fstab_rec* rec,
+                         const struct ext4_super_block* sb, int* fs_stat) {
+    bool has_encrypt = (sb->s_feature_incompat & cpu_to_le32(EXT4_FEATURE_INCOMPAT_ENCRYPT)) != 0;
+    bool want_encrypt = fs_mgr_is_file_encrypted(rec) != 0;
+
+    if (has_encrypt || !want_encrypt) {
+        return;
+    }
+
+    if (!tune2fs_available()) {
+        LERROR << "Unable to enable ext4 encryption on " << blk_device
+               << " because " TUNE2FS_BIN " is missing";
+        return;
+    }
+
+    const char* argv[] = {TUNE2FS_BIN, "-Oencrypt", blk_device};
+
+    LINFO << "Enabling ext4 encryption on " << blk_device;
+    if (!run_tune2fs(argv, ARRAY_SIZE(argv))) {
+        LERROR << "Failed to run " TUNE2FS_BIN " to enable "
+               << "ext4 encryption on " << blk_device;
+        *fs_stat |= FS_STAT_ENABLE_ENCRYPTION_FAILED;
+    }
+}
+
+//
+// Prepare the filesystem on the given block device to be mounted.
+//
+// If the "check" option was given in the fstab record, or it seems that the
+// filesystem was uncleanly shut down, we'll run fsck on the filesystem.
+//
+// If needed, we'll also enable (or disable) filesystem features as specified by
+// the fstab record.
+//
+static int prepare_fs_for_mount(const char* blk_device, const struct fstab_rec* rec) {
+    int fs_stat = 0;
+
+    if (is_extfs(rec->fs_type)) {
+        struct ext4_super_block sb;
+
+        if (read_ext4_superblock(blk_device, &sb, &fs_stat)) {
+            if ((sb.s_feature_incompat & EXT4_FEATURE_INCOMPAT_RECOVER) != 0 ||
+                (sb.s_state & EXT4_VALID_FS) == 0) {
+                LINFO << "Filesystem on " << blk_device << " was not cleanly shutdown; "
+                      << "state flags: 0x" << std::hex << sb.s_state << ", "
+                      << "incompat feature flags: 0x" << std::hex << sb.s_feature_incompat;
+                fs_stat |= FS_STAT_UNCLEAN_SHUTDOWN;
+            }
+
+            // Note: quotas should be enabled before running fsck.
+            tune_quota(blk_device, rec, &sb, &fs_stat);
         } else {
-            LINFO << "Running " << TUNE2FS_BIN << " on " << blk_device;
-
-            int status = 0;
-            int ret = 0;
-            unsigned long reserved_blocks = 0;
-            android::base::unique_fd fd(
-                TEMP_FAILURE_RETRY(open(blk_device, O_RDONLY | O_CLOEXEC)));
-            if (fd >= 0) {
-                struct ext4_super_block sb;
-                ret = read_super_block(fd, &sb);
-                if (ret < 0) {
-                    PERROR << "Can't read '" << blk_device << "' super block";
-                    return;
-                }
-                reserved_blocks = rec->reserved_size / EXT4_BLOCK_SIZE(&sb);
-                unsigned long reserved_threshold = ext4_blocks_count(&sb) * 0.02;
-                if (reserved_threshold < reserved_blocks) {
-                    LWARNING << "Reserved blocks " << reserved_blocks
-                             << " is too large";
-                    reserved_blocks = reserved_threshold;
-                }
-
-                if (ext4_r_blocks_count(&sb) == reserved_blocks) {
-                    LINFO << "Have reserved same blocks";
-                    return;
-                }
-            } else {
-                PERROR << "Failed to open '" << blk_device << "'";
-                return;
-            }
-
-            char buf[16] = {0};
-            snprintf(buf, sizeof (buf), "-r %lu", reserved_blocks);
-            const char *tune2fs_argv[] = {
-                TUNE2FS_BIN,
-                buf,
-                blk_device,
-            };
-
-            ret = android_fork_execvp_ext(ARRAY_SIZE(tune2fs_argv),
-                                          const_cast<char **>(tune2fs_argv),
-                                          &status, true, LOG_KLOG | LOG_FILE,
-                                          true, NULL, NULL, 0);
-
-            if (ret < 0) {
-                /* No need to check for error in fork, we can't really handle it now */
-                LERROR << "Failed trying to run " << TUNE2FS_BIN;
-                *fs_stat |= FS_STAT_TUNE2FS_FAILED;
-            }
+            return fs_stat;
         }
     }
+
+    if ((rec->fs_mgr_flags & MF_CHECK) ||
+        (fs_stat & (FS_STAT_UNCLEAN_SHUTDOWN | FS_STAT_QUOTA_ENABLED))) {
+        check_fs(blk_device, rec->fs_type, rec->mount_point, &fs_stat);
+    }
+
+    if (is_extfs(rec->fs_type) && (rec->fs_mgr_flags & (MF_RESERVEDSIZE | MF_FILEENCRYPTION))) {
+        struct ext4_super_block sb;
+
+        if (read_ext4_superblock(blk_device, &sb, &fs_stat)) {
+            tune_reserved_size(blk_device, rec, &sb, &fs_stat);
+            tune_encrypt(blk_device, rec, &sb, &fs_stat);
+        }
+    }
+
+    return fs_stat;
 }
 
 static void remove_trailing_slashes(char *n)
@@ -457,6 +476,16 @@ int fs_mgr_set_blk_ro(const char *blockdev)
     return rc;
 }
 
+// Orange state means the device is unlocked, see the following link for details.
+// https://source.android.com/security/verifiedboot/verified-boot#device_state
+bool fs_mgr_is_device_unlocked() {
+    std::string verified_boot_state;
+    if (fs_mgr_get_boot_config("verifiedbootstate", &verified_boot_state)) {
+        return verified_boot_state == "orange";
+    }
+    return false;
+}
+
 /*
  * __mount(): wrapper around the mount() system call which also
  * sets the underlying block device to read-only if the mount is read-only.
@@ -476,10 +505,11 @@ static int __mount(const char *source, const char *target, const struct fstab_re
         if ((info.st_mode & S_IFMT) == S_IFLNK)
             unlink(target);
     mkdir(target, 0755);
+    errno = 0;
     ret = mount(source, target, rec->fs_type, mountflags, rec->fs_options);
     save_errno = errno;
-    LINFO << __FUNCTION__ << "(source=" << source << ",target="
-          << target << ",type=" << rec->fs_type << ")=" << ret;
+    PINFO << __FUNCTION__ << "(source=" << source << ",target=" << target
+          << ",type=" << rec->fs_type << ")=" << ret;
     if ((ret == 0) && (mountflags & MS_RDONLY) != 0) {
         fs_mgr_set_blk_ro(source);
     }
@@ -559,25 +589,13 @@ static int mount_with_alternatives(struct fstab *fstab, int start_idx, int *end_
                 continue;
             }
 
-            int fs_stat = 0;
-            int force_check = do_quota_with_shutdown_check(fstab->recs[i].blk_device,
-                                                           fstab->recs[i].fs_type,
-                                                           &fstab->recs[i], &fs_stat);
+            int fs_stat = prepare_fs_for_mount(fstab->recs[i].blk_device, &fstab->recs[i]);
             if (fs_stat & FS_STAT_EXT4_INVALID_MAGIC) {
                 LERROR << __FUNCTION__ << "(): skipping mount, invalid ext4, mountpoint="
                        << fstab->recs[i].mount_point << " rec[" << i
                        << "].fs_type=" << fstab->recs[i].fs_type;
                 mount_errno = EINVAL;  // continue bootup for FDE
                 continue;
-            }
-            if ((fstab->recs[i].fs_mgr_flags & MF_CHECK) || force_check) {
-                check_fs(fstab->recs[i].blk_device, fstab->recs[i].fs_type,
-                         fstab->recs[i].mount_point, &fs_stat);
-            }
-
-            if (fstab->recs[i].fs_mgr_flags & MF_RESERVEDSIZE) {
-                do_reserved_size(fstab->recs[i].blk_device, fstab->recs[i].fs_type,
-                                 &fstab->recs[i], &fs_stat);
             }
 
             int retry_count = 2;
@@ -721,6 +739,12 @@ static bool needs_block_encryption(const struct fstab_rec* rec)
     return false;
 }
 
+static bool should_use_metadata_encryption(const struct fstab_rec* rec) {
+    if (!(rec->fs_mgr_flags & (MF_FILEENCRYPTION | MF_FORCEFDEORFBE))) return false;
+    if (!(rec->fs_mgr_flags & MF_KEYDIRECTORY)) return false;
+    return true;
+}
+
 // Check to see if a mountable volume has encryption requirements
 static int handle_encryptable(const struct fstab_rec* rec)
 {
@@ -733,8 +757,14 @@ static int handle_encryptable(const struct fstab_rec* rec)
                      << " - allow continue unencrypted";
             return FS_MGR_MNTALL_DEV_NOT_ENCRYPTED;
         }
+    } else if (should_use_metadata_encryption(rec)) {
+        if (umount(rec->mount_point) == 0) {
+            return FS_MGR_MNTALL_DEV_NEEDS_METADATA_ENCRYPTION;
+        } else {
+            PERROR << "Could not umount " << rec->mount_point << " - fail since can't encrypt";
+            return FS_MGR_MNTALL_FAIL;
+        }
     } else if (rec->fs_mgr_flags & (MF_FILEENCRYPTION | MF_FORCEFDEORFBE)) {
-        // Deal with file level encryption
         LINFO << rec->mount_point << " is file encrypted";
         return FS_MGR_MNTALL_DEV_FILE_ENCRYPTED;
     } else if (fs_mgr_is_encryptable(rec)) {
@@ -742,19 +772,6 @@ static int handle_encryptable(const struct fstab_rec* rec)
     } else {
         return FS_MGR_MNTALL_DEV_NOT_ENCRYPTABLE;
     }
-}
-
-// TODO: add ueventd notifiers if they don't exist.
-// This is just doing a wait_for_device for maximum of 1s
-int fs_mgr_test_access(const char *device) {
-    int tries = 25;
-    while (tries--) {
-        if (!access(device, F_OK) || errno != ENOENT) {
-            return 0;
-        }
-        usleep(40 * 1000);
-    }
-    return -1;
 }
 
 bool is_device_secure() {
@@ -790,7 +807,7 @@ int fs_mgr_mount_all(struct fstab *fstab, int mount_mode)
     FsManagerAvbUniquePtr avb_handle(nullptr);
 
     if (!fstab) {
-        return -1;
+        return FS_MGR_MNTALL_FAIL;
     }
 
     for (i = 0; i < fstab->num_entries; i++) {
@@ -817,9 +834,7 @@ int fs_mgr_mount_all(struct fstab *fstab, int mount_mode)
         }
 
         /* Translate LABEL= file system labels into block devices */
-        if (!strcmp(fstab->recs[i].fs_type, "ext2") ||
-            !strcmp(fstab->recs[i].fs_type, "ext3") ||
-            !strcmp(fstab->recs[i].fs_type, "ext4")) {
+        if (is_extfs(fstab->recs[i].fs_type)) {
             int tret = translate_ext_labels(&fstab->recs[i]);
             if (tret < 0) {
                 LERROR << "Could not translate label to block device";
@@ -827,8 +842,10 @@ int fs_mgr_mount_all(struct fstab *fstab, int mount_mode)
             }
         }
 
-        if (fstab->recs[i].fs_mgr_flags & MF_WAIT) {
-            wait_for_file(fstab->recs[i].blk_device, WAIT_TIMEOUT);
+        if (fstab->recs[i].fs_mgr_flags & MF_WAIT &&
+            !fs_mgr_wait_for_file(fstab->recs[i].blk_device, 20s)) {
+            LERROR << "Skipping '" << fstab->recs[i].blk_device << "' during mount_all";
+            continue;
         }
 
         if (fstab->recs[i].fs_mgr_flags & MF_AVB) {
@@ -836,10 +853,11 @@ int fs_mgr_mount_all(struct fstab *fstab, int mount_mode)
                 avb_handle = FsManagerAvbHandle::Open(*fstab);
                 if (!avb_handle) {
                     LERROR << "Failed to open FsManagerAvbHandle";
-                    return -1;
+                    return FS_MGR_MNTALL_FAIL;
                 }
             }
-            if (!avb_handle->SetUpAvb(&fstab->recs[i], true /* wait_for_verity_dev */)) {
+            if (avb_handle->SetUpAvbHashtree(&fstab->recs[i], true /* wait_for_verity_dev */) ==
+                SetUpAvbHashtreeResult::kFail) {
                 LERROR << "Failed to set up AVB on partition: "
                        << fstab->recs[i].mount_point << ", skipping!";
                 /* Skips mounting the device. */
@@ -847,7 +865,9 @@ int fs_mgr_mount_all(struct fstab *fstab, int mount_mode)
             }
         } else if ((fstab->recs[i].fs_mgr_flags & MF_VERIFY) && is_device_secure()) {
             int rc = fs_mgr_setup_verity(&fstab->recs[i], true);
-            if (__android_log_is_debuggable() && rc == FS_MGR_SETUP_VERITY_DISABLED) {
+            if (__android_log_is_debuggable() &&
+                    (rc == FS_MGR_SETUP_VERITY_DISABLED ||
+                     rc == FS_MGR_SETUP_VERITY_SKIPPED)) {
                 LINFO << "Verity disabled";
             } else if (rc != FS_MGR_SETUP_VERITY_SUCCESS) {
                 LERROR << "Could not set up verified partition, skipping!";
@@ -883,7 +903,6 @@ int fs_mgr_mount_all(struct fstab *fstab, int mount_mode)
             continue;
         }
 
-        /* mount(2) returned an error, handle the encryptable/formattable case */
         bool wiped = partition_wiped(fstab->recs[top_idx].blk_device);
         bool crypt_footer = false;
         if (mret && mount_errno != EBUSY && mount_errno != EACCES &&
@@ -923,6 +942,8 @@ int fs_mgr_mount_all(struct fstab *fstab, int mount_mode)
                 continue;
             }
         }
+
+        /* mount(2) returned an error, handle the encryptable/formattable case */
         if (mret && mount_errno != EBUSY && mount_errno != EACCES &&
             fs_mgr_is_encryptable(&fstab->recs[attempted_idx])) {
             if (wiped) {
@@ -948,6 +969,9 @@ int fs_mgr_mount_all(struct fstab *fstab, int mount_mode)
                 }
             }
             encryptable = FS_MGR_MNTALL_DEV_MIGHT_BE_ENCRYPTED;
+        } else if (mret && mount_errno != EBUSY && mount_errno != EACCES &&
+                   should_use_metadata_encryption(&fstab->recs[attempted_idx])) {
+            encryptable = FS_MGR_MNTALL_DEV_IS_METADATA_ENCRYPTED;
         } else {
             // fs_options might be null so we cannot use PERROR << directly.
             // Use StringPrintf to output "(null)" instead.
@@ -970,7 +994,7 @@ int fs_mgr_mount_all(struct fstab *fstab, int mount_mode)
     }
 
     if (error_count) {
-        return -1;
+        return FS_MGR_MNTALL_FAIL;
     } else {
         return encryptable;
     }
@@ -1003,14 +1027,13 @@ int fs_mgr_do_mount(struct fstab *fstab, const char *n_name, char *n_blk_device,
                     char *tmp_mount_point)
 {
     int i = 0;
-    int ret = FS_MGR_DOMNT_FAILED;
     int mount_errors = 0;
     int first_mount_errno = 0;
-    char *m;
+    char* mount_point;
     FsManagerAvbUniquePtr avb_handle(nullptr);
 
     if (!fstab) {
-        return ret;
+        return FS_MGR_DOMNT_FAILED;
     }
 
     for (i = 0; i < fstab->num_entries; i++) {
@@ -1025,36 +1048,27 @@ int fs_mgr_do_mount(struct fstab *fstab, const char *n_name, char *n_blk_device,
             !strcmp(fstab->recs[i].fs_type, "mtd")) {
             LERROR << "Cannot mount filesystem of type "
                    << fstab->recs[i].fs_type << " on " << n_blk_device;
-            goto out;
+            return FS_MGR_DOMNT_FAILED;
         }
 
         /* First check the filesystem if requested */
-        if (fstab->recs[i].fs_mgr_flags & MF_WAIT) {
-            wait_for_file(n_blk_device, WAIT_TIMEOUT);
+        if (fstab->recs[i].fs_mgr_flags & MF_WAIT && !fs_mgr_wait_for_file(n_blk_device, 20s)) {
+            LERROR << "Skipping mounting '" << n_blk_device << "'";
+            continue;
         }
 
-        int fs_stat = 0;
-        int force_check = do_quota_with_shutdown_check(n_blk_device, fstab->recs[i].fs_type,
-                                                       &fstab->recs[i], &fs_stat);
-
-        if ((fstab->recs[i].fs_mgr_flags & MF_CHECK) || force_check) {
-            check_fs(n_blk_device, fstab->recs[i].fs_type,
-                     fstab->recs[i].mount_point, &fs_stat);
-        }
-
-        if (fstab->recs[i].fs_mgr_flags & MF_RESERVEDSIZE) {
-            do_reserved_size(n_blk_device, fstab->recs[i].fs_type, &fstab->recs[i], &fs_stat);
-        }
+        int fs_stat = prepare_fs_for_mount(n_blk_device, &fstab->recs[i]);
 
         if (fstab->recs[i].fs_mgr_flags & MF_AVB) {
             if (!avb_handle) {
                 avb_handle = FsManagerAvbHandle::Open(*fstab);
                 if (!avb_handle) {
                     LERROR << "Failed to open FsManagerAvbHandle";
-                    return -1;
+                    return FS_MGR_DOMNT_FAILED;
                 }
             }
-            if (!avb_handle->SetUpAvb(&fstab->recs[i], true /* wait_for_verity_dev */)) {
+            if (avb_handle->SetUpAvbHashtree(&fstab->recs[i], true /* wait_for_verity_dev */) ==
+                SetUpAvbHashtreeResult::kFail) {
                 LERROR << "Failed to set up AVB on partition: "
                        << fstab->recs[i].mount_point << ", skipping!";
                 /* Skips mounting the device. */
@@ -1062,7 +1076,9 @@ int fs_mgr_do_mount(struct fstab *fstab, const char *n_name, char *n_blk_device,
             }
         } else if ((fstab->recs[i].fs_mgr_flags & MF_VERIFY) && is_device_secure()) {
             int rc = fs_mgr_setup_verity(&fstab->recs[i], true);
-            if (__android_log_is_debuggable() && rc == FS_MGR_SETUP_VERITY_DISABLED) {
+            if (__android_log_is_debuggable() &&
+                    (rc == FS_MGR_SETUP_VERITY_DISABLED ||
+                     rc == FS_MGR_SETUP_VERITY_SKIPPED)) {
                 LINFO << "Verity disabled";
             } else if (rc != FS_MGR_SETUP_VERITY_SUCCESS) {
                 LERROR << "Could not set up verified partition, skipping!";
@@ -1072,17 +1088,16 @@ int fs_mgr_do_mount(struct fstab *fstab, const char *n_name, char *n_blk_device,
 
         /* Now mount it where requested */
         if (tmp_mount_point) {
-            m = tmp_mount_point;
+            mount_point = tmp_mount_point;
         } else {
-            m = fstab->recs[i].mount_point;
+            mount_point = fstab->recs[i].mount_point;
         }
         int retry_count = 2;
         while (retry_count-- > 0) {
-            if (!__mount(n_blk_device, m, &fstab->recs[i])) {
-                ret = 0;
+            if (!__mount(n_blk_device, mount_point, &fstab->recs[i])) {
                 fs_stat &= ~FS_STAT_FULL_MOUNT_FAILED;
                 log_fs_stat(fstab->recs[i].blk_device, fs_stat);
-                goto out;
+                return FS_MGR_DOMNT_SUCCESS;
             } else {
                 if (retry_count <= 0) break;  // run check_fs only once
                 if (!first_mount_errno) first_mount_errno = errno;
@@ -1094,22 +1109,16 @@ int fs_mgr_do_mount(struct fstab *fstab, const char *n_name, char *n_blk_device,
         }
         log_fs_stat(fstab->recs[i].blk_device, fs_stat);
     }
+
+    // Reach here means the mount attempt fails.
     if (mount_errors) {
-        PERROR << "Cannot mount filesystem on " << n_blk_device
-               << " at " << m;
-        if (first_mount_errno == EBUSY) {
-            ret = FS_MGR_DOMNT_BUSY;
-        } else {
-            ret = FS_MGR_DOMNT_FAILED;
-        }
+        PERROR << "Cannot mount filesystem on " << n_blk_device << " at " << mount_point;
+        if (first_mount_errno == EBUSY) return FS_MGR_DOMNT_BUSY;
     } else {
         /* We didn't find a match, say so and return an error */
-        LERROR << "Cannot find mount point " << fstab->recs[i].mount_point
-               << " in fstab";
+        LERROR << "Cannot find mount point " << n_name << " in fstab";
     }
-
-out:
-    return ret;
+    return FS_MGR_DOMNT_FAILED;
 }
 
 /*
@@ -1204,12 +1213,15 @@ int fs_mgr_swapon_all(struct fstab *fstab)
                 ret = -1;
                 continue;
             }
-            fprintf(zram_fp, "%d\n", fstab->recs[i].zram_size);
+            fprintf(zram_fp, "%u\n", fstab->recs[i].zram_size);
             fclose(zram_fp);
         }
 
-        if (fstab->recs[i].fs_mgr_flags & MF_WAIT) {
-            wait_for_file(fstab->recs[i].blk_device, WAIT_TIMEOUT);
+        if (fstab->recs[i].fs_mgr_flags & MF_WAIT &&
+            !fs_mgr_wait_for_file(fstab->recs[i].blk_device, 20s)) {
+            LERROR << "Skipping mkswap for '" << fstab->recs[i].blk_device << "'";
+            ret = -1;
+            continue;
         }
 
         /* Initialize the swap area */
@@ -1243,48 +1255,46 @@ int fs_mgr_swapon_all(struct fstab *fstab)
     return ret;
 }
 
-/*
- * key_loc must be at least PROPERTY_VALUE_MAX bytes long
- *
- * real_blk_device must be at least PROPERTY_VALUE_MAX bytes long
- */
-int fs_mgr_get_crypt_info(struct fstab *fstab, char *key_loc, char *real_blk_device, int size)
-{
-    int i = 0;
+struct fstab_rec const* fs_mgr_get_crypt_entry(struct fstab const* fstab) {
+    int i;
 
     if (!fstab) {
-        return -1;
-    }
-    /* Initialize return values to null strings */
-    if (key_loc) {
-        *key_loc = '\0';
-    }
-    if (real_blk_device) {
-        *real_blk_device = '\0';
+        return NULL;
     }
 
     /* Look for the encryptable partition to find the data */
     for (i = 0; i < fstab->num_entries; i++) {
         /* Don't deal with vold managed enryptable partitions here */
-        if (fstab->recs[i].fs_mgr_flags & MF_VOLDMANAGED) {
-            continue;
+        if (!(fstab->recs[i].fs_mgr_flags & MF_VOLDMANAGED) &&
+            (fstab->recs[i].fs_mgr_flags &
+             (MF_CRYPT | MF_FORCECRYPT | MF_FORCEFDEORFBE | MF_FILEENCRYPTION))) {
+            return &fstab->recs[i];
         }
-        if (!(fstab->recs[i].fs_mgr_flags
-              & (MF_CRYPT | MF_FORCECRYPT | MF_FORCEFDEORFBE))) {
-            continue;
-        }
-
-        /* We found a match */
-        if (key_loc) {
-            strlcpy(key_loc, fstab->recs[i].key_loc, size);
-        }
-        if (real_blk_device) {
-            strlcpy(real_blk_device, fstab->recs[i].blk_device, size);
-        }
-        break;
     }
+    return NULL;
+}
 
-    return 0;
+/*
+ * key_loc must be at least PROPERTY_VALUE_MAX bytes long
+ *
+ * real_blk_device must be at least PROPERTY_VALUE_MAX bytes long
+ */
+void fs_mgr_get_crypt_info(struct fstab* fstab, char* key_loc, char* real_blk_device, size_t size) {
+    struct fstab_rec const* rec = fs_mgr_get_crypt_entry(fstab);
+    if (key_loc) {
+        if (rec) {
+            strlcpy(key_loc, rec->key_loc, size);
+        } else {
+            *key_loc = '\0';
+        }
+    }
+    if (real_blk_device) {
+        if (rec) {
+            strlcpy(real_blk_device, rec->blk_device, size);
+        } else {
+            *real_blk_device = '\0';
+        }
+    }
 }
 
 bool fs_mgr_load_verity_state(int* mode) {

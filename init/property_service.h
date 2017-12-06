@@ -17,15 +17,19 @@
 #ifndef _INIT_PROPERTY_H
 #define _INIT_PROPERTY_H
 
-#include <stddef.h>
 #include <sys/socket.h>
-#include <sys/system_properties.h>
+
 #include <string>
+
+namespace android {
+namespace init {
 
 struct property_audit_data {
     ucred *cr;
     const char* name;
 };
+
+extern bool PropertyChildReap(pid_t pid);
 
 void property_init(void);
 void property_load_boot_defaults(void);
@@ -35,5 +39,7 @@ void start_property_service(void);
 uint32_t property_set(const std::string& name, const std::string& value);
 bool is_legal_property_name(const std::string& name);
 
+}  // namespace init
+}  // namespace android
 
 #endif  /* _INIT_PROPERTY_H */

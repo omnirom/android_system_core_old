@@ -89,16 +89,28 @@ static AvbIOResult dummy_get_unique_guid_for_partition(AvbOps* ops ATTRIBUTE_UNU
     return AVB_IO_RESULT_OK;
 }
 
+static AvbIOResult dummy_get_size_of_partition(AvbOps* ops ATTRIBUTE_UNUSED,
+                                               const char* partition ATTRIBUTE_UNUSED,
+                                               uint64_t* out_size_num_byte) {
+    // The function is for bootloader to load entire content of AVB HASH partitions.
+    // In user-space, returns 0 as we only need to set up AVB HASHTHREE partitions.
+    *out_size_num_byte = 0;
+    return AVB_IO_RESULT_OK;
+}
+
 void FsManagerAvbOps::InitializeAvbOps() {
     // We only need to provide the implementation of read_from_partition()
     // operation since that's all what is being used by the avb_slot_verify().
     // Other I/O operations are only required in bootloader but not in
-    // user-space so we set them as dummy operations.
+    // user-space so we set them as dummy operations. Also zero the entire
+    // struct so operations added in the future will be set to NULL.
+    memset(&avb_ops_, 0, sizeof(AvbOps));
     avb_ops_.read_from_partition = read_from_partition;
     avb_ops_.read_rollback_index = dummy_read_rollback_index;
     avb_ops_.validate_vbmeta_public_key = dummy_validate_vbmeta_public_key;
     avb_ops_.read_is_device_unlocked = dummy_read_is_device_unlocked;
     avb_ops_.get_unique_guid_for_partition = dummy_get_unique_guid_for_partition;
+    avb_ops_.get_size_of_partition = dummy_get_size_of_partition;
 
     // Sets user_data for GetInstanceFromAvbOps() to convert it back to FsManagerAvbOps.
     avb_ops_.user_data = this;
@@ -130,10 +142,8 @@ AvbIOResult FsManagerAvbOps::ReadFromPartition(const char* partition, int64_t of
     }
     std::string path = iter->second;
 
-    // Ensures the device path (a symlink created by init) is ready to
-    // access. fs_mgr_test_access() will test a few iterations if the
-    // path doesn't exist yet.
-    if (fs_mgr_test_access(path.c_str()) < 0) {
+    // Ensures the device path (a symlink created by init) is ready to access.
+    if (!fs_mgr_wait_for_file(path, 1s)) {
         return AVB_IO_RESULT_ERROR_NO_SUCH_PARTITION;
     }
 
@@ -148,13 +158,13 @@ AvbIOResult FsManagerAvbOps::ReadFromPartition(const char* partition, int64_t of
     if (offset < 0) {
         off64_t total_size = lseek64(fd, 0, SEEK_END);
         if (total_size == -1) {
-            LERROR << "Failed to lseek64 to end of the partition";
+            PERROR << "Failed to lseek64 to end of the partition";
             return AVB_IO_RESULT_ERROR_IO;
         }
         offset = total_size + offset;
         // Repositions the offset to the beginning.
         if (lseek64(fd, 0, SEEK_SET) == -1) {
-            LERROR << "Failed to lseek64 to the beginning of the partition";
+            PERROR << "Failed to lseek64 to the beginning of the partition";
             return AVB_IO_RESULT_ERROR_IO;
         }
     }
@@ -175,13 +185,15 @@ AvbIOResult FsManagerAvbOps::ReadFromPartition(const char* partition, int64_t of
 }
 
 AvbSlotVerifyResult FsManagerAvbOps::AvbSlotVerify(const std::string& ab_suffix,
-                                                   bool allow_verification_error,
+                                                   AvbSlotVerifyFlags flags,
                                                    AvbSlotVerifyData** out_data) {
     // Invokes avb_slot_verify() to load and verify all vbmeta images.
     // Sets requested_partitions to nullptr as it's to copy the contents
     // of HASH partitions into handle>avb_slot_data_, which is not required as
     // fs_mgr only deals with HASHTREE partitions.
     const char* requested_partitions[] = {nullptr};
-    return avb_slot_verify(&avb_ops_, requested_partitions, ab_suffix.c_str(),
-                           allow_verification_error, out_data);
+    // The |hashtree_error_mode| field doesn't matter as it only
+    // influences the generated kernel cmdline parameters.
+    return avb_slot_verify(&avb_ops_, requested_partitions, ab_suffix.c_str(), flags,
+                           AVB_HASHTREE_ERROR_MODE_RESTART_AND_INVALIDATE, out_data);
 }

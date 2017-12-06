@@ -14,55 +14,57 @@
  * limitations under the License.
  */
 
+#include "property_service.h"
+
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
+#include <limits.h>
+#include <netinet/in.h>
+#include <stdarg.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <ctype.h>
-#include <fcntl.h>
-#include <stdarg.h>
-#include <dirent.h>
-#include <limits.h>
-#include <errno.h>
+#include <sys/mman.h>
 #include <sys/poll.h>
-
-#include <memory>
-#include <vector>
+#include <sys/select.h>
+#include <sys/types.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 #define _REALLY_INCLUDE_SYS__SYSTEM_PROPERTIES_H_
 #include <sys/_system_properties.h>
 
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/select.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/mman.h>
-#include <sys/resource.h>
-#include <private/android_filesystem_config.h>
+#include <memory>
+#include <queue>
+#include <vector>
 
-#include <selinux/android.h>
-#include <selinux/selinux.h>
-#include <selinux/label.h>
-
+#include <android-base/chrono_utils.h>
 #include <android-base/file.h>
+#include <android-base/logging.h>
 #include <android-base/properties.h>
-#include <android-base/stringprintf.h>
 #include <android-base/strings.h>
+#include <bootimg.h>
 #include <fs_mgr.h>
-#include "bootimg.h"
+#include <selinux/android.h>
+#include <selinux/label.h>
+#include <selinux/selinux.h>
 
-#include "property_service.h"
 #include "init.h"
 #include "util.h"
 #include "log.h"
 #include "vendor_init.h"
 
-using android::base::StringPrintf;
+using android::base::Timer;
 
 #define PERSISTENT_PROPERTY_DIR  "/data/property"
 #define RECOVERY_MOUNT_POINT "/recovery"
+
+namespace android {
+namespace init {
 
 static int persistent_properties_loaded = 0;
 
@@ -166,7 +168,7 @@ bool is_legal_property_name(const std::string& name) {
     return true;
 }
 
-uint32_t property_set(const std::string& name, const std::string& value) {
+static uint32_t PropertySetImpl(const std::string& name, const std::string& value) {
     size_t valuelen = value.size();
 
     if (!is_legal_property_name(name)) {
@@ -178,12 +180,6 @@ uint32_t property_set(const std::string& name, const std::string& value) {
         LOG(ERROR) << "property_set(\"" << name << "\", \"" << value << "\") failed: "
                    << "value too long";
         return PROP_ERROR_INVALID_VALUE;
-    }
-
-    if (name == "selinux.restorecon_recursive" && valuelen > 0) {
-        if (restorecon(value.c_str(), SELINUX_ANDROID_RESTORECON_RECURSE) != 0) {
-            LOG(ERROR) << "Failed to restorecon_recursive " << value;
-        }
     }
 
     prop_info* pi = (prop_info*) __system_property_find(name.c_str());
@@ -212,6 +208,85 @@ uint32_t property_set(const std::string& name, const std::string& value) {
     }
     property_changed(name, value);
     return PROP_SUCCESS;
+}
+
+typedef int (*PropertyAsyncFunc)(const std::string&, const std::string&);
+
+struct PropertyChildInfo {
+    pid_t pid;
+    PropertyAsyncFunc func;
+    std::string name;
+    std::string value;
+};
+
+static std::queue<PropertyChildInfo> property_children;
+
+static void PropertyChildLaunch() {
+    auto& info = property_children.front();
+    pid_t pid = fork();
+    if (pid < 0) {
+        LOG(ERROR) << "Failed to fork for property_set_async";
+        while (!property_children.empty()) {
+            property_children.pop();
+        }
+        return;
+    }
+    if (pid != 0) {
+        info.pid = pid;
+    } else {
+        if (info.func(info.name, info.value) != 0) {
+            LOG(ERROR) << "property_set_async(\"" << info.name << "\", \"" << info.value
+                       << "\") failed";
+        }
+        exit(0);
+    }
+}
+
+bool PropertyChildReap(pid_t pid) {
+    if (property_children.empty()) {
+        return false;
+    }
+    auto& info = property_children.front();
+    if (info.pid != pid) {
+        return false;
+    }
+    if (PropertySetImpl(info.name, info.value) != PROP_SUCCESS) {
+        LOG(ERROR) << "Failed to set async property " << info.name;
+    }
+    property_children.pop();
+    if (!property_children.empty()) {
+        PropertyChildLaunch();
+    }
+    return true;
+}
+
+static uint32_t PropertySetAsync(const std::string& name, const std::string& value,
+                                 PropertyAsyncFunc func) {
+    if (value.empty()) {
+        return PropertySetImpl(name, value);
+    }
+
+    PropertyChildInfo info;
+    info.func = func;
+    info.name = name;
+    info.value = value;
+    property_children.push(info);
+    if (property_children.size() == 1) {
+        PropertyChildLaunch();
+    }
+    return PROP_SUCCESS;
+}
+
+static int RestoreconRecursiveAsync(const std::string& name, const std::string& value) {
+    return selinux_android_restorecon(value.c_str(), SELINUX_ANDROID_RESTORECON_RECURSE);
+}
+
+uint32_t property_set(const std::string& name, const std::string& value) {
+    if (name == "selinux.restorecon_recursive") {
+        return PropertySetAsync(name, value, RestoreconRecursiveAsync);
+    }
+
+    return PropertySetImpl(name, value);
 }
 
 class SocketConnection {
@@ -280,7 +355,7 @@ class SocketConnection {
     while (*timeout_ms > 0) {
       Timer timer;
       int nr = poll(ufds, 1, *timeout_ms);
-      uint64_t millis = timer.duration_ms();
+      uint64_t millis = timer.duration().count();
       *timeout_ms = (millis > *timeout_ms) ? 0 : *timeout_ms - millis;
 
       if (nr > 0) {
@@ -514,8 +589,9 @@ static void load_properties(char *data, const char *filter)
 static bool load_properties_from_file(const char* filename, const char* filter) {
     Timer t;
     std::string data;
-    if (!read_file(filename, &data)) {
-        PLOG(WARNING) << "Couldn't load properties from " << filename;
+    std::string err;
+    if (!ReadFile(filename, &data, &err)) {
+        PLOG(WARNING) << "Couldn't load property file: " << err;
         return false;
     }
     data.push_back('\n');
@@ -671,7 +747,7 @@ void load_recovery_id_prop() {
     boot_img_hdr hdr;
     if (android::base::ReadFully(fd, &hdr, sizeof(hdr))) {
         std::string hex = bytes_to_hex(reinterpret_cast<uint8_t*>(hdr.id), sizeof(hdr.id));
-        property_set("ro.recovery_id", hex.c_str());
+        property_set("ro.recovery_id", hex);
     } else {
         PLOG(ERROR) << "error reading /recovery";
     }
@@ -690,8 +766,8 @@ void load_system_props() {
 void start_property_service() {
     property_set("ro.property_service.version", "2");
 
-    property_set_fd = create_socket(PROP_SERVICE_NAME, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
-                                    0666, 0, 0, NULL);
+    property_set_fd = CreateSocket(PROP_SERVICE_NAME, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
+                                   false, 0666, 0, 0, nullptr, sehandle);
     if (property_set_fd == -1) {
         PLOG(ERROR) << "start_property_service socket creation failed";
         exit(1);
@@ -701,3 +777,6 @@ void start_property_service() {
 
     register_epoll_handler(property_set_fd, handle_property_set_fd);
 }
+
+}  // namespace init
+}  // namespace android

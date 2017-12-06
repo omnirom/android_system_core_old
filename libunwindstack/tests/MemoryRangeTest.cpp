@@ -17,29 +17,24 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
 
-#include "Memory.h"
+#include <unwindstack/Memory.h>
 
 #include "MemoryFake.h"
 
-class MemoryRangeTest : public ::testing::Test {
- protected:
-  void SetUp() override {
-    memory_ = new MemoryFake;
-  }
+namespace unwindstack {
 
-  MemoryFake* memory_;
-};
-
-TEST_F(MemoryRangeTest, read) {
+TEST(MemoryRangeTest, read) {
   std::vector<uint8_t> src(1024);
   memset(src.data(), 0x4c, 1024);
-  memory_->SetMemory(9001, src);
+  MemoryFake* memory = new MemoryFake;
+  memory->SetMemory(9001, src);
 
-  MemoryRange range(memory_, 9001, 9001 + src.size());
+  MemoryRange range(memory, 9001, 9001 + src.size());
 
   std::vector<uint8_t> dst(1024);
   ASSERT_TRUE(range.Read(0, dst.data(), src.size()));
@@ -48,12 +43,13 @@ TEST_F(MemoryRangeTest, read) {
   }
 }
 
-TEST_F(MemoryRangeTest, read_near_limit) {
+TEST(MemoryRangeTest, read_near_limit) {
   std::vector<uint8_t> src(4096);
   memset(src.data(), 0x4c, 4096);
-  memory_->SetMemory(1000, src);
+  MemoryFake* memory = new MemoryFake;
+  memory->SetMemory(1000, src);
 
-  MemoryRange range(memory_, 1000, 2024);
+  MemoryRange range(memory, 1000, 2024);
 
   std::vector<uint8_t> dst(1024);
   ASSERT_TRUE(range.Read(1020, dst.data(), 4));
@@ -65,35 +61,16 @@ TEST_F(MemoryRangeTest, read_near_limit) {
   ASSERT_FALSE(range.Read(1020, dst.data(), 5));
   ASSERT_FALSE(range.Read(1024, dst.data(), 1));
   ASSERT_FALSE(range.Read(1024, dst.data(), 1024));
+
+  // Verify that reading up to the end works.
+  ASSERT_TRUE(range.Read(1020, dst.data(), 4));
 }
 
-TEST_F(MemoryRangeTest, read_string_past_end) {
-  std::string name("0123456789");
-  memory_->SetMemory(0, name);
+TEST(MemoryRangeTest, read_overflow) {
+  std::vector<uint8_t> buffer(100);
 
-  // Verify a read past the range fails.
-  MemoryRange range(memory_, 0, 5);
-  std::string dst_name;
-  ASSERT_FALSE(range.ReadString(0, &dst_name));
+  std::unique_ptr<MemoryRange> overflow(new MemoryRange(new MemoryFakeAlwaysReadZero, 100, 200));
+  ASSERT_FALSE(overflow->Read(UINT64_MAX - 10, buffer.data(), 100));
 }
 
-TEST_F(MemoryRangeTest, read_string_to_end) {
-  std::string name("0123456789");
-  memory_->SetMemory(30, name);
-
-  // Verify the range going to the end of the string works.
-  MemoryRange range(memory_, 30, 30 + name.size() + 1);
-  std::string dst_name;
-  ASSERT_TRUE(range.ReadString(0, &dst_name));
-  ASSERT_EQ("0123456789", dst_name);
-}
-
-TEST_F(MemoryRangeTest, read_string_fencepost) {
-  std::string name("0123456789");
-  memory_->SetMemory(10, name);
-
-  // Verify the range set to one byte less than the end of the string fails.
-  MemoryRange range(memory_, 10, 10 + name.size());
-  std::string dst_name;
-  ASSERT_FALSE(range.ReadString(0, &dst_name));
-}
+}  // namespace unwindstack

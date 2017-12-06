@@ -39,15 +39,14 @@
 
 #include <android-base/file.h>
 #include <android-base/unique_fd.h>
+#include <async_safe/log.h>
 
 #include "debuggerd/handler.h"
-#include "debuggerd/tombstoned.h"
-#include "debuggerd/util.h"
+#include "tombstoned/tombstoned.h"
+#include "util.h"
 
 #include "backtrace.h"
 #include "tombstone.h"
-
-#include "private/libc_logging.h"
 
 using android::base::unique_fd;
 
@@ -81,7 +80,7 @@ static void iterate_siblings(bool (*callback)(pid_t, int), int output_fd) {
   DIR* dir = opendir(buf);
 
   if (!dir) {
-    __libc_format_log(ANDROID_LOG_ERROR, "libc", "failed to open %s: %s", buf, strerror(errno));
+    async_safe_format_log(ANDROID_LOG_ERROR, "libc", "failed to open %s: %s", buf, strerror(errno));
     return;
   }
 
@@ -145,13 +144,14 @@ static void trace_handler(siginfo_t* info, ucontext_t* ucontext) {
   static pthread_mutex_t trace_mutex = PTHREAD_MUTEX_INITIALIZER;
   int ret = pthread_mutex_trylock(&trace_mutex);
   if (ret != 0) {
-    __libc_format_log(ANDROID_LOG_INFO, "libc", "pthread_mutex_try_lock failed: %s", strerror(ret));
+    async_safe_format_log(ANDROID_LOG_INFO, "libc", "pthread_mutex_try_lock failed: %s",
+                          strerror(ret));
     return;
   }
 
   // Fetch output fd from tombstoned.
   unique_fd tombstone_socket, output_fd;
-  if (!tombstoned_connect(getpid(), &tombstone_socket, &output_fd)) {
+  if (!tombstoned_connect(getpid(), &tombstone_socket, &output_fd, kDebuggerdNativeBacktrace)) {
     goto exit;
   }
 
@@ -167,7 +167,8 @@ static void trace_handler(siginfo_t* info, ucontext_t* ucontext) {
       // receiving our signal.
       unique_fd pipe_read, pipe_write;
       if (!Pipe(&pipe_read, &pipe_write)) {
-        __libc_format_log(ANDROID_LOG_ERROR, "libc", "failed to create pipe: %s", strerror(errno));
+        async_safe_format_log(ANDROID_LOG_ERROR, "libc", "failed to create pipe: %s",
+                              strerror(errno));
         return false;
       }
 
@@ -180,8 +181,8 @@ static void trace_handler(siginfo_t* info, ucontext_t* ucontext) {
       siginfo.si_uid = getuid();
 
       if (syscall(__NR_rt_tgsigqueueinfo, getpid(), tid, DEBUGGER_SIGNAL, &siginfo) != 0) {
-        __libc_format_log(ANDROID_LOG_ERROR, "libc", "failed to send trace signal to %d: %s", tid,
-                          strerror(errno));
+        async_safe_format_log(ANDROID_LOG_ERROR, "libc", "failed to send trace signal to %d: %s",
+                              tid, strerror(errno));
         return false;
       }
 
@@ -209,12 +210,13 @@ static void crash_handler(siginfo_t* info, ucontext_t* ucontext, void* abort_mes
   static pthread_mutex_t crash_mutex = PTHREAD_MUTEX_INITIALIZER;
   int ret = pthread_mutex_lock(&crash_mutex);
   if (ret != 0) {
-    __libc_format_log(ANDROID_LOG_INFO, "libc", "pthread_mutex_lock failed: %s", strerror(ret));
+    async_safe_format_log(ANDROID_LOG_INFO, "libc", "pthread_mutex_lock failed: %s", strerror(ret));
     return;
   }
 
   unique_fd tombstone_socket, output_fd;
-  bool tombstoned_connected = tombstoned_connect(getpid(), &tombstone_socket, &output_fd);
+  bool tombstoned_connected =
+      tombstoned_connect(getpid(), &tombstone_socket, &output_fd, kDebuggerdTombstone);
   debuggerd_fallback_tombstone(output_fd.get(), ucontext, info, abort_message);
   if (tombstoned_connected) {
     tombstoned_notify_completion(tombstone_socket.get());

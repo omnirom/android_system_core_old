@@ -14,22 +14,19 @@
  * limitations under the License.
  */
 
-#include <errno.h>
-#include <fcntl.h>
 #include <signal.h>
-#include <stdio.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
-#include <android-base/stringprintf.h>
+#include <android-base/logging.h>
 
-#include "action.h"
 #include "init.h"
-#include "log.h"
 #include "service.h"
-#include "util.h"
+
+namespace android {
+namespace init {
 
 static int signal_write_fd = -1;
 static int signal_read_fd = -1;
@@ -70,3 +67,6 @@ void signal_handler_init() {
 
     register_epoll_handler(signal_read_fd, handle_signal);
 }
+
+}  // namespace init
+}  // namespace android

@@ -27,17 +27,30 @@
 #include <gtest/gtest.h>
 
 #include <android-base/file.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
 
-#include <debuggerd/util.h>
+#include "util.h"
 
 using namespace std::chrono_literals;
 using android::base::unique_fd;
 
+static int getThreadCount() {
+  int threadCount = 1024;
+  std::vector<std::string> characteristics =
+      android::base::Split(android::base::GetProperty("ro.build.characteristics", ""), ",");
+  if (std::find(characteristics.begin(), characteristics.end(), "embedded")
+      != characteristics.end()) {
+    // 128 is the realistic number for iot devices.
+    threadCount = 128;
+  }
+  return threadCount;
+}
+
 TEST(debuggerd_client, race) {
-  static constexpr int THREAD_COUNT = 1024;
+  static int THREAD_COUNT = getThreadCount();
   pid_t forkpid = fork();
 
   ASSERT_NE(-1, forkpid);
@@ -67,7 +80,8 @@ TEST(debuggerd_client, race) {
   // Wait for a bit to let the child spawn all of its threads.
   std::this_thread::sleep_for(250ms);
 
-  ASSERT_TRUE(debuggerd_trigger_dump(forkpid, std::move(pipe_write), kDebuggerdBacktrace, 10000));
+  ASSERT_TRUE(
+      debuggerd_trigger_dump(forkpid, kDebuggerdNativeBacktrace, 10000, std::move(pipe_write)));
   // Immediately kill the forked child, to make sure that the dump didn't return early.
   ASSERT_EQ(0, kill(forkpid, SIGKILL)) << strerror(errno);
 
@@ -107,5 +121,6 @@ TEST(debuggerd_client, no_timeout) {
 
   unique_fd output_read, output_write;
   ASSERT_TRUE(Pipe(&output_read, &output_write));
-  ASSERT_TRUE(debuggerd_trigger_dump(forkpid, std::move(output_write), kDebuggerdBacktrace, 0));
+  ASSERT_TRUE(
+      debuggerd_trigger_dump(forkpid, kDebuggerdNativeBacktrace, 0, std::move(output_write)));
 }

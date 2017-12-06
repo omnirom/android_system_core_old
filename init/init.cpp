@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
+#include "init.h"
+
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
-#include <keyutils.h>
 #include <libgen.h>
 #include <paths.h>
 #include <signal.h>
@@ -37,17 +38,17 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <selinux/selinux.h>
-#include <selinux/label.h>
-#include <selinux/android.h>
-
+#include <android-base/chrono_utils.h>
 #include <android-base/file.h>
+#include <android-base/logging.h>
 #include <android-base/properties.h>
-#include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
+#include <keyutils.h>
 #include <libavb/libavb.h>
 #include <private/android_filesystem_config.h>
+#include <selinux/android.h>
+#include <selinux/selinux.h>
 
 #include <fstream>
 #include <memory>
@@ -55,9 +56,7 @@
 
 #include "action.h"
 #include "bootchart.h"
-#include "devices.h"
 #include "import_parser.h"
-#include "init.h"
 #include "init_first_stage.h"
 #include "init_parser.h"
 #include "keychords.h"
@@ -70,8 +69,14 @@
 #include "util.h"
 #include "watchdogd.h"
 
+using namespace std::string_literals;
+
+using android::base::boot_clock;
 using android::base::GetProperty;
-using android::base::StringPrintf;
+using android::base::Timer;
+
+namespace android {
+namespace init {
 
 struct selabel_handle *sehandle;
 struct selabel_handle *sehandle_prop;
@@ -90,6 +95,14 @@ static int epoll_fd = -1;
 static std::unique_ptr<Timer> waiting_for_prop(nullptr);
 static std::string wait_prop_name;
 static std::string wait_prop_value;
+static bool shutting_down;
+static std::string shutdown_command;
+static bool do_shutdown = false;
+
+void DumpState() {
+    ServiceManager::GetInstance().DumpState();
+    ActionManager::GetInstance().DumpState();
+}
 
 void register_epoll_handler(int fd, void (*fn)()) {
     epoll_event ev;
@@ -149,21 +162,38 @@ bool start_waiting_for_property(const char *name, const char *value)
     return true;
 }
 
+void ResetWaitForProp() {
+    wait_prop_name.clear();
+    wait_prop_value.clear();
+    waiting_for_prop.reset();
+}
+
 void property_changed(const std::string& name, const std::string& value) {
     // If the property is sys.powerctl, we bypass the event queue and immediately handle it.
     // This is to ensure that init will always and immediately shutdown/reboot, regardless of
     // if there are other pending events to process or if init is waiting on an exec service or
     // waiting on a property.
-    if (name == "sys.powerctl") HandlePowerctlMessage(value);
+    // In non-thermal-shutdown case, 'shutdown' trigger will be fired to let device specific
+    // commands to be executed.
+    if (name == "sys.powerctl") {
+        // Despite the above comment, we can't call HandlePowerctlMessage() in this function,
+        // because it modifies the contents of the action queue, which can cause the action queue
+        // to get into a bad state if this function is called from a command being executed by the
+        // action queue.  Instead we set this flag and ensure that shutdown happens before the next
+        // command is run in the main init loop.
+        // TODO: once property service is removed from init, this will never happen from a builtin,
+        // but rather from a callback from the property service socket, in which case this hack can
+        // go away.
+        shutdown_command = value;
+        do_shutdown = true;
+    }
 
-    if (property_triggers_enabled)
-        ActionManager::GetInstance().QueuePropertyTrigger(name, value);
+    if (property_triggers_enabled) ActionManager::GetInstance().QueuePropertyChange(name, value);
+
     if (waiting_for_prop) {
         if (wait_prop_name == name && wait_prop_value == value) {
-            wait_prop_name.clear();
-            wait_prop_value.clear();
             LOG(INFO) << "Wait for property took " << *waiting_for_prop;
-            waiting_for_prop.reset();
+            ResetWaitForProp();
         }
     }
 }
@@ -212,7 +242,7 @@ static int wait_for_coldboot_done_action(const std::vector<std::string>& args) {
         panic();
     }
 
-    property_set("ro.boottime.init.cold_boot_wait", std::to_string(t.duration_ms()).c_str());
+    property_set("ro.boottime.init.cold_boot_wait", std::to_string(t.duration().count()));
     return 0;
 }
 
@@ -370,7 +400,10 @@ static int set_mmap_rnd_bits_action(const std::vector<std::string>& args)
     int ret = -1;
 
     /* values are arch-dependent */
-#if defined(__aarch64__)
+#if defined(USER_MODE_LINUX)
+    /* uml does not support mmap_rnd_bits */
+    ret = 0;
+#elif defined(__aarch64__)
     /* arm64 supports 18 - 33 bits depending on pagesize and VA_SIZE */
     if (set_mmap_rnd_bits_min(33, 24, false)
             && set_mmap_rnd_bits_min(16, 16, true)) {
@@ -442,14 +475,14 @@ static void import_kernel_nv(const std::string& key, const std::string& value, b
 
     if (for_emulator) {
         // In the emulator, export any kernel option with the "ro.kernel." prefix.
-        property_set(StringPrintf("ro.kernel.%s", key.c_str()).c_str(), value.c_str());
+        property_set("ro.kernel." + key, value);
         return;
     }
 
     if (key == "qemu") {
         strlcpy(qemu, value.c_str(), sizeof(qemu));
     } else if (android::base::StartsWith(key, "androidboot.")) {
-        property_set(StringPrintf("ro.boot.%s", key.c_str() + 12).c_str(), value.c_str());
+        property_set("ro.boot." + key.substr(12), value);
     }
 }
 
@@ -480,7 +513,7 @@ static void export_kernel_boot_props() {
     };
     for (size_t i = 0; i < arraysize(prop_map); i++) {
         std::string value = GetProperty(prop_map[i].src_prop, "");
-        property_set(prop_map[i].dst_prop, (!value.empty()) ? value.c_str() : prop_map[i].default_value);
+        property_set(prop_map[i].dst_prop, (!value.empty()) ? value : prop_map[i].default_value);
     }
 }
 
@@ -489,7 +522,7 @@ static void process_kernel_dt() {
         return;
     }
 
-    std::unique_ptr<DIR, int (*)(DIR*)> dir(opendir(kAndroidDtDir.c_str()), closedir);
+    std::unique_ptr<DIR, int (*)(DIR*)> dir(opendir(get_android_dt_dir().c_str()), closedir);
     if (!dir) return;
 
     std::string dt_file;
@@ -499,13 +532,12 @@ static void process_kernel_dt() {
             continue;
         }
 
-        std::string file_name = kAndroidDtDir + dp->d_name;
+        std::string file_name = get_android_dt_dir() + dp->d_name;
 
         android::base::ReadFileToString(file_name, &dt_file);
         std::replace(dt_file.begin(), dt_file.end(), ',', '.');
 
-        std::string property_name = StringPrintf("ro.boot.%s", dp->d_name);
-        property_set(property_name.c_str(), dt_file.c_str());
+        property_set("ro.boot."s + dp->d_name, dt_file);
     }
 }
 
@@ -527,7 +559,7 @@ static int property_enable_triggers_action(const std::vector<std::string>& args)
 static int queue_property_triggers_action(const std::vector<std::string>& args)
 {
     ActionManager::GetInstance().QueueBuiltinAction(property_enable_triggers_action, "enable_property_trigger");
-    ActionManager::GetInstance().QueueAllPropertyTriggers();
+    ActionManager::GetInstance().QueueAllPropertyActions();
     return 0;
 }
 
@@ -784,13 +816,15 @@ static bool selinux_load_split_policy() {
         return false;
     }
     std::string mapping_file("/system/etc/selinux/mapping/" + vend_plat_vers + ".cil");
+    const std::string version_as_string = std::to_string(max_policy_version);
+
     // clang-format off
     const char* compile_args[] = {
         "/system/bin/secilc",
         plat_policy_cil_file,
         "-m", "-M", "true", "-G", "-N",
         // Target the highest policy language version supported by the kernel
-        "-c", std::to_string(max_policy_version).c_str(),
+        "-c", version_as_string.c_str(),
         mapping_file.c_str(),
         "/vendor/etc/selinux/nonplat_sepolicy.cil",
         "-o", compiled_sepolicy,
@@ -862,46 +896,49 @@ static void selinux_initialize(bool in_kernel_domain) {
             }
         }
 
-        if (!write_file("/sys/fs/selinux/checkreqprot", "0")) {
+        std::string err;
+        if (!WriteFile("/sys/fs/selinux/checkreqprot", "0", &err)) {
+            LOG(ERROR) << err;
             security_failure();
         }
 
         // init's first stage can't set properties, so pass the time to the second stage.
-        setenv("INIT_SELINUX_TOOK", std::to_string(t.duration_ms()).c_str(), 1);
+        setenv("INIT_SELINUX_TOOK", std::to_string(t.duration().count()).c_str(), 1);
     } else {
         selinux_init_all_handles();
     }
 }
 
-// The files and directories that were created before initial sepolicy load
-// need to have their security context restored to the proper value.
-// This must happen before /dev is populated by ueventd.
+// The files and directories that were created before initial sepolicy load or
+// files on ramdisk need to have their security context restored to the proper
+// value. This must happen before /dev is populated by ueventd.
 static void selinux_restore_context() {
     LOG(INFO) << "Running restorecon...";
-    restorecon("/dev");
-    restorecon("/dev/kmsg");
-    restorecon("/dev/socket");
-    restorecon("/dev/random");
-    restorecon("/dev/urandom");
-    restorecon("/dev/__properties__");
+    selinux_android_restorecon("/dev", 0);
+    selinux_android_restorecon("/dev/kmsg", 0);
+    selinux_android_restorecon("/dev/socket", 0);
+    selinux_android_restorecon("/dev/random", 0);
+    selinux_android_restorecon("/dev/urandom", 0);
+    selinux_android_restorecon("/dev/__properties__", 0);
 
-    restorecon("/file_contexts.bin");
-    restorecon("/plat_file_contexts");
-    restorecon("/nonplat_file_contexts");
-    restorecon("/plat_property_contexts");
-    restorecon("/nonplat_property_contexts");
-    restorecon("/plat_seapp_contexts");
-    restorecon("/nonplat_seapp_contexts");
-    restorecon("/plat_service_contexts");
-    restorecon("/nonplat_service_contexts");
-    restorecon("/plat_hwservice_contexts");
-    restorecon("/nonplat_hwservice_contexts");
-    restorecon("/sepolicy");
-    restorecon("/vndservice_contexts");
+    selinux_android_restorecon("/plat_file_contexts", 0);
+    selinux_android_restorecon("/nonplat_file_contexts", 0);
+    selinux_android_restorecon("/plat_property_contexts", 0);
+    selinux_android_restorecon("/nonplat_property_contexts", 0);
+    selinux_android_restorecon("/plat_seapp_contexts", 0);
+    selinux_android_restorecon("/nonplat_seapp_contexts", 0);
+    selinux_android_restorecon("/plat_service_contexts", 0);
+    selinux_android_restorecon("/nonplat_service_contexts", 0);
+    selinux_android_restorecon("/plat_hwservice_contexts", 0);
+    selinux_android_restorecon("/nonplat_hwservice_contexts", 0);
+    selinux_android_restorecon("/sepolicy", 0);
+    selinux_android_restorecon("/vndservice_contexts", 0);
 
-    restorecon("/sys", SELINUX_ANDROID_RESTORECON_RECURSE);
-    restorecon("/dev/block", SELINUX_ANDROID_RESTORECON_RECURSE);
-    restorecon("/dev/device-mapper");
+    selinux_android_restorecon("/dev/block", SELINUX_ANDROID_RESTORECON_RECURSE);
+    selinux_android_restorecon("/dev/device-mapper", 0);
+
+    selinux_android_restorecon("/sbin/mke2fs_static", 0);
+    selinux_android_restorecon("/sbin/e2fsdroid_static", 0);
 }
 
 // Set the UDC controller for the ConfigFS USB Gadgets.
@@ -920,7 +957,7 @@ static void set_usb_controller() {
     }
 }
 
-static void install_reboot_signal_handlers() {
+static void InstallRebootSignalHandlers() {
     // Instead of panic'ing the kernel as is the default behavior when init crashes,
     // we prefer to reboot to bootloader on development builds, as this will prevent
     // boot looping bad configurations and allow both developers and test farms to easily
@@ -928,7 +965,13 @@ static void install_reboot_signal_handlers() {
     struct sigaction action;
     memset(&action, 0, sizeof(action));
     sigfillset(&action.sa_mask);
-    action.sa_handler = [](int) {
+    action.sa_handler = [](int signal) {
+        // These signal handlers are also caught for processes forked from init, however we do not
+        // want them to trigger reboot, so we directly call _exit() for children processes here.
+        if (getpid() != 1) {
+            _exit(signal);
+        }
+
         // panic() reboots to bootloader
         panic();
     };
@@ -955,7 +998,7 @@ int main(int argc, char** argv) {
     }
 
     if (REBOOT_BOOTLOADER_ON_PANIC) {
-        install_reboot_signal_handlers();
+        InstallRebootSignalHandlers();
     }
 
     add_environment("PATH", _PATH_DEFPATH);
@@ -1004,7 +1047,7 @@ int main(int argc, char** argv) {
 
         // We're in the kernel domain, so re-exec init to transition to the init domain now
         // that the SELinux policy has been loaded.
-        if (restorecon("/init") == -1) {
+        if (selinux_android_restorecon("/init", 0) == -1) {
             PLOG(ERROR) << "restorecon failed";
             security_failure();
         }
@@ -1013,7 +1056,7 @@ int main(int argc, char** argv) {
 
         static constexpr uint32_t kNanosecondsPerMillisecond = 1e6;
         uint64_t start_ms = start_time.time_since_epoch().count() / kNanosecondsPerMillisecond;
-        setenv("INIT_STARTED_AT", StringPrintf("%" PRIu64, start_ms).c_str(), 1);
+        setenv("INIT_STARTED_AT", std::to_string(start_ms).c_str(), 1);
 
         char* path = argv[0];
         char* args[] = { path, nullptr };
@@ -1032,7 +1075,7 @@ int main(int argc, char** argv) {
     // Set up a session keyring that all processes will have access to. It
     // will hold things like FBE encryption keys. No process should override
     // its session keyring.
-    keyctl(KEYCTL_GET_KEYRING_ID, KEY_SPEC_SESSION_KEYRING, 1);
+    keyctl_get_keyring_ID(KEY_SPEC_SESSION_KEYRING, 1);
 
     // Indicate that booting is in progress to background fw loaders, etc.
     close(open("/dev/.booting", O_WRONLY | O_CREAT | O_CLOEXEC, 0000));
@@ -1082,10 +1125,13 @@ int main(int argc, char** argv) {
     const BuiltinFunctionMap function_map;
     Action::set_function_map(&function_map);
 
+    ActionManager& am = ActionManager::GetInstance();
+    ServiceManager& sm = ServiceManager::GetInstance();
     Parser& parser = Parser::GetInstance();
-    parser.AddSectionParser("service",std::make_unique<ServiceParser>());
-    parser.AddSectionParser("on", std::make_unique<ActionParser>());
-    parser.AddSectionParser("import", std::make_unique<ImportParser>());
+
+    parser.AddSectionParser("service", std::make_unique<ServiceParser>(&sm));
+    parser.AddSectionParser("on", std::make_unique<ActionParser>(&am));
+    parser.AddSectionParser("import", std::make_unique<ImportParser>(&parser));
     std::string bootscript = GetProperty("ro.boot.init_rc", "");
     if (bootscript.empty()) {
         parser.ParseConfig("/init.rc");
@@ -1103,9 +1149,7 @@ int main(int argc, char** argv) {
 
     // Turning this on and letting the INFO logging be discarded adds 0.2s to
     // Nexus 9 boot time, so it's disabled by default.
-    if (false) parser.DumpState();
-
-    ActionManager& am = ActionManager::GetInstance();
+    if (false) DumpState();
 
     am.QueueEventTrigger("early-init");
 
@@ -1140,11 +1184,18 @@ int main(int argc, char** argv) {
         // By default, sleep until something happens.
         int epoll_timeout_ms = -1;
 
-        if (!(waiting_for_prop || ServiceManager::GetInstance().IsWaitingForExec())) {
+        if (do_shutdown && !shutting_down) {
+            do_shutdown = false;
+            if (HandlePowerctlMessage(shutdown_command)) {
+                shutting_down = true;
+            }
+        }
+
+        if (!(waiting_for_prop || sm.IsWaitingForExec())) {
             am.ExecuteOneCommand();
         }
-        if (!(waiting_for_prop || ServiceManager::GetInstance().IsWaitingForExec())) {
-            restart_processes();
+        if (!(waiting_for_prop || sm.IsWaitingForExec())) {
+            if (!shutting_down) restart_processes();
 
             // If there's a process that needs restarting, wake up in time for that.
             if (process_needs_restart_at != 0) {
@@ -1166,4 +1217,11 @@ int main(int argc, char** argv) {
     }
 
     return 0;
+}
+
+}  // namespace init
+}  // namespace android
+
+int main(int argc, char** argv) {
+    android::init::main(argc, argv);
 }

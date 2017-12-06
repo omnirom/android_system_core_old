@@ -33,6 +33,30 @@ include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 
+LOCAL_MODULE := libhealthd_draw
+
+LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)
+LOCAL_STATIC_LIBRARIES := \
+	libminui \
+	libbase
+LOCAL_SRC_FILES := healthd_draw.cpp
+
+ifneq ($(TARGET_HEALTHD_DRAW_SPLIT_SCREEN),)
+LOCAL_CFLAGS += -DHEALTHD_DRAW_SPLIT_SCREEN=$(TARGET_HEALTHD_DRAW_SPLIT_SCREEN)
+else
+LOCAL_CFLAGS += -DHEALTHD_DRAW_SPLIT_SCREEN=0
+endif
+
+ifneq ($(TARGET_HEALTHD_DRAW_SPLIT_OFFSET),)
+LOCAL_CFLAGS += -DHEALTHD_DRAW_SPLIT_OFFSET=$(TARGET_HEALTHD_DRAW_SPLIT_OFFSET)
+else
+LOCAL_CFLAGS += -DHEALTHD_DRAW_SPLIT_OFFSET=0
+endif
+
+include $(BUILD_STATIC_LIBRARY)
+
+include $(CLEAR_VARS)
+
 HEALTHD_PATH := \
     RED_LED_PATH \
     GREEN_LED_PATH \
@@ -83,6 +107,7 @@ LOCAL_STATIC_LIBRARIES := \
     libutils \
     libbase \
     libcutils \
+    libhealthd_draw \
     liblog \
     libm \
     libc \
@@ -126,6 +151,7 @@ endif
 
 LOCAL_STATIC_LIBRARIES := \
     libhealthd_charger \
+    libhealthd_draw \
     libbatterymonitor \
     libbase \
     libutils \

@@ -27,8 +27,8 @@
 #include <android-base/parseint.h>
 #include <android-base/unique_fd.h>
 #include <debuggerd/client.h>
-#include <debuggerd/util.h>
-#include <selinux/selinux.h>
+#include <procinfo/process.h>
+#include "util.h"
 
 using android::base::unique_fd;
 
@@ -66,14 +66,32 @@ int main(int argc, char* argv[]) {
     usage(1);
   }
 
+  if (getuid() != 0) {
+    errx(1, "root is required");
+  }
+
+  // Check to see if the process exists and that we can actually send a signal to it.
+  android::procinfo::ProcessInfo proc_info;
+  if (!android::procinfo::GetProcessInfo(pid, &proc_info)) {
+    err(1, "failed to fetch info for process %d", pid);
+  }
+
+  if (proc_info.state == android::procinfo::kProcessStateZombie) {
+    errx(1, "process %d is a zombie", pid);
+  }
+
+  if (kill(pid, 0) != 0) {
+    err(1, "cannot send signal to process %d", pid);
+  }
+
   unique_fd piperead, pipewrite;
   if (!Pipe(&piperead, &pipewrite)) {
     err(1, "failed to create pipe");
   }
 
   std::thread redirect_thread = spawn_redirect_thread(std::move(piperead));
-  if (!debuggerd_trigger_dump(pid, std::move(pipewrite),
-                              backtrace_only ? kDebuggerdBacktrace : kDebuggerdTombstone, 0)) {
+  if (!debuggerd_trigger_dump(pid, backtrace_only ? kDebuggerdNativeBacktrace : kDebuggerdTombstone,
+                              0, std::move(pipewrite))) {
     redirect_thread.join();
     errx(1, "failed to dump process %d", pid);
   }

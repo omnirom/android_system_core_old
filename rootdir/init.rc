@@ -27,6 +27,18 @@ on early-init
     # Set the security context of /postinstall if present.
     restorecon /postinstall
 
+    # Mount cgroup mount point for cpu accounting
+    mount cgroup none /acct cpuacct
+    mkdir /acct/uid
+
+    # root memory control cgroup, used by lmkd
+    mkdir /dev/memcg 0700 root system
+    mount cgroup none /dev/memcg memory
+    # app mem cgroups, used by activity manager, lmkd and zygote
+    mkdir /dev/memcg/apps/ 0755 system system
+    # cgroup for system_server and surfaceflinger
+    mkdir /dev/memcg/system 0550 system system
+
     start ueventd
 
 on init
@@ -43,28 +55,28 @@ on init
     # Link /vendor to /system/vendor for devices without a vendor partition.
     symlink /system/vendor /vendor
 
-    # Mount cgroup mount point for cpu accounting
-    mount cgroup none /acct cpuacct
-    mkdir /acct/uid
-
     # Create energy-aware scheduler tuning nodes
     mkdir /dev/stune
     mount cgroup none /dev/stune schedtune
     mkdir /dev/stune/foreground
     mkdir /dev/stune/background
     mkdir /dev/stune/top-app
+    mkdir /dev/stune/rt
     chown system system /dev/stune
     chown system system /dev/stune/foreground
     chown system system /dev/stune/background
     chown system system /dev/stune/top-app
+    chown system system /dev/stune/rt
     chown system system /dev/stune/tasks
     chown system system /dev/stune/foreground/tasks
     chown system system /dev/stune/background/tasks
     chown system system /dev/stune/top-app/tasks
+    chown system system /dev/stune/rt/tasks
     chmod 0664 /dev/stune/tasks
     chmod 0664 /dev/stune/foreground/tasks
     chmod 0664 /dev/stune/background/tasks
     chmod 0664 /dev/stune/top-app/tasks
+    chmod 0664 /dev/stune/rt/tasks
 
     # Mount staging areas for devices managed by vold
     # See storage config details at http://source.android.com/tech/storage/
@@ -98,12 +110,6 @@ on init
     symlink /storage/self/primary /sdcard
     symlink /storage/self/primary /mnt/sdcard
     symlink /mnt/user/0/primary /mnt/runtime/default/self/primary
-
-    # root memory control cgroup, used by lmkd
-    mkdir /dev/memcg 0700 root system
-    mount cgroup none /dev/memcg memory
-    # app mem cgroups, used by activity manager, lmkd and zygote
-    mkdir /dev/memcg/apps/ 0755 system system
 
     write /proc/sys/kernel/panic_on_oops 1
     write /proc/sys/kernel/hung_task_timeout_secs 0
@@ -141,6 +147,9 @@ on init
     # disable icmp redirects
     write /proc/sys/net/ipv4/conf/all/accept_redirects 0
     write /proc/sys/net/ipv6/conf/all/accept_redirects 0
+
+    # /proc/net/fib_trie leaks interface IP addresses
+    chmod 0400 /proc/net/fib_trie
 
     # Create cgroup mount points for process groups
     mkdir /dev/cpuctl
@@ -221,6 +230,8 @@ on init
     mount pstore pstore /sys/fs/pstore
     chown system log /sys/fs/pstore/console-ramoops
     chmod 0440 /sys/fs/pstore/console-ramoops
+    chown system log /sys/fs/pstore/console-ramoops-0
+    chmod 0440 /sys/fs/pstore/console-ramoops-0
     chown system log /sys/fs/pstore/pmsg-ramoops-0
     chmod 0440 /sys/fs/pstore/pmsg-ramoops-0
 
@@ -313,7 +324,6 @@ on post-fs
     # Make sure /sys/kernel/debug (if present) is labeled properly
     # Note that tracefs may be mounted under debug, so we need to cross filesystems
     restorecon --recursive --cross-filesystems /sys/kernel/debug
-    chmod 0755 /sys/kernel/debug/tracing
 
     # We chown/chmod /cache again so because mount is run as root + defaults
     chown system cache /cache
@@ -351,6 +361,10 @@ on post-fs
     mkdir /cache/lost+found 0770 root root
 
 on late-fs
+    # Ensure that tracefs has the correct permissions.
+    # This does not work correctly if it is called in post-fs.
+    chmod 0755 /sys/kernel/debug/tracing
+
     # HALs required before storage encryption can get unlocked (FBE/FDE)
     class_start early_hal
 
@@ -375,6 +389,20 @@ on post-fs-data
 
     # create basic filesystem structure
     mkdir /data/misc 01771 system misc
+    mkdir /data/misc/recovery 0770 system log
+    copy /data/misc/recovery/ro.build.fingerprint /data/misc/recovery/ro.build.fingerprint.1
+    chmod 0440 /data/misc/recovery/ro.build.fingerprint.1
+    chown system log /data/misc/recovery/ro.build.fingerprint.1
+    write /data/misc/recovery/ro.build.fingerprint ${ro.build.fingerprint}
+    chmod 0440 /data/misc/recovery/ro.build.fingerprint
+    chown system log /data/misc/recovery/ro.build.fingerprint
+    mkdir /data/misc/recovery/proc 0770 system log
+    copy /data/misc/recovery/proc/version /data/misc/recovery/proc/version.1
+    chmod 0440 /data/misc/recovery/proc/version.1
+    chown system log /data/misc/recovery/proc/version.1
+    copy /proc/version /data/misc/recovery/proc/version
+    chmod 0440 /data/misc/recovery/proc/version
+    chown system log /data/misc/recovery/proc/version
     mkdir /data/misc/bluedroid 02770 bluetooth bluetooth
     # Fix the access permissions and group ownership for 'bt_config.conf'
     chmod 0660 /data/misc/bluedroid/bt_config.conf
@@ -674,12 +702,17 @@ on property:security.perf_harden=0
 on property:security.perf_harden=1
     write /proc/sys/kernel/perf_event_paranoid 3
 
+# on shutdown
+# In device's init.rc, this trigger can be used to do device-specific actions
+# before shutdown. e.g disable watchdog and mask error handling
+
 ## Daemon processes to be run by init.
 ##
 service ueventd /sbin/ueventd
     class core
     critical
     seclabel u:r:ueventd:s0
+    shutdown critical
 
 service healthd /system/bin/healthd
     class core

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "debuggerd/util.h"
+#include "util.h"
 
 #include <sys/socket.h>
 
@@ -22,9 +22,7 @@
 
 #include <android-base/unique_fd.h>
 #include <cutils/sockets.h>
-#include <debuggerd/protocol.h>
-
-#include "private/libc_logging.h"
+#include "protocol.h"
 
 using android::base::unique_fd;
 

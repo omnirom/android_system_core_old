@@ -1,27 +1,7 @@
 #include "parser.h"
 
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-
-#include "log.h"
-
-void parse_error(struct parse_state *state, const char *fmt, ...)
-{
-    va_list ap;
-    char buf[128];
-    int off;
-
-    snprintf(buf, sizeof(buf), "%s: %d: ", state->filename, state->line);
-    buf[127] = 0;
-    off = strlen(buf);
-
-    va_start(ap, fmt);
-    vsnprintf(buf + off, 128 - off, fmt, ap);
-    va_end(ap);
-    buf[127] = 0;
-    LOG(ERROR) << buf;
-}
+namespace android {
+namespace init {
 
 int next_token(struct parse_state *state)
 {
@@ -139,3 +119,6 @@ textresume:
     }
     return T_EOF;
 }
+
+}  // namespace init
+}  // namespace android

@@ -35,11 +35,12 @@
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
 #include <cutils/sockets.h>
-#include <debuggerd/handler.h>
-#include <debuggerd/protocol.h>
-#include <debuggerd/tombstoned.h>
-#include <debuggerd/util.h>
 #include <gtest/gtest.h>
+
+#include "debuggerd/handler.h"
+#include "protocol.h"
+#include "tombstoned/tombstoned.h"
+#include "util.h"
 
 using namespace std::chrono_literals;
 using android::base::unique_fd;
@@ -87,14 +88,19 @@ constexpr char kWaitForGdbKey[] = "debug.debuggerd.wait_for_gdb";
     }                                                                                       \
   } while (0)
 
-static void tombstoned_intercept(pid_t target_pid, unique_fd* intercept_fd, unique_fd* output_fd) {
+#define ASSERT_BACKTRACE_FRAME(result, frame_name)                        \
+  ASSERT_MATCH(result, R"(#\d\d pc [0-9a-f]+\s+ /system/lib)" ARCH_SUFFIX \
+                       R"(/libc.so \()" frame_name R"(\+)")
+
+static void tombstoned_intercept(pid_t target_pid, unique_fd* intercept_fd, unique_fd* output_fd,
+                                 InterceptStatus* status, DebuggerdDumpType intercept_type) {
   intercept_fd->reset(socket_local_client(kTombstonedInterceptSocketName,
                                           ANDROID_SOCKET_NAMESPACE_RESERVED, SOCK_SEQPACKET));
   if (intercept_fd->get() == -1) {
     FAIL() << "failed to contact tombstoned: " << strerror(errno);
   }
 
-  InterceptRequest req = {.pid = target_pid};
+  InterceptRequest req = {.pid = target_pid, .dump_type = intercept_type};
 
   unique_fd output_pipe_write;
   if (!Pipe(output_fd, &output_pipe_write)) {
@@ -134,7 +140,7 @@ static void tombstoned_intercept(pid_t target_pid, unique_fd* intercept_fd, uniq
            << ", received " << rc;
   }
 
-  ASSERT_EQ(InterceptStatus::kRegistered, response.status);
+  *status = response.status;
 }
 
 class CrasherTest : public ::testing::Test {
@@ -147,7 +153,7 @@ class CrasherTest : public ::testing::Test {
   CrasherTest();
   ~CrasherTest();
 
-  void StartIntercept(unique_fd* output_fd);
+  void StartIntercept(unique_fd* output_fd, DebuggerdDumpType intercept_type = kDebuggerdTombstone);
 
   // Returns -1 if we fail to read a response from tombstoned, otherwise the received return code.
   void FinishIntercept(int* result);
@@ -173,12 +179,14 @@ CrasherTest::~CrasherTest() {
   android::base::SetProperty(kWaitForGdbKey, previous_wait_for_gdb ? "1" : "0");
 }
 
-void CrasherTest::StartIntercept(unique_fd* output_fd) {
+void CrasherTest::StartIntercept(unique_fd* output_fd, DebuggerdDumpType intercept_type) {
   if (crasher_pid == -1) {
     FAIL() << "crasher hasn't been started";
   }
 
-  tombstoned_intercept(crasher_pid, &this->intercept_fd, output_fd);
+  InterceptStatus status;
+  tombstoned_intercept(crasher_pid, &this->intercept_fd, output_fd, &status, intercept_type);
+  ASSERT_EQ(InterceptStatus::kRegistered, status);
 }
 
 void CrasherTest::FinishIntercept(int* result) {
@@ -303,7 +311,7 @@ TEST_F(CrasherTest, abort) {
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
-  ASSERT_MATCH(result, R"(#00 pc [0-9a-f]+\s+ /system/lib)" ARCH_SUFFIX R"(/libc.so \(tgkill)");
+  ASSERT_BACKTRACE_FRAME(result, "abort");
 }
 
 TEST_F(CrasherTest, signal) {
@@ -429,7 +437,7 @@ TEST_F(CrasherTest, backtrace) {
   StartProcess([]() {
     abort();
   });
-  StartIntercept(&output_fd);
+  StartIntercept(&output_fd, kDebuggerdNativeBacktrace);
 
   std::this_thread::sleep_for(500ms);
 
@@ -439,7 +447,7 @@ TEST_F(CrasherTest, backtrace) {
   FinishIntercept(&intercept_result);
   ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
   ConsumeFd(std::move(output_fd), &result);
-  ASSERT_MATCH(result, R"(#00 pc [0-9a-f]+  /system/lib)" ARCH_SUFFIX R"(/libc.so \(read\+)");
+  ASSERT_BACKTRACE_FRAME(result, "read");
 
   int status;
   ASSERT_EQ(0, waitpid(crasher_pid, &status, WNOHANG | WUNTRACED));
@@ -450,7 +458,7 @@ TEST_F(CrasherTest, backtrace) {
   FinishIntercept(&intercept_result);
   ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
   ConsumeFd(std::move(output_fd), &result);
-  ASSERT_MATCH(result, R"(#00 pc [0-9a-f]+\s+ /system/lib)" ARCH_SUFFIX R"(/libc.so \(tgkill)");
+  ASSERT_BACKTRACE_FRAME(result, "abort");
 }
 
 TEST_F(CrasherTest, PR_SET_DUMPABLE_0_crash) {
@@ -470,7 +478,7 @@ TEST_F(CrasherTest, PR_SET_DUMPABLE_0_crash) {
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
-  ASSERT_MATCH(result, R"(#00 pc [0-9a-f]+\s+ /system/lib)" ARCH_SUFFIX R"(/libc.so \(tgkill)");
+  ASSERT_BACKTRACE_FRAME(result, "abort");
 }
 
 TEST_F(CrasherTest, capabilities) {
@@ -527,7 +535,7 @@ TEST_F(CrasherTest, capabilities) {
   ASSERT_EQ(1, intercept_result) << "tombstoned reported failure";
   ConsumeFd(std::move(output_fd), &result);
   ASSERT_MATCH(result, R"(name: thread_name\s+>>> .+debuggerd_test(32|64) <<<)");
-  ASSERT_MATCH(result, R"(#00 pc [0-9a-f]+\s+ /system/lib)" ARCH_SUFFIX R"(/libc.so \(tgkill)");
+  ASSERT_BACKTRACE_FRAME(result, "tgkill");
 }
 
 TEST_F(CrasherTest, fake_pid) {
@@ -558,7 +566,7 @@ TEST_F(CrasherTest, fake_pid) {
 
   std::string result;
   ConsumeFd(std::move(output_fd), &result);
-  ASSERT_MATCH(result, R"(#00 pc [0-9a-f]+\s+ /system/lib)" ARCH_SUFFIX R"(/libc.so \(tgkill)");
+  ASSERT_BACKTRACE_FRAME(result, "tgkill");
 }
 
 TEST(crash_dump, zombie) {
@@ -596,11 +604,13 @@ TEST(tombstoned, no_notify) {
     pid_t pid = 123'456'789 + i;
 
     unique_fd intercept_fd, output_fd;
-    tombstoned_intercept(pid, &intercept_fd, &output_fd);
+    InterceptStatus status;
+    tombstoned_intercept(pid, &intercept_fd, &output_fd, &status, kDebuggerdTombstone);
+    ASSERT_EQ(InterceptStatus::kRegistered, status);
 
     {
       unique_fd tombstoned_socket, input_fd;
-      ASSERT_TRUE(tombstoned_connect(pid, &tombstoned_socket, &input_fd));
+      ASSERT_TRUE(tombstoned_connect(pid, &tombstoned_socket, &input_fd, kDebuggerdTombstone));
       ASSERT_TRUE(android::base::WriteFully(input_fd.get(), &pid, sizeof(pid)));
     }
 
@@ -628,7 +638,9 @@ TEST(tombstoned, stress) {
       pid_t pid = pid_base + dump;
 
       unique_fd intercept_fd, output_fd;
-      tombstoned_intercept(pid, &intercept_fd, &output_fd);
+      InterceptStatus status;
+      tombstoned_intercept(pid, &intercept_fd, &output_fd, &status, kDebuggerdTombstone);
+      ASSERT_EQ(InterceptStatus::kRegistered, status);
 
       // Pretend to crash, and then immediately close the socket.
       unique_fd sockfd(socket_local_client(kTombstonedCrashSocketName,
@@ -659,11 +671,13 @@ TEST(tombstoned, stress) {
       pid_t pid = pid_base + dump;
 
       unique_fd intercept_fd, output_fd;
-      tombstoned_intercept(pid, &intercept_fd, &output_fd);
+      InterceptStatus status;
+      tombstoned_intercept(pid, &intercept_fd, &output_fd, &status, kDebuggerdTombstone);
+      ASSERT_EQ(InterceptStatus::kRegistered, status);
 
       {
         unique_fd tombstoned_socket, input_fd;
-        ASSERT_TRUE(tombstoned_connect(pid, &tombstoned_socket, &input_fd));
+        ASSERT_TRUE(tombstoned_connect(pid, &tombstoned_socket, &input_fd, kDebuggerdTombstone));
         ASSERT_TRUE(android::base::WriteFully(input_fd.get(), &pid, sizeof(pid)));
         tombstoned_notify_completion(tombstoned_socket.get());
       }
@@ -682,4 +696,66 @@ TEST(tombstoned, stress) {
   for (std::thread& thread : threads) {
     thread.join();
   }
+}
+
+TEST(tombstoned, java_trace_intercept_smoke) {
+  // Using a "real" PID is a little dangerous here - if the test fails
+  // or crashes, we might end up getting a bogus / unreliable stack
+  // trace.
+  const pid_t self = getpid();
+
+  unique_fd intercept_fd, output_fd;
+  InterceptStatus status;
+  tombstoned_intercept(self, &intercept_fd, &output_fd, &status, kDebuggerdJavaBacktrace);
+  ASSERT_EQ(InterceptStatus::kRegistered, status);
+
+  // First connect to tombstoned requesting a native backtrace. This
+  // should result in a "regular" FD and not the installed intercept.
+  const char native[] = "native";
+  unique_fd tombstoned_socket, input_fd;
+  ASSERT_TRUE(tombstoned_connect(self, &tombstoned_socket, &input_fd, kDebuggerdNativeBacktrace));
+  ASSERT_TRUE(android::base::WriteFully(input_fd.get(), native, sizeof(native)));
+  tombstoned_notify_completion(tombstoned_socket.get());
+
+  // Then, connect to tombstoned asking for a java backtrace. This *should*
+  // trigger the intercept.
+  const char java[] = "java";
+  ASSERT_TRUE(tombstoned_connect(self, &tombstoned_socket, &input_fd, kDebuggerdJavaBacktrace));
+  ASSERT_TRUE(android::base::WriteFully(input_fd.get(), java, sizeof(java)));
+  tombstoned_notify_completion(tombstoned_socket.get());
+
+  char outbuf[sizeof(java)];
+  ASSERT_TRUE(android::base::ReadFully(output_fd.get(), outbuf, sizeof(outbuf)));
+  ASSERT_STREQ("java", outbuf);
+}
+
+TEST(tombstoned, multiple_intercepts) {
+  const pid_t fake_pid = 1'234'567;
+  unique_fd intercept_fd, output_fd;
+  InterceptStatus status;
+  tombstoned_intercept(fake_pid, &intercept_fd, &output_fd, &status, kDebuggerdJavaBacktrace);
+  ASSERT_EQ(InterceptStatus::kRegistered, status);
+
+  unique_fd intercept_fd_2, output_fd_2;
+  tombstoned_intercept(fake_pid, &intercept_fd_2, &output_fd_2, &status, kDebuggerdNativeBacktrace);
+  ASSERT_EQ(InterceptStatus::kFailedAlreadyRegistered, status);
+}
+
+TEST(tombstoned, intercept_any) {
+  const pid_t fake_pid = 1'234'567;
+
+  unique_fd intercept_fd, output_fd;
+  InterceptStatus status;
+  tombstoned_intercept(fake_pid, &intercept_fd, &output_fd, &status, kDebuggerdNativeBacktrace);
+  ASSERT_EQ(InterceptStatus::kRegistered, status);
+
+  const char any[] = "any";
+  unique_fd tombstoned_socket, input_fd;
+  ASSERT_TRUE(tombstoned_connect(fake_pid, &tombstoned_socket, &input_fd, kDebuggerdAnyIntercept));
+  ASSERT_TRUE(android::base::WriteFully(input_fd.get(), any, sizeof(any)));
+  tombstoned_notify_completion(tombstoned_socket.get());
+
+  char outbuf[sizeof(any)];
+  ASSERT_TRUE(android::base::ReadFully(output_fd.get(), outbuf, sizeof(outbuf)));
+  ASSERT_STREQ("any", outbuf);
 }
