@@ -626,6 +626,7 @@ static int queue_fs_event(int code) {
     return ret;
 }
 
+#ifdef RECOVERY_NEEDS_INSTALL_KEYRING
 static int do_install_keyring(const std::vector<std::string>& args) {
     if (e4crypt_install_keyring()) {
         ERROR("failed to install keyring\n");
@@ -635,6 +636,7 @@ static int do_install_keyring(const std::vector<std::string>& args) {
     property_set("ro.crypto.type", "file");
     return 0;
 }
+#endif
 
 /* mount_all <fstab> [ <path> ]* [--<options>]*
  *
@@ -1052,7 +1054,9 @@ BuiltinFunctionMap::Map& BuiltinFunctionMap::map() const {
         {"ifup",                    {1,     1,    do_ifup}},
         {"init_user0",              {0,     0,    do_init_user0}},
         {"insmod",                  {1,     kMax, do_insmod}},
+#ifdef RECOVERY_NEEDS_INSTALL_KEYRING
         {"install_keyring",         {0,     0,    do_install_keyring}},
+#endif
         {"installkey",              {1,     1,    do_installkey}},
         {"load_persist_props",      {0,     0,    do_load_persist_props}},
         {"load_system_props",       {0,     0,    do_load_system_props}},
