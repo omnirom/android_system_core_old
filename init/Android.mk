@@ -54,7 +54,6 @@ LOCAL_SRC_FILES:= \
     signal_handler.cpp \
     ueventd.cpp \
     ueventd_parser.cpp \
-    vendor_init.cpp \
     watchdogd.cpp
 
 LOCAL_MODULE:= init
@@ -105,7 +104,8 @@ ifneq ($(strip $(TARGET_PLATFORM_DEVICE_BASE)),)
 LOCAL_CFLAGS += -D_PLATFORM_BASE="\"$(TARGET_PLATFORM_DEVICE_BASE)\""
 endif
 ifneq ($(strip $(TARGET_INIT_VENDOR_LIB)),)
-LOCAL_WHOLE_STATIC_LIBRARIES += $(TARGET_INIT_VENDOR_LIB)
+LOCAL_CFLAGS += -DTARGET_INIT_VENDOR_LIB
+LOCAL_STATIC_LIBRARIES += $(TARGET_INIT_VENDOR_LIB)
 endif
 
 include $(BUILD_EXECUTABLE)
