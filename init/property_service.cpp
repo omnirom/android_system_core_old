@@ -62,7 +62,6 @@
 #include "selinux.h"
 #include "subcontext.h"
 #include "util.h"
-#include "vendor_init.h"
 
 using namespace std::literals;
 
@@ -85,6 +84,11 @@ namespace android {
 namespace init {
 
 static bool persistent_properties_loaded = false;
+
+#ifdef TARGET_INIT_VENDOR_LIB
+extern void vendor_load_properties(void);
+#endif
+
 
 static int property_set_fd = -1;
 
@@ -724,6 +728,13 @@ void load_persist_props(void) {
     }
     persistent_properties_loaded = true;
     property_set("ro.persistent_properties.ready", "true");
+
+#ifdef TARGET_INIT_VENDOR_LIB
+    /* vendor-specific properties
+     */
+    vendor_load_properties();
+#endif
+
 }
 
 void load_recovery_id_prop() {
@@ -763,7 +774,6 @@ void load_system_props() {
     load_properties_from_file("/vendor/build.prop", NULL);
     load_properties_from_file("/factory/factory.prop", "ro.*");
     load_recovery_id_prop();
-    vendor_load_properties();
 }
 
 static int SelinuxAuditCallback(void* data, security_class_t /*cls*/, char* buf, size_t len) {
