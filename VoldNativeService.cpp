@@ -285,6 +285,13 @@ binder::Status VoldNativeService::onUserStopped(int32_t userId) {
     return translate(VolumeManager::Instance()->onUserStopped(userId));
 }
 
+binder::Status VoldNativeService::onSecureKeyguardStateChanged(bool isShowing) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->onSecureKeyguardStateChanged(isShowing));
+}
+
 binder::Status VoldNativeService::partition(const std::string& diskId, int32_t partitionType,
         int32_t ratio) {
     ENFORCE_UID(AID_SYSTEM);
