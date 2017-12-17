@@ -94,6 +94,8 @@ public:
     int onUserStarted(userid_t userId);
     int onUserStopped(userid_t userId);
 
+    int onSecureKeyguardStateChanged(bool isShowing);
+
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
 
     int remountUid(uid_t uid, const std::string& mode);
@@ -132,6 +134,10 @@ private:
 
     int linkPrimary(userid_t userId);
 
+    void handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk);
+    void handleDiskChanged(dev_t device);
+    void handleDiskRemoved(dev_t device);
+
     std::mutex mLock;
     std::mutex mCryptLock;
 
@@ -139,6 +145,7 @@ private:
 
     std::list<std::shared_ptr<DiskSource>> mDiskSources;
     std::list<std::shared_ptr<android::vold::Disk>> mDisks;
+    std::list<std::shared_ptr<android::vold::Disk>> mPendingDisks;
     std::list<std::shared_ptr<android::vold::VolumeBase>> mObbVolumes;
 
     std::unordered_map<userid_t, int> mAddedUsers;
@@ -150,6 +157,7 @@ private:
     std::shared_ptr<android::vold::VolumeBase> mPrimary;
 
     int mNextObbId;
+    bool mSecureKeyguardShowing;
 };
 
 #endif

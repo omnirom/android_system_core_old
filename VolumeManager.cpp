@@ -90,6 +90,9 @@ VolumeManager *VolumeManager::Instance() {
 VolumeManager::VolumeManager() {
     mDebug = false;
     mNextObbId = 0;
+    // For security reasons, assume that a secure keyguard is
+    // showing until we hear otherwise
+    mSecureKeyguardShowing = true;
 }
 
 VolumeManager::~VolumeManager() {
@@ -116,23 +119,13 @@ int VolumeManager::updateVirtualDisk() {
 
             auto disk = new android::vold::Disk("virtual", buf.st_rdev, "virtual",
                     android::vold::Disk::Flags::kAdoptable | android::vold::Disk::Flags::kSd);
-            disk->create();
             mVirtualDisk = std::shared_ptr<android::vold::Disk>(disk);
-            mDisks.push_back(mVirtualDisk);
+            handleDiskAdded(mVirtualDisk);
         }
     } else {
         if (mVirtualDisk != nullptr) {
             dev_t device = mVirtualDisk->getDevice();
-
-            auto i = mDisks.begin();
-            while (i != mDisks.end()) {
-                if ((*i)->getDevice() == device) {
-                    (*i)->destroy();
-                    i = mDisks.erase(i);
-                } else {
-                    ++i;
-                }
-            }
+            handleDiskRemoved(device);
 
             Loop::destroyByDevice(mVirtualDiskPath.c_str());
             mVirtualDisk = nullptr;
@@ -217,8 +210,7 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
 
                 auto disk = new android::vold::Disk(eventPath, device,
                         source->getNickname(), flags);
-                disk->create();
-                mDisks.push_back(std::shared_ptr<android::vold::Disk>(disk));
+                handleDiskAdded(std::shared_ptr<android::vold::Disk>(disk));
                 break;
             }
         }
@@ -226,30 +218,62 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
     }
     case NetlinkEvent::Action::kChange: {
         LOG(DEBUG) << "Disk at " << major << ":" << minor << " changed";
-        for (const auto& disk : mDisks) {
-            if (disk->getDevice() == device) {
-                disk->readMetadata();
-                disk->readPartitions();
-            }
-        }
+        handleDiskChanged(device);
         break;
     }
     case NetlinkEvent::Action::kRemove: {
-        auto i = mDisks.begin();
-        while (i != mDisks.end()) {
-            if ((*i)->getDevice() == device) {
-                (*i)->destroy();
-                i = mDisks.erase(i);
-            } else {
-                ++i;
-            }
-        }
+        handleDiskRemoved(device);
         break;
     }
     default: {
         LOG(WARNING) << "Unexpected block event action " << (int) evt->getAction();
         break;
     }
+    }
+}
+
+void VolumeManager::handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk) {
+    // For security reasons, if secure keyguard is showing, wait
+    // until the user unlocks the device to actually touch it
+    if (mSecureKeyguardShowing) {
+        LOG(INFO) << "Found disk at " << disk->getEventPath()
+                << " but delaying scan due to secure keyguard";
+        mPendingDisks.push_back(disk);
+    } else {
+        disk->create();
+        mDisks.push_back(disk);
+    }
+}
+
+void VolumeManager::handleDiskChanged(dev_t device) {
+    for (const auto& disk : mDisks) {
+        if (disk->getDevice() == device) {
+            disk->readMetadata();
+            disk->readPartitions();
+        }
+    }
+
+    // For security reasons, we ignore all pending disks, since
+    // we'll scan them once the device is unlocked
+}
+
+void VolumeManager::handleDiskRemoved(dev_t device) {
+    auto i = mDisks.begin();
+    while (i != mDisks.end()) {
+        if ((*i)->getDevice() == device) {
+            (*i)->destroy();
+            i = mDisks.erase(i);
+        } else {
+            ++i;
+        }
+    }
+    auto j = mPendingDisks.begin();
+    while (j != mPendingDisks.end()) {
+        if ((*j)->getDevice() == device) {
+            j = mPendingDisks.erase(j);
+        } else {
+            ++j;
+        }
     }
 }
 
@@ -364,6 +388,20 @@ int VolumeManager::onUserStarted(userid_t userId) {
 
 int VolumeManager::onUserStopped(userid_t userId) {
     mStartedUsers.erase(userId);
+    return 0;
+}
+
+int VolumeManager::onSecureKeyguardStateChanged(bool isShowing) {
+    mSecureKeyguardShowing = isShowing;
+    if (!mSecureKeyguardShowing) {
+        // Now that secure keyguard has been dismissed, process
+        // any pending disks
+        for (const auto& disk : mPendingDisks) {
+            disk->create();
+            mDisks.push_back(disk);
+        }
+        mPendingDisks.clear();
+    }
     return 0;
 }
 
@@ -554,6 +592,7 @@ int VolumeManager::shutdown() {
         disk->destroy();
     }
     mDisks.clear();
+    mPendingDisks.clear();
     android::vold::sSleepOnUnmount = true;
     return 0;
 }
