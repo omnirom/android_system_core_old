@@ -426,7 +426,7 @@ static int unmount_tree(const std::string& prefix) {
     mntent* mentry;
     while ((mentry = getmntent(fp)) != NULL) {
         auto test = std::string(mentry->mnt_dir) + "/";
-        if (android::base::StartsWith(test, prefix.c_str())) {
+        if (android::base::StartsWith(test, prefix)) {
             toUnmount.push_front(test);
         }
     }

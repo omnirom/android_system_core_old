@@ -52,7 +52,7 @@ static bool checkMaps(const std::string& path, const std::string& prefix) {
         std::string::size_type pos = line.find('/');
         if (pos != std::string::npos) {
             line = line.substr(pos);
-            if (android::base::StartsWith(line, prefix.c_str())) {
+            if (android::base::StartsWith(line, prefix)) {
                 LOG(WARNING) << "Found map " << path << " referencing " << line;
                 found = true;
             }
@@ -64,7 +64,7 @@ static bool checkMaps(const std::string& path, const std::string& prefix) {
 static bool checkSymlink(const std::string& path, const std::string& prefix) {
     std::string res;
     if (android::base::Readlink(path, &res)) {
-        if (android::base::StartsWith(res, prefix.c_str())) {
+        if (android::base::StartsWith(res, prefix)) {
             LOG(WARNING) << "Found symlink " << path << " referencing " << res;
             return true;
         }
