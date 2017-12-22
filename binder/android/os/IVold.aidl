@@ -94,8 +94,6 @@ interface IVold {
 
     void secdiscard(@utf8InCpp String path);
 
-    const int ENCRYPTION_FLAG_WIPE = 1;
-    const int ENCRYPTION_FLAG_IN_PLACE = 2;
     const int ENCRYPTION_FLAG_NO_UI = 4;
 
     const int ENCRYPTION_STATE_NONE = 1;

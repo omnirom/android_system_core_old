@@ -93,8 +93,7 @@ int main(int argc, char** argv) {
         checkStatus(vold->initUser0());
     } else if (args[0] == "cryptfs" && args[1] == "enablecrypto") {
         int passwordType = android::os::IVold::PASSWORD_TYPE_DEFAULT;
-        int encryptionFlags = android::os::IVold::ENCRYPTION_FLAG_IN_PLACE
-                | android::os::IVold::ENCRYPTION_FLAG_NO_UI;
+        int encryptionFlags = android::os::IVold::ENCRYPTION_FLAG_NO_UI;
         checkStatus(vold->fdeEnable(passwordType, "", encryptionFlags));
     } else if (args[0] == "cryptfs" && args[1] == "mountdefaultencrypted") {
         checkStatus(vold->mountDefaultEncrypted());

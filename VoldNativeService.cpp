@@ -554,22 +554,12 @@ static int fdeEnableInternal(int32_t passwordType, const std::string& password,
         int32_t encryptionFlags) {
     bool noUi = (encryptionFlags & VoldNativeService::ENCRYPTION_FLAG_NO_UI) != 0;
 
-    std::string how;
-    if ((encryptionFlags & VoldNativeService::ENCRYPTION_FLAG_IN_PLACE) != 0) {
-        how = "inplace";
-    } else if ((encryptionFlags & VoldNativeService::ENCRYPTION_FLAG_WIPE) != 0) {
-        how = "wipe";
-    } else {
-        LOG(ERROR) << "Missing encryption flag";
-        return -1;
-    }
-
     for (int tries = 0; tries < 2; ++tries) {
         int rc;
         if (passwordType == VoldNativeService::PASSWORD_TYPE_DEFAULT) {
-            rc = cryptfs_enable_default(how.c_str(), noUi);
+            rc = cryptfs_enable_default(noUi);
         } else {
-            rc = cryptfs_enable(how.c_str(), passwordType, password.c_str(), noUi);
+            rc = cryptfs_enable(passwordType, password.c_str(), noUi);
         }
 
         if (rc == 0) {
@@ -590,9 +580,6 @@ binder::Status VoldNativeService::fdeEnable(int32_t passwordType,
     if (e4crypt_is_native()) {
         if (passwordType != PASSWORD_TYPE_DEFAULT) {
             return error("Unexpected password type");
-        }
-        if (encryptionFlags != (ENCRYPTION_FLAG_IN_PLACE | ENCRYPTION_FLAG_NO_UI)) {
-            return error("Unexpected flags");
         }
         return translateBool(e4crypt_enable_crypto());
     }
