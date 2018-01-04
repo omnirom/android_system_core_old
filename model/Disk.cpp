@@ -455,12 +455,6 @@ status_t Disk::partitionPrivate() {
 status_t Disk::partitionMixed(int8_t ratio) {
     int res;
 
-    if (e4crypt_is_native()
-            && !android::base::GetBoolProperty("persist.sys.adoptable_fbe", false)) {
-        LOG(ERROR) << "Private volumes not yet supported on FBE devices";
-        return -EINVAL;
-    }
-
     destroyAllVolumes();
     mJustPartitioned = true;
 

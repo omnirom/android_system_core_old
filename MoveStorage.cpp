@@ -18,10 +18,11 @@
 #include "Utils.h"
 #include "VolumeManager.h"
 
-#include <android-base/stringprintf.h>
 #include <android-base/logging.h>
-#include <private/android_filesystem_config.h>
+#include <android-base/properties.h>
+#include <android-base/stringprintf.h>
 #include <hardware_legacy/power.h>
+#include <private/android_filesystem_config.h>
 
 #include <thread>
 
@@ -30,7 +31,7 @@
 
 #define CONSTRAIN(amount, low, high) ((amount) < (low) ? (low) : ((amount) > (high) ? (high) : (amount)))
 
-#define EXEC_BLOCKING 0
+static const char* kPropBlockingExec = "persist.sys.blocking_exec";
 
 using android::base::StringPrintf;
 
@@ -93,9 +94,10 @@ static status_t execRm(const std::string& path, int startProgress, int stepProgr
         return OK;
     }
 
-#if EXEC_BLOCKING
-    return ForkExecvp(cmd);
-#else
+    if (android::base::GetBoolProperty(kPropBlockingExec, false)) {
+        return ForkExecvp(cmd);
+    }
+
     pid_t pid = ForkExecvpAsync(cmd);
     if (pid == -1) return -1;
 
@@ -116,7 +118,6 @@ static status_t execRm(const std::string& path, int startProgress, int stepProgr
                 ((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress), listener);
     }
     return -1;
-#endif
 }
 
 static status_t execCp(const std::string& fromPath, const std::string& toPath, int startProgress,
@@ -144,9 +145,10 @@ static status_t execCp(const std::string& fromPath, const std::string& toPath, i
     }
     cmd.push_back(toPath.c_str());
 
-#if EXEC_BLOCKING
-    return ForkExecvp(cmd);
-#else
+    if (android::base::GetBoolProperty(kPropBlockingExec, false)) {
+        return ForkExecvp(cmd);
+    }
+
     pid_t pid = ForkExecvpAsync(cmd);
     if (pid == -1) return -1;
 
@@ -167,7 +169,6 @@ static status_t execCp(const std::string& fromPath, const std::string& toPath, i
                 ((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress), listener);
     }
     return -1;
-#endif
 }
 
 static void bringOffline(const std::shared_ptr<VolumeBase>& vol) {
