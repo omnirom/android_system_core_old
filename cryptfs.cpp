@@ -1925,73 +1925,6 @@ static int cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
     return 0;
 }
 
-static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
-{
-    const char *args[10];
-    char size_str[32]; /* Must be large enough to hold a %lld and null byte */
-    int num_args;
-    int status;
-    int tmp;
-    int rc = -1;
-
-    if (type == EXT4_FS) {
-        args[0] = "/system/bin/mke2fs";
-        args[1] = "-M";
-        args[2] = "/data";
-        args[3] = "-b";
-        args[4] = "4096";
-        args[5] = "-t";
-        args[6] = "ext4";
-        args[7] = crypto_blkdev;
-        snprintf(size_str, sizeof(size_str), "%" PRId64, size / (4096 / 512));
-        args[8] = size_str;
-        num_args = 9;
-        SLOGI("Making empty filesystem with command %s %s %s %s %s %s\n",
-              args[0], args[1], args[2], args[3], args[4], args[5]);
-    } else if (type == F2FS_FS) {
-        args[0] = "/system/bin/make_f2fs";
-        args[1] = "-f";
-        args[2] = "-d1";
-        args[3] = "-O";
-        args[4] = "encrypt";
-        args[5] = "-O";
-        args[6] = "quota";
-        args[7] = crypto_blkdev;
-        snprintf(size_str, sizeof(size_str), "%" PRId64, size);
-        args[8] = size_str;
-        num_args = 9;
-        SLOGI("Making empty filesystem with command %s %s %s %s %s %s %s %s %s\n",
-              args[0], args[1], args[2], args[3], args[4], args[5],
-              args[6], args[7], args[8]);
-    } else {
-        SLOGE("cryptfs_enable_wipe(): unknown filesystem type %d\n", type);
-        return -1;
-    }
-
-    tmp = android_fork_execvp(num_args, (char **)args, &status, false, true);
-
-    if (tmp != 0) {
-      SLOGE("Error creating empty filesystem on %s due to logwrap error\n", crypto_blkdev);
-    } else {
-        if (WIFEXITED(status)) {
-            if (WEXITSTATUS(status)) {
-                SLOGE("Error creating filesystem on %s, exit status %d ",
-                      crypto_blkdev, WEXITSTATUS(status));
-            } else {
-                SLOGD("Successfully created filesystem on %s\n", crypto_blkdev);
-                rc = 0;
-            }
-        } else {
-            SLOGE("Error creating filesystem on %s, did not exit normally\n", crypto_blkdev);
-       }
-    }
-
-    return rc;
-}
-
-#define CRYPTO_ENABLE_WIPE 1
-#define CRYPTO_ENABLE_INPLACE 2
-
 #define FRAMEWORK_BOOT_WAIT 60
 
 static int cryptfs_SHA256_fileblock(const char* filename, __le8* buf)
@@ -2020,60 +1953,31 @@ static int cryptfs_SHA256_fileblock(const char* filename, __le8* buf)
     return 0;
 }
 
-static int get_fs_type(struct fstab_rec *rec)
-{
-    if (!strcmp(rec->fs_type, "ext4")) {
-        return EXT4_FS;
-    } else if (!strcmp(rec->fs_type, "f2fs")) {
-        return F2FS_FS;
-    } else {
-        return -1;
-    }
-}
-
-static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
-                                      char *crypto_blkdev, char *real_blkdev,
-                                      int previously_encrypted_upto)
-{
+static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr* crypt_ftr, char* crypto_blkdev,
+                                      char* real_blkdev, int previously_encrypted_upto) {
     off64_t cur_encryption_done=0, tot_encryption_size=0;
     int rc = -1;
 
     /* The size of the userdata partition, and add in the vold volumes below */
     tot_encryption_size = crypt_ftr->fs_size;
 
-    if (how == CRYPTO_ENABLE_WIPE) {
-        struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab_default, DATA_MNT_POINT);
-        int fs_type = get_fs_type(rec);
-        if (fs_type < 0) {
-            SLOGE("cryptfs_enable: unsupported fs type %s\n", rec->fs_type);
-            return -1;
-        }
-        rc = cryptfs_enable_wipe(crypto_blkdev, crypt_ftr->fs_size, fs_type);
-    } else if (how == CRYPTO_ENABLE_INPLACE) {
-        rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev,
-                                    crypt_ftr->fs_size, &cur_encryption_done,
-                                    tot_encryption_size,
-                                    previously_encrypted_upto);
+    rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev, crypt_ftr->fs_size, &cur_encryption_done,
+                                tot_encryption_size, previously_encrypted_upto);
 
-        if (rc == ENABLE_INPLACE_ERR_DEV) {
-            /* Hack for b/17898962 */
-            SLOGE("cryptfs_enable: crypto block dev failure. Must reboot...\n");
-            cryptfs_reboot(RebootType::reboot);
-        }
+    if (rc == ENABLE_INPLACE_ERR_DEV) {
+        /* Hack for b/17898962 */
+        SLOGE("cryptfs_enable: crypto block dev failure. Must reboot...\n");
+        cryptfs_reboot(RebootType::reboot);
+    }
 
-        if (!rc) {
-            crypt_ftr->encrypted_upto = cur_encryption_done;
-        }
+    if (!rc) {
+        crypt_ftr->encrypted_upto = cur_encryption_done;
+    }
 
-        if (!rc && crypt_ftr->encrypted_upto == crypt_ftr->fs_size) {
-            /* The inplace routine never actually sets the progress to 100% due
-             * to the round down nature of integer division, so set it here */
-            property_set("vold.encrypt_progress", "100");
-        }
-    } else {
-        /* Shouldn't happen */
-        SLOGE("cryptfs_enable: internal error, unknown option\n");
-        rc = -1;
+    if (!rc && crypt_ftr->encrypted_upto == crypt_ftr->fs_size) {
+        /* The inplace routine never actually sets the progress to 100% due
+         * to the round down nature of integer division, so set it here */
+        property_set("vold.encrypt_progress", "100");
     }
 
     return rc;
@@ -2084,10 +1988,7 @@ static int vold_unmountAll(void) {
     return vm->unmountAll();
 }
 
-int cryptfs_enable_internal(const char *howarg, int crypt_type, const char *passwd,
-                            int no_ui)
-{
-    int how = 0;
+int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN];
     unsigned char decrypted_master_key[KEY_LEN_BYTES];
     int rc=-1, i;
@@ -2102,17 +2003,7 @@ int cryptfs_enable_internal(const char *howarg, int crypt_type, const char *pass
     bool onlyCreateHeader = false;
     int fd = -1;
 
-    if (!strcmp(howarg, "wipe")) {
-      how = CRYPTO_ENABLE_WIPE;
-    } else if (! strcmp(howarg, "inplace")) {
-      how = CRYPTO_ENABLE_INPLACE;
-    } else {
-      /* Shouldn't happen, as CommandListener vets the args */
-      goto error_unencrypted;
-    }
-
-    if (how == CRYPTO_ENABLE_INPLACE
-          && get_crypt_ftr_and_key(&crypt_ftr) == 0) {
+    if (get_crypt_ftr_and_key(&crypt_ftr) == 0) {
         if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS) {
             /* An encryption was underway and was interrupted */
             previously_encrypted_upto = crypt_ftr.encrypted_upto;
@@ -2165,7 +2056,7 @@ int cryptfs_enable_internal(const char *howarg, int crypt_type, const char *pass
     close(fd);
 
     /* If doing inplace encryption, make sure the orig fs doesn't include the crypto footer */
-    if ((how == CRYPTO_ENABLE_INPLACE) && (!strcmp(key_loc, KEY_IN_FOOTER))) {
+    if (!strcmp(key_loc, KEY_IN_FOOTER)) {
         unsigned int fs_size_sec, max_fs_size_sec;
         fs_size_sec = get_fs_size(real_blkdev);
         if (fs_size_sec == 0)
@@ -2212,7 +2103,7 @@ int cryptfs_enable_internal(const char *howarg, int crypt_type, const char *pass
     }
 
     /* Do extra work for a better UX when doing the long inplace encryption */
-    if (how == CRYPTO_ENABLE_INPLACE && !onlyCreateHeader) {
+    if (!onlyCreateHeader) {
         /* Now that /data is unmounted, we need to mount a tmpfs
          * /data, set a property saying we're doing inplace encryption,
          * and restart the framework.
@@ -2299,7 +2190,7 @@ int cryptfs_enable_internal(const char *howarg, int crypt_type, const char *pass
         cryptfs_reboot(RebootType::reboot);
     }
 
-    if (how == CRYPTO_ENABLE_INPLACE && (!no_ui || rebootEncryption)) {
+    if (!no_ui || rebootEncryption) {
         /* startup service classes main and late_start */
         property_set("vold.decrypt", "trigger_restart_min_framework");
         SLOGD("Just triggered restart_min_framework\n");
@@ -2329,14 +2220,12 @@ int cryptfs_enable_internal(const char *howarg, int crypt_type, const char *pass
     }
 
     if (!rc) {
-        rc = cryptfs_enable_all_volumes(&crypt_ftr, how,
-                                        crypto_blkdev, real_blkdev,
+        rc = cryptfs_enable_all_volumes(&crypt_ftr, crypto_blkdev, real_blkdev,
                                         previously_encrypted_upto);
     }
 
     /* Calculate checksum if we are not finished */
-    if (!rc && how == CRYPTO_ENABLE_INPLACE
-            && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
+    if (!rc && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
         rc = cryptfs_SHA256_fileblock(crypto_blkdev,
                                       crypt_ftr.hash_first_block);
         if (rc) {
@@ -2352,8 +2241,7 @@ int cryptfs_enable_internal(const char *howarg, int crypt_type, const char *pass
         /* Success */
         crypt_ftr.flags &= ~CRYPT_INCONSISTENT_STATE;
 
-        if (how == CRYPTO_ENABLE_INPLACE
-              && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
+        if (crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
             SLOGD("Encrypted up to sector %lld - will continue after reboot",
                   crypt_ftr.encrypted_upto);
             crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
@@ -2361,30 +2249,29 @@ int cryptfs_enable_internal(const char *howarg, int crypt_type, const char *pass
 
         put_crypt_ftr_and_key(&crypt_ftr);
 
-        if (how == CRYPTO_ENABLE_WIPE
-              || crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
-          char value[PROPERTY_VALUE_MAX];
-          property_get("ro.crypto.state", value, "");
-          if (!strcmp(value, "")) {
-            /* default encryption - continue first boot sequence */
-            property_set("ro.crypto.state", "encrypted");
-            property_set("ro.crypto.type", "block");
-            release_wake_lock(lockid);
-            if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
-                // Bring up cryptkeeper that will check the password and set it
-                property_set("vold.decrypt", "trigger_shutdown_framework");
-                sleep(2);
-                property_set("vold.encrypt_progress", "");
-                cryptfs_trigger_restart_min_framework();
+        if (crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
+            char value[PROPERTY_VALUE_MAX];
+            property_get("ro.crypto.state", value, "");
+            if (!strcmp(value, "")) {
+                /* default encryption - continue first boot sequence */
+                property_set("ro.crypto.state", "encrypted");
+                property_set("ro.crypto.type", "block");
+                release_wake_lock(lockid);
+                if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
+                    // Bring up cryptkeeper that will check the password and set it
+                    property_set("vold.decrypt", "trigger_shutdown_framework");
+                    sleep(2);
+                    property_set("vold.encrypt_progress", "");
+                    cryptfs_trigger_restart_min_framework();
+                } else {
+                    cryptfs_check_passwd(DEFAULT_PASSWORD);
+                    cryptfs_restart_internal(1);
+                }
+                return 0;
             } else {
-                cryptfs_check_passwd(DEFAULT_PASSWORD);
-                cryptfs_restart_internal(1);
+                sleep(2); /* Give the UI a chance to show 100% progress */
+                cryptfs_reboot(RebootType::reboot);
             }
-            return 0;
-          } else {
-            sleep(2); /* Give the UI a chance to show 100% progress */
-            cryptfs_reboot(RebootType::reboot);
-          }
         } else {
             sleep(2); /* Partially encrypted, ensure writes flushed to ssd */
             cryptfs_reboot(RebootType::shutdown);
@@ -2443,15 +2330,12 @@ error_shutting_down:
     return -1;
 }
 
-int cryptfs_enable(const char *howarg, int type, const char *passwd, int no_ui)
-{
-    return cryptfs_enable_internal(howarg, type, passwd, no_ui);
+int cryptfs_enable(int type, const char* passwd, int no_ui) {
+    return cryptfs_enable_internal(type, passwd, no_ui);
 }
 
-int cryptfs_enable_default(const char *howarg, int no_ui)
-{
-    return cryptfs_enable_internal(howarg, CRYPT_TYPE_DEFAULT,
-                          DEFAULT_PASSWORD, no_ui);
+int cryptfs_enable_default(int no_ui) {
+    return cryptfs_enable_internal(CRYPT_TYPE_DEFAULT, DEFAULT_PASSWORD, no_ui);
 }
 
 int cryptfs_changepw(int crypt_type, const char *newpw)
