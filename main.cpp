@@ -41,7 +41,8 @@
 #include <dirent.h>
 #include <fs_mgr.h>
 
-static int process_config(VolumeManager *vm, bool* has_adoptable, bool* has_quota);
+static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quota,
+                          bool* has_reserved);
 static void coldboot(const char *path);
 static void parse_args(int argc, char** argv);
 
@@ -99,8 +100,9 @@ int main(int argc, char** argv) {
 
     bool has_adoptable;
     bool has_quota;
+    bool has_reserved;
 
-    if (process_config(vm, &has_adoptable, &has_quota)) {
+    if (process_config(vm, &has_adoptable, &has_quota, &has_reserved)) {
         PLOG(ERROR) << "Error reading configuration... continuing anyways";
     }
 
@@ -122,6 +124,7 @@ int main(int argc, char** argv) {
     // a deadlock between vold and init (see b/34278978 for details)
     android::base::SetProperty("vold.has_adoptable", has_adoptable ? "1" : "0");
     android::base::SetProperty("vold.has_quota", has_quota ? "1" : "0");
+    android::base::SetProperty("vold.has_reserved", has_reserved ? "1" : "0");
 
     // Do coldboot here so it won't block booting,
     // also the cold boot is needed in case we have flash drive
@@ -204,7 +207,8 @@ static void coldboot(const char *path) {
     }
 }
 
-static int process_config(VolumeManager *vm, bool* has_adoptable, bool* has_quota) {
+static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quota,
+                          bool* has_reserved) {
     ATRACE_NAME("process_config");
 
     fstab_default = fs_mgr_read_fstab_default();
@@ -216,10 +220,14 @@ static int process_config(VolumeManager *vm, bool* has_adoptable, bool* has_quot
     /* Loop through entries looking for ones that vold manages */
     *has_adoptable = false;
     *has_quota = false;
+    *has_reserved = false;
     for (int i = 0; i < fstab_default->num_entries; i++) {
         auto rec = &fstab_default->recs[i];
         if (fs_mgr_is_quota(rec)) {
             *has_quota = true;
+        }
+        if (rec->reserved_size > 0) {
+            *has_reserved = true;
         }
 
         if (fs_mgr_is_voldmanaged(rec)) {
