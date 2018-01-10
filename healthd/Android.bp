@@ -24,6 +24,14 @@ cc_library_static {
     ],
     header_libs: ["libhealthd_headers"],
     export_header_lib_headers: ["libhealthd_headers"],
+
+    product_variables: {
+        omnirom: {
+            healthd_enable_op_fastchg: {
+                cflags: ["-DHEALTHD_ENABLE_OP_FASTCHG_CHECK"],
+            },
+        },
+    },
 }
 
 cc_defaults {
