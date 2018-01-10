@@ -59,6 +59,10 @@ class BatteryMonitor {
     PowerSupplyType readPowerSupplyType(const String8& path);
     bool getBooleanField(const String8& path);
     int getIntField(const String8& path);
+#ifdef HEALTHD_ENABLE_OP_FASTCHG_CHECK
+    bool isOpFastCharge();
+    int getOpFastCurrent(int ChargingCurrent);
+#endif
 };
 
 }; // namespace android

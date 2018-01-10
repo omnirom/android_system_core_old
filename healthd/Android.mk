@@ -3,6 +3,11 @@
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
+
+ifeq ($(strip $(HEALTHD_ENABLE_OP_FASTCHG_CHECK)),true)
+LOCAL_CFLAGS += -DHEALTHD_ENABLE_OP_FASTCHG_CHECK
+endif
+
 LOCAL_SRC_FILES := BatteryMonitor.cpp
 LOCAL_MODULE := libbatterymonitor
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/include
