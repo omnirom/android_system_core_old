@@ -34,9 +34,6 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
-/* From a would-be kernel header */
-#define FIDTRIM         _IOWR('f', 128, struct fstrim_range)    /* Deep discard trim */
-
 #define BENCHMARK_ENABLED 1
 
 using android::base::StringPrintf;
@@ -127,7 +124,7 @@ void TrimTask::run() {
         range.len = ULLONG_MAX;
 
         nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
-        if (ioctl(fd, (mFlags & Flags::kDeepTrim) ? FIDTRIM : FITRIM, &range)) {
+        if (ioctl(fd, FITRIM, &range)) {
             PLOG(WARNING) << "Trim failed on " << path;
             notifyResult(path, -1, -1);
         } else {
