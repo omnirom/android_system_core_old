@@ -96,6 +96,8 @@ extern "C" {
 #define RETRY_MOUNT_ATTEMPTS 10
 #define RETRY_MOUNT_DELAY_SECONDS 1
 
+#define CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE (1)
+
 static int put_crypt_ftr_and_key(struct crypt_mnt_ftr* crypt_ftr);
 
 static unsigned char saved_master_key[KEY_LEN_BYTES];
@@ -864,6 +866,7 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
   convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
 
   buff_offset = crypt_params - buffer;
+  SLOGI("Extra parameters for dm_crypt: %s\n", extra_params);
   snprintf(crypt_params, sizeof(buffer) - buff_offset, "%s %s 0 %s 0 %s",
            crypt_ftr->crypto_type_name, master_key_ascii, real_blk_name,
            extra_params);
@@ -919,71 +922,80 @@ static int get_dm_crypt_version(int fd, const char *name,  int *version)
     return -1;
 }
 
-static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr,
-        const unsigned char *master_key, const char *real_blk_name,
-        char *crypto_blk_name, const char *name) {
-  char buffer[DM_CRYPT_BUF_SIZE];
-  struct dm_ioctl *io;
-  unsigned int minor;
-  int fd=0;
-  int err;
-  int retval = -1;
-  int version[3];
-  const char *extra_params;
-  int load_count;
+static std::string extra_params_as_string(const std::vector<std::string>& extra_params_vec) {
+    if (extra_params_vec.empty()) return "";
+    std::string extra_params = std::to_string(extra_params_vec.size());
+    for (const auto& p : extra_params_vec) {
+        extra_params.append(" ");
+        extra_params.append(p);
+    }
+    return extra_params;
+}
 
-  if ((fd = open("/dev/device-mapper", O_RDWR|O_CLOEXEC)) < 0 ) {
-    SLOGE("Cannot open device-mapper\n");
-    goto errout;
-  }
+static int create_crypto_blk_dev(struct crypt_mnt_ftr* crypt_ftr, const unsigned char* master_key,
+                                 const char* real_blk_name, char* crypto_blk_name, const char* name,
+                                 uint32_t flags) {
+    char buffer[DM_CRYPT_BUF_SIZE];
+    struct dm_ioctl* io;
+    unsigned int minor;
+    int fd = 0;
+    int err;
+    int retval = -1;
+    int version[3];
+    int load_count;
+    std::vector<std::string> extra_params_vec;
 
-  io = (struct dm_ioctl *) buffer;
+    if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
+        SLOGE("Cannot open device-mapper\n");
+        goto errout;
+    }
 
-  ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
-  err = ioctl(fd, DM_DEV_CREATE, io);
-  if (err) {
-    SLOGE("Cannot create dm-crypt device %s: %s\n", name, strerror(errno));
-    goto errout;
-  }
+    io = (struct dm_ioctl*)buffer;
 
-  /* Get the device status, in particular, the name of it's device file */
-  ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
-  if (ioctl(fd, DM_DEV_STATUS, io)) {
-    SLOGE("Cannot retrieve dm-crypt device status\n");
-    goto errout;
-  }
-  minor = (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00);
-  snprintf(crypto_blk_name, MAXPATHLEN, "/dev/block/dm-%u", minor);
+    ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
+    err = ioctl(fd, DM_DEV_CREATE, io);
+    if (err) {
+        SLOGE("Cannot create dm-crypt device %s: %s\n", name, strerror(errno));
+        goto errout;
+    }
 
-  extra_params = "";
-  if (! get_dm_crypt_version(fd, name, version)) {
-      /* Support for allow_discards was added in version 1.11.0 */
-      if ((version[0] >= 2) ||
-          ((version[0] == 1) && (version[1] >= 11))) {
-          extra_params = "1 allow_discards";
-          SLOGI("Enabling support for allow_discards in dmcrypt.\n");
-      }
-  }
+    /* Get the device status, in particular, the name of it's device file */
+    ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
+    if (ioctl(fd, DM_DEV_STATUS, io)) {
+        SLOGE("Cannot retrieve dm-crypt device status\n");
+        goto errout;
+    }
+    minor = (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00);
+    snprintf(crypto_blk_name, MAXPATHLEN, "/dev/block/dm-%u", minor);
 
-  load_count = load_crypto_mapping_table(crypt_ftr, master_key, real_blk_name, name,
-                                         fd, extra_params);
-  if (load_count < 0) {
-      SLOGE("Cannot load dm-crypt mapping table.\n");
-      goto errout;
-  } else if (load_count > 1) {
-      SLOGI("Took %d tries to load dmcrypt table.\n", load_count);
-  }
+    if (!get_dm_crypt_version(fd, name, version)) {
+        /* Support for allow_discards was added in version 1.11.0 */
+        if ((version[0] >= 2) || ((version[0] == 1) && (version[1] >= 11))) {
+            extra_params_vec.emplace_back("allow_discards");
+        }
+    }
+    if (flags & CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE) {
+        extra_params_vec.emplace_back("allow_encrypt_override");
+    }
+    load_count = load_crypto_mapping_table(crypt_ftr, master_key, real_blk_name, name, fd,
+                                           extra_params_as_string(extra_params_vec).c_str());
+    if (load_count < 0) {
+        SLOGE("Cannot load dm-crypt mapping table.\n");
+        goto errout;
+    } else if (load_count > 1) {
+        SLOGI("Took %d tries to load dmcrypt table.\n", load_count);
+    }
 
-  /* Resume this device to activate it */
-  ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
+    /* Resume this device to activate it */
+    ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
 
-  if (ioctl(fd, DM_DEV_SUSPEND, io)) {
-    SLOGE("Cannot resume the dm-crypt device\n");
-    goto errout;
-  }
+    if (ioctl(fd, DM_DEV_SUSPEND, io)) {
+        SLOGE("Cannot resume the dm-crypt device\n");
+        goto errout;
+    }
 
-  /* We made it here with no errors.  Woot! */
-  retval = 0;
+    /* We made it here with no errors.  Woot! */
+    retval = 0;
 
 errout:
   close(fd);   /* If fd is <0 from a failed open call, it's safe to just ignore the close error */
@@ -1612,11 +1624,10 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
   // Create crypto block device - all (non fatal) code paths
   // need it
-  if (create_crypto_blk_dev(crypt_ftr, decrypted_master_key,
-                            real_blkdev, crypto_blkdev, label)) {
-     SLOGE("Error creating decrypted block device\n");
-     rc = -1;
-     goto errout;
+  if (create_crypto_blk_dev(crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev, label, 0)) {
+      SLOGE("Error creating decrypted block device\n");
+      rc = -1;
+      goto errout;
   }
 
   /* Work out if the problem is the password or the data */
@@ -1744,8 +1755,9 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
     strlcpy((char*) ext_crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256",
             MAX_CRYPTO_TYPE_NAME_LEN);
 
-    return create_crypto_blk_dev(&ext_crypt_ftr, key, real_blkdev,
-            out_crypto_blkdev, label);
+    return create_crypto_blk_dev(
+        &ext_crypt_ftr, key, real_blkdev, out_crypto_blkdev, label,
+        e4crypt_is_native() ? CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE : 0);
 }
 
 /*
@@ -2204,7 +2216,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
 
     decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr, 0, 0);
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
-                          CRYPTO_BLOCK_DEVICE);
+                          CRYPTO_BLOCK_DEVICE, 0);
 
     /* If we are continuing, check checksums match */
     rc = 0;
