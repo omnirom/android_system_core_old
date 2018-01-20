@@ -23,8 +23,8 @@
 #include <string>
 #include <utility>
 
-#include <android/hardware/keymaster/3.0/IKeymasterDevice.h>
 #include <android-base/macros.h>
+#include <android/hardware/keymaster/3.0/IKeymasterDevice.h>
 
 #include "authorization_set.h"
 
@@ -56,7 +56,7 @@ class KeymasterOperation {
     bool updateCompletely(TI& input, TO* output) {
         if (output) output->clear();
         return updateCompletely(input.data(), input.size(), [&](const char* b, size_t n) {
-            if (output) std::copy(b, b+n, std::back_inserter(*output));
+            if (output) std::copy(b, b + n, std::back_inserter(*output));
         });
     }
 
@@ -69,11 +69,9 @@ class KeymasterOperation {
         mError = std::move(rhs.mError);
     }
     // Construct an object in an error state for error returns
-    KeymasterOperation()
-        : mDevice{nullptr}, mOpHandle{0},
-          mError {ErrorCode::UNKNOWN_ERROR} {}
+    KeymasterOperation() : mDevice{nullptr}, mOpHandle{0}, mError{ErrorCode::UNKNOWN_ERROR} {}
     // Move Assignment
-    KeymasterOperation& operator= (KeymasterOperation&& rhs) {
+    KeymasterOperation& operator=(KeymasterOperation&& rhs) {
         mDevice = std::move(rhs.mDevice);
         mOpHandle = std::move(rhs.mOpHandle);
         mError = std::move(rhs.mError);
@@ -84,10 +82,8 @@ class KeymasterOperation {
 
   private:
     KeymasterOperation(const sp<IKeymasterDevice>& d, uint64_t h)
-        : mDevice{d}, mOpHandle{h}, mError {ErrorCode::OK} {}
-    KeymasterOperation(ErrorCode error)
-        : mDevice{nullptr}, mOpHandle{0},
-          mError {error} {}
+        : mDevice{d}, mOpHandle{h}, mError{ErrorCode::OK} {}
+    KeymasterOperation(ErrorCode error) : mDevice{nullptr}, mOpHandle{0}, mError{error} {}
 
     bool updateCompletely(const char* input, size_t inputLen,
                           const std::function<void(const char*, size_t)> consumer);
@@ -146,12 +142,9 @@ enum class KeymasterSignResult {
 };
 
 int keymaster_compatibility_cryptfs_scrypt();
-int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size,
-                                            uint64_t rsa_exponent,
-                                            uint32_t ratelimit,
-                                            uint8_t* key_buffer,
-                                            uint32_t key_buffer_size,
-                                            uint32_t* key_out_size);
+int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size, uint64_t rsa_exponent,
+                                            uint32_t ratelimit, uint8_t* key_buffer,
+                                            uint32_t key_buffer_size, uint32_t* key_out_size);
 
 int keymaster_upgrade_key_for_cryptfs_scrypt(uint32_t rsa_key_size, uint64_t rsa_exponent,
                                              uint32_t ratelimit, const uint8_t* key_blob,
@@ -161,6 +154,5 @@ int keymaster_upgrade_key_for_cryptfs_scrypt(uint32_t rsa_key_size, uint64_t rsa
 KeymasterSignResult keymaster_sign_object_for_cryptfs_scrypt(
     const uint8_t* key_blob, size_t key_blob_size, uint32_t ratelimit, const uint8_t* object,
     const size_t object_size, uint8_t** signature_buffer, size_t* signature_buffer_size);
-
 
 #endif

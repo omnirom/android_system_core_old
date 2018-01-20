@@ -33,12 +33,12 @@ KeymasterOperation::~KeymasterOperation() {
 }
 
 bool KeymasterOperation::updateCompletely(const char* input, size_t inputLen,
-        const std::function<void(const char*, size_t)> consumer) {
+                                          const std::function<void(const char*, size_t)> consumer) {
     uint32_t inputConsumed = 0;
 
     ErrorCode km_error;
-    auto hidlCB = [&] (ErrorCode ret, uint32_t inputConsumedDelta,
-            const hidl_vec<KeyParameter>& /*ignored*/, const hidl_vec<uint8_t>& _output) {
+    auto hidlCB = [&](ErrorCode ret, uint32_t inputConsumedDelta,
+                      const hidl_vec<KeyParameter>& /*ignored*/, const hidl_vec<uint8_t>& _output) {
         km_error = ret;
         if (km_error != ErrorCode::OK) return;
         inputConsumed += inputConsumedDelta;
@@ -48,7 +48,7 @@ bool KeymasterOperation::updateCompletely(const char* input, size_t inputLen,
     while (inputConsumed != inputLen) {
         size_t toRead = static_cast<size_t>(inputLen - inputConsumed);
         auto inputBlob =
-                blob2hidlVec(reinterpret_cast<const uint8_t*>(&input[inputConsumed]), toRead);
+            blob2hidlVec(reinterpret_cast<const uint8_t*>(&input[inputConsumed]), toRead);
         auto error = mDevice->update(mOpHandle, hidl_vec<KeyParameter>(), inputBlob, hidlCB);
         if (!error.isOk()) {
             LOG(ERROR) << "update failed: " << error.description();
@@ -71,15 +71,14 @@ bool KeymasterOperation::updateCompletely(const char* input, size_t inputLen,
 
 bool KeymasterOperation::finish(std::string* output) {
     ErrorCode km_error;
-    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<KeyParameter>& /*ignored*/,
-            const hidl_vec<uint8_t>& _output) {
+    auto hidlCb = [&](ErrorCode ret, const hidl_vec<KeyParameter>& /*ignored*/,
+                      const hidl_vec<uint8_t>& _output) {
         km_error = ret;
         if (km_error != ErrorCode::OK) return;
-        if (output)
-            output->assign(reinterpret_cast<const char*>(&_output[0]), _output.size());
+        if (output) output->assign(reinterpret_cast<const char*>(&_output[0]), _output.size());
     };
     auto error = mDevice->finish(mOpHandle, hidl_vec<KeyParameter>(), hidl_vec<uint8_t>(),
-            hidl_vec<uint8_t>(), hidlCb);
+                                 hidl_vec<uint8_t>(), hidlCb);
     mDevice = nullptr;
     if (!error.isOk()) {
         LOG(ERROR) << "finish failed: " << error.description();
@@ -98,12 +97,11 @@ Keymaster::Keymaster() {
 
 bool Keymaster::generateKey(const AuthorizationSet& inParams, std::string* key) {
     ErrorCode km_error;
-    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<uint8_t>& keyBlob,
-            const KeyCharacteristics& /*ignored*/) {
+    auto hidlCb = [&](ErrorCode ret, const hidl_vec<uint8_t>& keyBlob,
+                      const KeyCharacteristics& /*ignored*/) {
         km_error = ret;
         if (km_error != ErrorCode::OK) return;
-        if (key)
-            key->assign(reinterpret_cast<const char*>(&keyBlob[0]), keyBlob.size());
+        if (key) key->assign(reinterpret_cast<const char*>(&keyBlob[0]), keyBlob.size());
     };
 
     auto error = mDevice->generateKey(inParams.hidl_data(), hidlCb);
@@ -136,12 +134,12 @@ bool Keymaster::upgradeKey(const std::string& oldKey, const AuthorizationSet& in
                            std::string* newKey) {
     auto oldKeyBlob = blob2hidlVec(oldKey);
     ErrorCode km_error;
-    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<uint8_t>& upgradedKeyBlob) {
+    auto hidlCb = [&](ErrorCode ret, const hidl_vec<uint8_t>& upgradedKeyBlob) {
         km_error = ret;
         if (km_error != ErrorCode::OK) return;
         if (newKey)
             newKey->assign(reinterpret_cast<const char*>(&upgradedKeyBlob[0]),
-                    upgradedKeyBlob.size());
+                           upgradedKeyBlob.size());
     };
     auto error = mDevice->upgradeKey(oldKeyBlob, inParams.hidl_data(), hidlCb);
     if (!error.isOk()) {
@@ -156,18 +154,16 @@ bool Keymaster::upgradeKey(const std::string& oldKey, const AuthorizationSet& in
 }
 
 KeymasterOperation Keymaster::begin(KeyPurpose purpose, const std::string& key,
-                                    const AuthorizationSet& inParams,
-                                    AuthorizationSet* outParams) {
+                                    const AuthorizationSet& inParams, AuthorizationSet* outParams) {
     auto keyBlob = blob2hidlVec(key);
     uint64_t mOpHandle;
     ErrorCode km_error;
 
-    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<KeyParameter>& _outParams,
-            uint64_t operationHandle) {
+    auto hidlCb = [&](ErrorCode ret, const hidl_vec<KeyParameter>& _outParams,
+                      uint64_t operationHandle) {
         km_error = ret;
         if (km_error != ErrorCode::OK) return;
-        if (outParams)
-            *outParams = _outParams;
+        if (outParams) *outParams = _outParams;
         mOpHandle = operationHandle;
     };
 
@@ -184,9 +180,9 @@ KeymasterOperation Keymaster::begin(KeyPurpose purpose, const std::string& key,
 }
 bool Keymaster::isSecure() {
     bool _isSecure = false;
-    auto rc = mDevice->getHardwareFeatures(
-            [&] (bool isSecure, bool, bool, bool, bool, const hidl_string&, const hidl_string&) {
-                _isSecure = isSecure; });
+    auto rc =
+        mDevice->getHardwareFeatures([&](bool isSecure, bool, bool, bool, bool, const hidl_string&,
+                                         const hidl_string&) { _isSecure = isSecure; });
     return rc.isOk() && _isSecure;
 }
 
@@ -298,7 +294,8 @@ KeymasterSignResult keymaster_sign_object_for_cryptfs_scrypt(
         if (op.errorCode() == ErrorCode::KEY_RATE_LIMIT_EXCEEDED) {
             sleep(ratelimit);
             continue;
-        } else break;
+        } else
+            break;
     }
 
     if (op.errorCode() == ErrorCode::KEY_REQUIRES_UPGRADE) {
@@ -318,7 +315,8 @@ KeymasterSignResult keymaster_sign_object_for_cryptfs_scrypt(
     }
 
     if (!op.finish(&output)) {
-        LOG(ERROR) << "Error finalizing keymaster signature transaction: " << int32_t(op.errorCode());
+        LOG(ERROR) << "Error finalizing keymaster signature transaction: "
+                   << int32_t(op.errorCode());
         return KeymasterSignResult::error;
     }
 
