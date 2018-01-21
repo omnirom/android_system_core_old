@@ -115,6 +115,7 @@ cc_library_static {
         "VolumeManager.cpp",
         "authorization_set.cpp",
         "cryptfs.cpp",
+        "fs/Exfat.cpp",
         "fs/Ext4.cpp",
         "fs/F2fs.cpp",
         "fs/Vfat.cpp",

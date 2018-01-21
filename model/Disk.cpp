@@ -364,12 +364,13 @@ status_t Disk::readPartitions() {
                 }
 
                 switch (type) {
-                case 0x06: // FAT16
-                case 0x0b: // W95 FAT32 (LBA)
-                case 0x0c: // W95 FAT32 (LBA)
-                case 0x0e: // W95 FAT16 (LBA)
-                    createPublicVolume(partDevice);
-                    break;
+                    case 0x06:  // FAT16
+                    case 0x07:  // HPFS/NTFS/exFAT
+                    case 0x0b:  // W95 FAT32 (LBA)
+                    case 0x0c:  // W95 FAT32 (LBA)
+                    case 0x0e:  // W95 FAT16 (LBA)
+                        createPublicVolume(partDevice);
+                        break;
                 }
             } else if (table == Table::kGpt) {
                 if (++it == split.end()) continue;
