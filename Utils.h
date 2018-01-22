@@ -107,6 +107,8 @@ std::string BuildDataMiscLegacyPath(userid_t userid);
 std::string BuildDataMiscCePath(userid_t userid);
 std::string BuildDataMiscDePath(userid_t userid);
 std::string BuildDataProfilesDePath(userid_t userid);
+std::string BuildDataVendorCePath(userid_t userid);
+std::string BuildDataVendorDePath(userid_t userid);
 
 std::string BuildDataPath(const std::string& volumeUuid);
 std::string BuildDataMediaCePath(const std::string& volumeUuid, userid_t userid);

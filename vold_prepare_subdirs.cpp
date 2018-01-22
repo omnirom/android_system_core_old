@@ -38,6 +38,8 @@
 #include "Utils.h"
 #include "android/os/IVold.h"
 
+#include <private/android_filesystem_config.h>
+
 static void usage(const char* progname) {
     std::cerr << "Usage: " << progname << " [ prepare | destroy ] <volume_uuid> <user_id> <flags>"
               << std::endl;
@@ -125,6 +127,11 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/vold")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/storaged")) return false;
+
+            auto vendor_de_path = android::vold::BuildDataVendorDePath(user_id);
+            if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM, vendor_de_path + "/fpdata")) {
+                return false;
+            }
         }
         if (flags & android::os::IVold::STORAGE_FLAG_CE) {
             auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
@@ -141,10 +148,16 @@ static bool destroy_subdirs(const std::string& volume_uuid, int user_id, int fla
         if (flags & android::os::IVold::STORAGE_FLAG_CE) {
             auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
             res &= rmrf_contents(misc_ce_path);
+
+            auto vendor_ce_path = android::vold::BuildDataVendorCePath(user_id);
+            res &= rmrf_contents(vendor_ce_path);
         }
         if (flags & android::os::IVold::STORAGE_FLAG_DE) {
             auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
             res &= rmrf_contents(misc_de_path);
+
+            auto vendor_de_path = android::vold::BuildDataVendorDePath(user_id);
+            res &= rmrf_contents(vendor_de_path);
         }
     }
     return res;
