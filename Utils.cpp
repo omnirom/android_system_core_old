@@ -635,6 +635,14 @@ std::string BuildDataProfilesDePath(userid_t userId) {
     return StringPrintf("%s/misc/profiles/cur/%u", BuildDataPath("").c_str(), userId);
 }
 
+std::string BuildDataVendorCePath(userid_t userId) {
+    return StringPrintf("%s/vendor_ce/%u", BuildDataPath("").c_str(), userId);
+}
+
+std::string BuildDataVendorDePath(userid_t userId) {
+    return StringPrintf("%s/vendor_de/%u", BuildDataPath("").c_str(), userId);
+}
+
 std::string BuildDataPath(const std::string& volumeUuid) {
     // TODO: unify with installd path generation logic
     if (volumeUuid.empty()) {
