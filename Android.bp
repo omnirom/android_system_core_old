@@ -38,6 +38,7 @@ cc_defaults {
     ],
     shared_libs: [
         "android.hardware.keymaster@3.0",
+        "android.hardware.keymaster@4.0",
         "libbase",
         "libbinder",
         "libcrypto",
@@ -50,6 +51,7 @@ cc_defaults {
         "libhardware_legacy",
         "libhidlbase",
         "libhwbinder",
+        "libkeymaster4support",
         "libkeyutils",
         "liblog",
         "liblogwrap",
@@ -113,7 +115,6 @@ cc_library_static {
         "VoldNativeService.cpp",
         "VoldUtil.cpp",
         "VolumeManager.cpp",
-        "authorization_set.cpp",
         "cryptfs.cpp",
         "fs/Exfat.cpp",
         "fs/Ext4.cpp",

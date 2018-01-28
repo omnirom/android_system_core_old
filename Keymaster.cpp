@@ -17,45 +17,48 @@
 #include "Keymaster.h"
 
 #include <android-base/logging.h>
-
-#include "authorization_set.h"
-#include "keymaster_tags.h"
-#include "keystore_hidl_support.h"
-
-using namespace ::keystore;
-using android::hardware::hidl_string;
+#include <keymasterV4_0/authorization_set.h>
+#include <keymasterV4_0/keymaster_utils.h>
 
 namespace android {
 namespace vold {
 
+using ::android::hardware::hidl_string;
+using ::android::hardware::hidl_vec;
+
 KeymasterOperation::~KeymasterOperation() {
-    if (mDevice.get()) mDevice->abort(mOpHandle);
+    if (mDevice) mDevice->abort(mOpHandle);
 }
 
 bool KeymasterOperation::updateCompletely(const char* input, size_t inputLen,
-        const std::function<void(const char*, size_t)> consumer) {
+                                          const std::function<void(const char*, size_t)> consumer) {
     uint32_t inputConsumed = 0;
 
-    ErrorCode km_error;
-    auto hidlCB = [&] (ErrorCode ret, uint32_t inputConsumedDelta,
-            const hidl_vec<KeyParameter>& /*ignored*/, const hidl_vec<uint8_t>& _output) {
+    km::ErrorCode km_error;
+    auto hidlCB = [&](km::ErrorCode ret, uint32_t inputConsumedDelta,
+                      const hidl_vec<km::KeyParameter>& /*ignored*/,
+                      const hidl_vec<uint8_t>& _output) {
         km_error = ret;
-        if (km_error != ErrorCode::OK) return;
+        if (km_error != km::ErrorCode::OK) return;
         inputConsumed += inputConsumedDelta;
         consumer(reinterpret_cast<const char*>(&_output[0]), _output.size());
     };
 
     while (inputConsumed != inputLen) {
         size_t toRead = static_cast<size_t>(inputLen - inputConsumed);
-        auto inputBlob =
-                blob2hidlVec(reinterpret_cast<const uint8_t*>(&input[inputConsumed]), toRead);
-        auto error = mDevice->update(mOpHandle, hidl_vec<KeyParameter>(), inputBlob, hidlCB);
+        auto inputBlob = km::support::blob2hidlVec(
+            reinterpret_cast<const uint8_t*>(&input[inputConsumed]), toRead);
+        // TODO(swillden): Need to handle getting a VerificationToken from the TEE if mDevice is
+        // StrongBox, so we can provide it here.  The VerificationToken will need to be
+        // requested/retrieved during Keymaster::begin().
+        auto error = mDevice->update(mOpHandle, hidl_vec<km::KeyParameter>(), inputBlob,
+                                     km::HardwareAuthToken(), km::VerificationToken(), hidlCB);
         if (!error.isOk()) {
             LOG(ERROR) << "update failed: " << error.description();
             mDevice = nullptr;
             return false;
         }
-        if (km_error != ErrorCode::OK) {
+        if (km_error != km::ErrorCode::OK) {
             LOG(ERROR) << "update failed, code " << int32_t(km_error);
             mDevice = nullptr;
             return false;
@@ -70,22 +73,22 @@ bool KeymasterOperation::updateCompletely(const char* input, size_t inputLen,
 }
 
 bool KeymasterOperation::finish(std::string* output) {
-    ErrorCode km_error;
-    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<KeyParameter>& /*ignored*/,
-            const hidl_vec<uint8_t>& _output) {
+    km::ErrorCode km_error;
+    auto hidlCb = [&](km::ErrorCode ret, const hidl_vec<km::KeyParameter>& /*ignored*/,
+                      const hidl_vec<uint8_t>& _output) {
         km_error = ret;
-        if (km_error != ErrorCode::OK) return;
-        if (output)
-            output->assign(reinterpret_cast<const char*>(&_output[0]), _output.size());
+        if (km_error != km::ErrorCode::OK) return;
+        if (output) output->assign(reinterpret_cast<const char*>(&_output[0]), _output.size());
     };
-    auto error = mDevice->finish(mOpHandle, hidl_vec<KeyParameter>(), hidl_vec<uint8_t>(),
-            hidl_vec<uint8_t>(), hidlCb);
+    auto error = mDevice->finish(mOpHandle, hidl_vec<km::KeyParameter>(), hidl_vec<uint8_t>(),
+                                 hidl_vec<uint8_t>(), km::HardwareAuthToken(),
+                                 km::VerificationToken(), hidlCb);
     mDevice = nullptr;
     if (!error.isOk()) {
         LOG(ERROR) << "finish failed: " << error.description();
         return false;
     }
-    if (km_error != ErrorCode::OK) {
+    if (km_error != km::ErrorCode::OK) {
         LOG(ERROR) << "finish failed, code " << int32_t(km_error);
         return false;
     }
@@ -93,17 +96,22 @@ bool KeymasterOperation::finish(std::string* output) {
 }
 
 Keymaster::Keymaster() {
-    mDevice = ::android::hardware::keymaster::V3_0::IKeymasterDevice::getService();
+    auto devices = KmDevice::enumerateAvailableDevices();
+    if (devices.empty()) return;
+    mDevice = std::move(devices[0]);
+    auto& version = mDevice->halVersion();
+    LOG(INFO) << "Using " << version.keymasterName << " from " << version.authorName
+              << " for encryption.  Security level: " << toString(version.securityLevel)
+              << ", HAL: " << mDevice->descriptor() << "/" << mDevice->instanceName();
 }
 
-bool Keymaster::generateKey(const AuthorizationSet& inParams, std::string* key) {
-    ErrorCode km_error;
-    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<uint8_t>& keyBlob,
-            const KeyCharacteristics& /*ignored*/) {
+bool Keymaster::generateKey(const km::AuthorizationSet& inParams, std::string* key) {
+    km::ErrorCode km_error;
+    auto hidlCb = [&](km::ErrorCode ret, const hidl_vec<uint8_t>& keyBlob,
+                      const km::KeyCharacteristics& /*ignored*/) {
         km_error = ret;
-        if (km_error != ErrorCode::OK) return;
-        if (key)
-            key->assign(reinterpret_cast<const char*>(&keyBlob[0]), keyBlob.size());
+        if (km_error != km::ErrorCode::OK) return;
+        if (key) key->assign(reinterpret_cast<const char*>(&keyBlob[0]), keyBlob.size());
     };
 
     auto error = mDevice->generateKey(inParams.hidl_data(), hidlCb);
@@ -111,7 +119,7 @@ bool Keymaster::generateKey(const AuthorizationSet& inParams, std::string* key) 
         LOG(ERROR) << "generate_key failed: " << error.description();
         return false;
     }
-    if (km_error != ErrorCode::OK) {
+    if (km_error != km::ErrorCode::OK) {
         LOG(ERROR) << "generate_key failed, code " << int32_t(km_error);
         return false;
     }
@@ -119,75 +127,72 @@ bool Keymaster::generateKey(const AuthorizationSet& inParams, std::string* key) 
 }
 
 bool Keymaster::deleteKey(const std::string& key) {
-    auto keyBlob = blob2hidlVec(key);
+    auto keyBlob = km::support::blob2hidlVec(key);
     auto error = mDevice->deleteKey(keyBlob);
     if (!error.isOk()) {
         LOG(ERROR) << "delete_key failed: " << error.description();
         return false;
     }
-    if (ErrorCode(error) != ErrorCode::OK) {
-        LOG(ERROR) << "delete_key failed, code " << uint32_t(ErrorCode(error));
+    if (error != km::ErrorCode::OK) {
+        LOG(ERROR) << "delete_key failed, code " << int32_t(km::ErrorCode(error));
         return false;
     }
     return true;
 }
 
-bool Keymaster::upgradeKey(const std::string& oldKey, const AuthorizationSet& inParams,
+bool Keymaster::upgradeKey(const std::string& oldKey, const km::AuthorizationSet& inParams,
                            std::string* newKey) {
-    auto oldKeyBlob = blob2hidlVec(oldKey);
-    ErrorCode km_error;
-    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<uint8_t>& upgradedKeyBlob) {
+    auto oldKeyBlob = km::support::blob2hidlVec(oldKey);
+    km::ErrorCode km_error;
+    auto hidlCb = [&](km::ErrorCode ret, const hidl_vec<uint8_t>& upgradedKeyBlob) {
         km_error = ret;
-        if (km_error != ErrorCode::OK) return;
+        if (km_error != km::ErrorCode::OK) return;
         if (newKey)
             newKey->assign(reinterpret_cast<const char*>(&upgradedKeyBlob[0]),
-                    upgradedKeyBlob.size());
+                           upgradedKeyBlob.size());
     };
     auto error = mDevice->upgradeKey(oldKeyBlob, inParams.hidl_data(), hidlCb);
     if (!error.isOk()) {
         LOG(ERROR) << "upgrade_key failed: " << error.description();
         return false;
     }
-    if (km_error != ErrorCode::OK) {
+    if (km_error != km::ErrorCode::OK) {
         LOG(ERROR) << "upgrade_key failed, code " << int32_t(km_error);
         return false;
     }
     return true;
 }
 
-KeymasterOperation Keymaster::begin(KeyPurpose purpose, const std::string& key,
-                                    const AuthorizationSet& inParams,
-                                    AuthorizationSet* outParams) {
-    auto keyBlob = blob2hidlVec(key);
+KeymasterOperation Keymaster::begin(km::KeyPurpose purpose, const std::string& key,
+                                    const km::AuthorizationSet& inParams,
+                                    const km::HardwareAuthToken& authToken,
+                                    km::AuthorizationSet* outParams) {
+    auto keyBlob = km::support::blob2hidlVec(key);
     uint64_t mOpHandle;
-    ErrorCode km_error;
+    km::ErrorCode km_error;
 
-    auto hidlCb = [&] (ErrorCode ret, const hidl_vec<KeyParameter>& _outParams,
-            uint64_t operationHandle) {
+    auto hidlCb = [&](km::ErrorCode ret, const hidl_vec<km::KeyParameter>& _outParams,
+                      uint64_t operationHandle) {
         km_error = ret;
-        if (km_error != ErrorCode::OK) return;
-        if (outParams)
-            *outParams = _outParams;
+        if (km_error != km::ErrorCode::OK) return;
+        if (outParams) *outParams = _outParams;
         mOpHandle = operationHandle;
     };
 
-    auto error = mDevice->begin(purpose, keyBlob, inParams.hidl_data(), hidlCb);
+    auto error = mDevice->begin(purpose, keyBlob, inParams.hidl_data(), authToken, hidlCb);
     if (!error.isOk()) {
         LOG(ERROR) << "begin failed: " << error.description();
-        return KeymasterOperation(ErrorCode::UNKNOWN_ERROR);
+        return KeymasterOperation(km::ErrorCode::UNKNOWN_ERROR);
     }
-    if (km_error != ErrorCode::OK) {
+    if (km_error != km::ErrorCode::OK) {
         LOG(ERROR) << "begin failed, code " << int32_t(km_error);
         return KeymasterOperation(km_error);
     }
-    return KeymasterOperation(mDevice, mOpHandle);
+    return KeymasterOperation(mDevice.get(), mOpHandle);
 }
+
 bool Keymaster::isSecure() {
-    bool _isSecure = false;
-    auto rc = mDevice->getHardwareFeatures(
-            [&] (bool isSecure, bool, bool, bool, bool, const hidl_string&, const hidl_string&) {
-                _isSecure = isSecure; });
-    return rc.isOk() && _isSecure;
+    return mDevice->halVersion().securityLevel != km::SecurityLevel::SOFTWARE;
 }
 
 }  // namespace vold
@@ -220,17 +225,14 @@ static bool write_string_to_buf(const std::string& towrite, uint8_t* buffer, uin
     return true;
 }
 
-static AuthorizationSet keyParams(uint32_t rsa_key_size, uint64_t rsa_exponent, uint32_t ratelimit) {
-    return AuthorizationSetBuilder()
-        .Authorization(TAG_ALGORITHM, Algorithm::RSA)
-        .Authorization(TAG_KEY_SIZE, rsa_key_size)
-        .Authorization(TAG_RSA_PUBLIC_EXPONENT, rsa_exponent)
-        .Authorization(TAG_PURPOSE, KeyPurpose::SIGN)
-        .Authorization(TAG_PADDING, PaddingMode::NONE)
-        .Authorization(TAG_DIGEST, Digest::NONE)
-        .Authorization(TAG_BLOB_USAGE_REQUIREMENTS, KeyBlobUsageRequirements::STANDALONE)
-        .Authorization(TAG_NO_AUTH_REQUIRED)
-        .Authorization(TAG_MIN_SECONDS_BETWEEN_OPS, ratelimit);
+static km::AuthorizationSet keyParams(uint32_t rsa_key_size, uint64_t rsa_exponent,
+                                      uint32_t ratelimit) {
+    return km::AuthorizationSetBuilder()
+        .RsaSigningKey(rsa_key_size, rsa_exponent)
+        .NoDigestOrPadding()
+        .Authorization(km::TAG_BLOB_USAGE_REQUIREMENTS, km::KeyBlobUsageRequirements::STANDALONE)
+        .Authorization(km::TAG_NO_AUTH_REQUIRED)
+        .Authorization(km::TAG_MIN_SECONDS_BETWEEN_OPS, ratelimit);
 }
 
 int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size, uint64_t rsa_exponent,
@@ -283,30 +285,28 @@ KeymasterSignResult keymaster_sign_object_for_cryptfs_scrypt(
         return KeymasterSignResult::error;
     }
 
-    AuthorizationSet outParams;
+    km::AuthorizationSet outParams;
     std::string key(reinterpret_cast<const char*>(key_blob), key_blob_size);
     std::string input(reinterpret_cast<const char*>(object), object_size);
     std::string output;
     KeymasterOperation op;
 
-    auto paramBuilder = AuthorizationSetBuilder()
-                            .Authorization(TAG_PADDING, PaddingMode::NONE)
-                            .Authorization(TAG_DIGEST, Digest::NONE);
-
+    auto paramBuilder = km::AuthorizationSetBuilder().NoDigestOrPadding();
     while (true) {
-        op = dev.begin(KeyPurpose::SIGN, key, paramBuilder, &outParams);
-        if (op.errorCode() == ErrorCode::KEY_RATE_LIMIT_EXCEEDED) {
+        op = dev.begin(km::KeyPurpose::SIGN, key, paramBuilder, km::HardwareAuthToken(), &outParams);
+        if (op.errorCode() == km::ErrorCode::KEY_RATE_LIMIT_EXCEEDED) {
             sleep(ratelimit);
             continue;
-        } else break;
+        } else
+            break;
     }
 
-    if (op.errorCode() == ErrorCode::KEY_REQUIRES_UPGRADE) {
+    if (op.errorCode() == km::ErrorCode::KEY_REQUIRES_UPGRADE) {
         LOG(ERROR) << "Keymaster key requires upgrade";
         return KeymasterSignResult::upgrade;
     }
 
-    if (op.errorCode() != ErrorCode::OK) {
+    if (op.errorCode() != km::ErrorCode::OK) {
         LOG(ERROR) << "Error starting keymaster signature transaction: " << int32_t(op.errorCode());
         return KeymasterSignResult::error;
     }
@@ -318,7 +318,8 @@ KeymasterSignResult keymaster_sign_object_for_cryptfs_scrypt(
     }
 
     if (!op.finish(&output)) {
-        LOG(ERROR) << "Error finalizing keymaster signature transaction: " << int32_t(op.errorCode());
+        LOG(ERROR) << "Error finalizing keymaster signature transaction: "
+                   << int32_t(op.errorCode());
         return KeymasterSignResult::error;
     }
 
