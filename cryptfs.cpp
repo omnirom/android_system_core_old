@@ -1974,7 +1974,7 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr* crypt_ftr, char* cry
     tot_encryption_size = crypt_ftr->fs_size;
 
     rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev, crypt_ftr->fs_size, &cur_encryption_done,
-                                tot_encryption_size, previously_encrypted_upto);
+                                tot_encryption_size, previously_encrypted_upto, true);
 
     if (rc == ENABLE_INPLACE_ERR_DEV) {
         /* Hack for b/17898962 */

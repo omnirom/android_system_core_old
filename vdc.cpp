@@ -44,7 +44,7 @@ static android::sp<android::IBinder> getServiceAggressive() {
     android::sp<android::IBinder> res;
     auto sm = android::defaultServiceManager();
     auto name = android::String16("vold");
-    for (int i = 0; i < 500; i++) {
+    for (int i = 0; i < 5000; i++) {
         res = sm->checkService(name);
         if (res) {
             LOG(VERBOSE) << "Waited " << (i * 10) << "ms for vold";
@@ -101,6 +101,10 @@ int main(int argc, char** argv) {
         checkStatus(vold->shutdown());
     } else if (args[0] == "cryptfs" && args[1] == "checkEncryption" && args.size() == 3) {
         checkStatus(vold->checkEncryption(args[2]));
+    } else if (args[0] == "cryptfs" && args[1] == "mountFstab" && args.size() == 3) {
+        checkStatus(vold->mountFstab(args[2]));
+    } else if (args[0] == "cryptfs" && args[1] == "encryptFstab" && args.size() == 3) {
+        checkStatus(vold->encryptFstab(args[2]));
     } else {
         LOG(ERROR) << "Raw commands are no longer supported";
         exit(EINVAL);

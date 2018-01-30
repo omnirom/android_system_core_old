@@ -26,7 +26,6 @@ interface IVold {
     void monitor();
     void reset();
     void shutdown();
-    void mountAll();
 
     void onUserAdded(int userId, int userSerial);
     void onUserRemoved(int userId);
@@ -79,6 +78,8 @@ interface IVold {
     void mountDefaultEncrypted();
     void initUser0();
     boolean isConvertibleToFbe();
+    void mountFstab(@utf8InCpp String mountPoint);
+    void encryptFstab(@utf8InCpp String mountPoint);
 
     void createUserKey(int userId, int userSerial, boolean ephemeral);
     void destroyUserKey(int userId);

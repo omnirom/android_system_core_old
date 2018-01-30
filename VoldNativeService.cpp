@@ -247,16 +247,6 @@ binder::Status VoldNativeService::shutdown() {
     return translate(VolumeManager::Instance()->shutdown());
 }
 
-binder::Status VoldNativeService::mountAll() {
-    ENFORCE_UID(AID_SYSTEM);
-    ACQUIRE_LOCK;
-
-    struct fstab* fstab = fs_mgr_read_fstab_default();
-    int res = fs_mgr_mount_all(fstab, MOUNT_MODE_DEFAULT);
-    fs_mgr_free_fstab(fstab);
-    return translate(res);
-}
-
 binder::Status VoldNativeService::onUserAdded(int32_t userId, int32_t userSerial) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
@@ -577,12 +567,12 @@ binder::Status VoldNativeService::fdeEnable(int32_t passwordType,
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
+    LOG(DEBUG) << "fdeEnable(" << passwordType << ", *, " << encryptionFlags << ")";
     if (e4crypt_is_native()) {
-        if (passwordType != PASSWORD_TYPE_DEFAULT) {
-            return error("Unexpected password type");
-        }
-        return translateBool(e4crypt_enable_crypto());
+        LOG(ERROR) << "e4crypt_is_native, fdeEnable invalid";
+        return error("e4crypt_is_native, fdeEnable invalid");
     }
+    LOG(DEBUG) << "!e4crypt_is_native, spawning fdeEnableInternal";
 
     // Spawn as thread so init can issue commands back to vold without
     // causing deadlock, usually as a result of prep_data_fs.
@@ -665,14 +655,12 @@ binder::Status VoldNativeService::mountDefaultEncrypted() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    if (e4crypt_is_native()) {
-        return translateBool(e4crypt_mount_metadata_encrypted());
-    } else {
+    if (!e4crypt_is_native()) {
         // Spawn as thread so init can issue commands back to vold without
         // causing deadlock, usually as a result of prep_data_fs.
         std::thread(&cryptfs_mount_default_encrypted).detach();
-        return ok();
     }
+    return ok();
 }
 
 binder::Status VoldNativeService::initUser0() {
@@ -688,6 +676,20 @@ binder::Status VoldNativeService::isConvertibleToFbe(bool* _aidl_return) {
 
     *_aidl_return = cryptfs_isConvertibleToFBE() != 0;
     return ok();
+}
+
+binder::Status VoldNativeService::mountFstab(const std::string& mountPoint) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return translateBool(e4crypt_mount_metadata_encrypted(mountPoint, false));
+}
+
+binder::Status VoldNativeService::encryptFstab(const std::string& mountPoint) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return translateBool(e4crypt_mount_metadata_encrypted(mountPoint, true));
 }
 
 binder::Status VoldNativeService::createUserKey(int32_t userId, int32_t userSerial,

@@ -51,12 +51,14 @@ struct selabel_handle *sehandle;
 using android::base::StringPrintf;
 
 int main(int argc, char** argv) {
+    atrace_set_tracing_enabled(false);
     setenv("ANDROID_LOG_TAGS", "*:v", 1);
     android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
 
+    LOG(INFO) << "Vold 3.0 (the awakening) firing up";
+
     ATRACE_BEGIN("main");
 
-    LOG(INFO) << "Vold 3.0 (the awakening) firing up";
 
     LOG(VERBOSE) << "Detected support for:"
             << (android::vold::IsFilesystemSupported("ext4") ? " ext4" : "")
@@ -112,6 +114,8 @@ int main(int argc, char** argv) {
         exit(1);
     }
     ATRACE_END();
+
+    LOG(DEBUG) << "VoldNativeService::start() completed OK";
 
     ATRACE_BEGIN("NetlinkManager::start");
     if (nm->start()) {
