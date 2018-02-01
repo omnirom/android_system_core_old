@@ -29,9 +29,8 @@
 
 #include <algorithm>
 
-#include "cutils/properties.h"
-#define LOG_TAG "EncryptInplace"
-#include "cutils/log.h"
+#include <android-base/logging.h>
+#include <android-base/properties.h>
 
 // HORRIBLE HACK, FIXME
 #include "cryptfs.h"
@@ -93,13 +92,13 @@ static void update_progress(struct encryptGroupsData* data, int is_used)
         char buf[8];
         data->cur_pct = data->new_pct;
         snprintf(buf, sizeof(buf), "%" PRId64, data->cur_pct);
-        property_set("vold.encrypt_progress", buf);
+        android::base::SetProperty("vold.encrypt_progress", buf);
     }
 
     if (data->cur_pct >= 5) {
         struct timespec time_now;
         if (clock_gettime(CLOCK_MONOTONIC, &time_now)) {
-            SLOGW("Error getting time");
+            LOG(WARNING) << "Error getting time";
         } else {
             double elapsed_time = difftime(time_now.tv_sec, data->time_started);
             off64_t remaining_blocks = data->tot_used_blocks
@@ -114,7 +113,7 @@ static void update_progress(struct encryptGroupsData* data, int is_used)
                 || remaining_time > data->remaining_time + 60) {
                 char buf[8];
                 snprintf(buf, sizeof(buf), "%d", remaining_time);
-                property_set("vold.encrypt_time_remaining", buf);
+                android::base::SetProperty("vold.encrypt_time_remaining", buf);
                 data->remaining_time = remaining_time;
             }
         }
@@ -130,15 +129,13 @@ static void log_progress(struct encryptGroupsData const* data, bool completed)
 
     // Need to close existing 'Encrypting from' log?
     if (completed || (offset != -1 && data->offset != offset)) {
-        SLOGI("Encrypted to sector %" PRId64,
-              offset / info.block_size * CRYPT_SECTOR_SIZE);
+        LOG(INFO) << "Encrypted to sector " << offset / info.block_size * CRYPT_SECTOR_SIZE;
         offset = -1;
     }
 
     // Need to start new 'Encrypting from' log?
     if (!completed && offset != data->offset) {
-        SLOGI("Encrypting from sector %" PRId64,
-              data->offset / info.block_size * CRYPT_SECTOR_SIZE);
+        LOG(INFO) << "Encrypting from sector " << data->offset / info.block_size * CRYPT_SECTOR_SIZE;
     }
 
     // Update offset
@@ -153,21 +150,16 @@ static int flush_outstanding_data(struct encryptGroupsData* data)
         return 0;
     }
 
-    SLOGV("Copying %d blocks at offset %" PRIx64, data->count, data->offset);
+    LOG(VERBOSE) << "Copying " << data->count << " blocks at offset " << data->offset;
 
-    if (pread64(data->realfd, data->buffer,
-                info.block_size * data->count, data->offset)
-        <= 0) {
-        SLOGE("Error reading real_blkdev %s for inplace encrypt",
-              data->real_blkdev);
+    if (pread64(data->realfd, data->buffer, info.block_size * data->count, data->offset) <= 0) {
+        LOG(ERROR) << "Error reading real_blkdev " << data->real_blkdev << " for inplace encrypt";
         return -1;
     }
 
-    if (pwrite64(data->cryptofd, data->buffer,
-                 info.block_size * data->count, data->offset)
-        <= 0) {
-        SLOGE("Error writing crypto_blkdev %s for inplace encrypt",
-              data->crypto_blkdev);
+    if (pwrite64(data->cryptofd, data->buffer, info.block_size * data->count, data->offset) <= 0) {
+        LOG(ERROR) << "Error writing crypto_blkdev " << data->crypto_blkdev
+                   << " for inplace encrypt";
         return -1;
     } else {
       log_progress(data, false);
@@ -189,18 +181,18 @@ static int encrypt_groups(struct encryptGroupsData* data)
 
     data->buffer = (char*) malloc(info.block_size * BLOCKS_AT_A_TIME);
     if (!data->buffer) {
-        SLOGE("Failed to allocate crypto buffer");
+        LOG(ERROR) << "Failed to allocate crypto buffer";
         goto errout;
     }
 
     block_bitmap = (u8*) malloc(info.block_size);
     if (!block_bitmap) {
-        SLOGE("failed to allocate block bitmap");
+        LOG(ERROR) << "failed to allocate block bitmap";
         goto errout;
     }
 
     for (i = 0; i < aux_info.groups; ++i) {
-        SLOGI("Encrypting group %d", i);
+        LOG(INFO) << "Encrypting group " << i;
 
         u32 first_block = aux_info.first_data_block + i * info.blocks_per_group;
         u32 block_count = std::min(info.blocks_per_group,
@@ -211,7 +203,7 @@ static int encrypt_groups(struct encryptGroupsData* data)
 
         ret = pread64(data->realfd, block_bitmap, info.block_size, offset);
         if (ret != (int)info.block_size) {
-            SLOGE("failed to read all of block group bitmap %d", i);
+            LOG(ERROR) << "failed to read all of block group bitmap " << i;
             goto errout;
         }
 
@@ -259,13 +251,9 @@ errout:
     return rc;
 }
 
-static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
-                                       char *real_blkdev,
-                                       off64_t size,
-                                       off64_t *size_already_done,
-                                       off64_t tot_size,
-                                       off64_t previously_encrypted_upto)
-{
+static int cryptfs_enable_inplace_ext4(char* crypto_blkdev, char* real_blkdev, off64_t size,
+                                       off64_t* size_already_done, off64_t tot_size,
+                                       off64_t previously_encrypted_upto) {
     u32 i;
     struct encryptGroupsData data;
     int rc; // Can't initialize without causing warning -Wclobbered
@@ -273,7 +261,7 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     struct timespec time_started = {0};
 
     if (previously_encrypted_upto > *size_already_done) {
-        SLOGD("Not fast encrypting since resuming part way through");
+        LOG(DEBUG) << "Not fast encrypting since resuming part way through";
         return -1;
     }
 
@@ -282,8 +270,7 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     data.crypto_blkdev = crypto_blkdev;
 
     if ( (data.realfd = open(real_blkdev, O_RDWR|O_CLOEXEC)) < 0) {
-        SLOGE("Error opening real_blkdev %s for inplace encrypt. err=%d(%s)\n",
-              real_blkdev, errno, strerror(errno));
+        PLOG(ERROR) << "Error opening real_blkdev " << real_blkdev << " for inplace encrypt";
         rc = -1;
         goto errout;
     }
@@ -291,25 +278,25 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     // Wait until the block device appears.  Re-use the mount retry values since it is reasonable.
     while ((data.cryptofd = open(crypto_blkdev, O_WRONLY|O_CLOEXEC)) < 0) {
         if (--retries) {
-            SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s), retrying\n",
-                  crypto_blkdev, errno, strerror(errno));
+            PLOG(ERROR) << "Error opening crypto_blkdev " << crypto_blkdev
+                        << " for ext4 inplace encrypt, retrying";
             sleep(RETRY_MOUNT_DELAY_SECONDS);
         } else {
-            SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s)\n",
-                  crypto_blkdev, errno, strerror(errno));
+            PLOG(ERROR) << "Error opening crypto_blkdev " << crypto_blkdev
+                        << " for ext4 inplace encrypt";
             rc = ENABLE_INPLACE_ERR_DEV;
             goto errout;
         }
     }
 
     if (setjmp(setjmp_env)) { // NOLINT
-        SLOGE("Reading ext4 extent caused an exception\n");
+        LOG(ERROR) << "Reading ext4 extent caused an exception";
         rc = -1;
         goto errout;
     }
 
     if (read_ext(data.realfd, 0) != 0) {
-        SLOGE("Failed to read ext4 extent\n");
+        LOG(ERROR) << "Failed to read ext4 extent";
         rc = -1;
         goto errout;
     }
@@ -318,7 +305,7 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     data.tot_numblocks = tot_size / CRYPT_SECTORS_PER_BUFSIZE;
     data.blocks_already_done = *size_already_done / CRYPT_SECTORS_PER_BUFSIZE;
 
-    SLOGI("Encrypting ext4 filesystem in place...");
+    LOG(INFO) << "Encrypting ext4 filesystem in place...";
 
     data.tot_used_blocks = data.numblocks;
     for (i = 0; i < aux_info.groups; ++i) {
@@ -329,7 +316,7 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     data.cur_pct = 0;
 
     if (clock_gettime(CLOCK_MONOTONIC, &time_started)) {
-        SLOGW("Error getting time at start");
+        LOG(WARNING) << "Error getting time at start";
         // Note - continue anyway - we'll run with 0
     }
     data.time_started = time_started.tv_sec;
@@ -337,7 +324,7 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
 
     rc = encrypt_groups(&data);
     if (rc) {
-        SLOGE("Error encrypting groups");
+        LOG(ERROR) << "Error encrypting groups";
         goto errout;
     }
 
@@ -360,13 +347,13 @@ static void log_progress_f2fs(u64 block, bool completed)
 
     // Need to close existing 'Encrypting from' log?
     if (completed || (last_block != (u64)-1 && block != last_block + 1)) {
-        SLOGI("Encrypted to block %" PRId64, last_block);
+        LOG(INFO) << "Encrypted to block " << last_block;
         last_block = -1;
     }
 
     // Need to start new 'Encrypting from' log?
     if (!completed && (last_block == (u64)-1 || block != last_block + 1)) {
-        SLOGI("Encrypting from block %" PRId64, block);
+        LOG(INFO) << "Encrypting from block " << block;
     }
 
     // Update offset
@@ -385,12 +372,14 @@ static int encrypt_one_block_f2fs(u64 pos, void *data)
     off64_t offset = pos * CRYPT_INPLACE_BUFSIZE;
 
     if (pread64(priv_dat->realfd, priv_dat->buffer, CRYPT_INPLACE_BUFSIZE, offset) <= 0) {
-        SLOGE("Error reading real_blkdev %s for f2fs inplace encrypt", priv_dat->crypto_blkdev);
+        LOG(ERROR) << "Error reading real_blkdev " << priv_dat->crypto_blkdev
+                   << " for f2fs inplace encrypt";
         return -1;
     }
 
     if (pwrite64(priv_dat->cryptofd, priv_dat->buffer, CRYPT_INPLACE_BUFSIZE, offset) <= 0) {
-        SLOGE("Error writing crypto_blkdev %s for f2fs inplace encrypt", priv_dat->crypto_blkdev);
+        LOG(ERROR) << "Error writing crypto_blkdev " << priv_dat->crypto_blkdev
+                   << " for f2fs inplace encrypt";
         return -1;
     } else {
         log_progress_f2fs(pos, false);
@@ -399,18 +388,14 @@ static int encrypt_one_block_f2fs(u64 pos, void *data)
     return 0;
 }
 
-static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
-                                       char *real_blkdev,
-                                       off64_t size,
-                                       off64_t *size_already_done,
-                                       off64_t tot_size,
-                                       off64_t previously_encrypted_upto)
-{
+static int cryptfs_enable_inplace_f2fs(char* crypto_blkdev, char* real_blkdev, off64_t size,
+                                       off64_t* size_already_done, off64_t tot_size,
+                                       off64_t previously_encrypted_upto) {
     struct encryptGroupsData data;
     struct f2fs_info *f2fs_info = NULL;
     int rc = ENABLE_INPLACE_ERR_OTHER;
     if (previously_encrypted_upto > *size_already_done) {
-        SLOGD("Not fast encrypting since resuming part way through");
+        LOG(DEBUG) << "Not fast encrypting since resuming part way through";
         return ENABLE_INPLACE_ERR_OTHER;
     }
     memset(&data, 0, sizeof(data));
@@ -419,13 +404,12 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
     data.realfd = -1;
     data.cryptofd = -1;
     if ( (data.realfd = open64(real_blkdev, O_RDWR|O_CLOEXEC)) < 0) {
-        SLOGE("Error opening real_blkdev %s for f2fs inplace encrypt\n",
-              real_blkdev);
+        PLOG(ERROR) << "Error opening real_blkdev " << real_blkdev << " for f2fs inplace encrypt";
         goto errout;
     }
     if ( (data.cryptofd = open64(crypto_blkdev, O_WRONLY|O_CLOEXEC)) < 0) {
-        SLOGE("Error opening crypto_blkdev %s for f2fs inplace encrypt. err=%d(%s)\n",
-              crypto_blkdev, errno, strerror(errno));
+        PLOG(ERROR) << "Error opening crypto_blkdev " << crypto_blkdev
+                    << " for f2fs inplace encrypt";
         rc = ENABLE_INPLACE_ERR_DEV;
         goto errout;
     }
@@ -447,7 +431,7 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
 
     data.buffer = (char*) malloc(f2fs_info->block_size);
     if (!data.buffer) {
-        SLOGE("Failed to allocate crypto buffer");
+        LOG(ERROR) << "Failed to allocate crypto buffer";
         goto errout;
     }
 
@@ -457,7 +441,7 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
     rc = run_on_used_blocks(data.blocks_already_done, f2fs_info, &encrypt_one_block_f2fs, &data);
 
     if (rc) {
-        SLOGE("Error in running over f2fs blocks");
+        LOG(ERROR) << "Error in running over f2fs blocks";
         rc = ENABLE_INPLACE_ERR_OTHER;
         goto errout;
     }
@@ -466,8 +450,7 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
     rc = 0;
 
 errout:
-    if (rc)
-        SLOGE("Failed to encrypt f2fs filesystem on %s", real_blkdev);
+    if (rc) LOG(ERROR) << "Failed to encrypt f2fs filesystem on " << real_blkdev;
 
     log_progress_f2fs(0, true);
     free(f2fs_info);
@@ -478,11 +461,9 @@ errout:
     return rc;
 }
 
-static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
-                                       off64_t size, off64_t *size_already_done,
-                                       off64_t tot_size,
-                                       off64_t previously_encrypted_upto)
-{
+static int cryptfs_enable_inplace_full(char* crypto_blkdev, char* real_blkdev, off64_t size,
+                                       off64_t* size_already_done, off64_t tot_size,
+                                       off64_t previously_encrypted_upto) {
     int realfd, cryptofd;
     char *buf[CRYPT_INPLACE_BUFSIZE];
     int rc = ENABLE_INPLACE_ERR_OTHER;
@@ -491,13 +472,12 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
     off64_t blocks_already_done, tot_numblocks;
 
     if ( (realfd = open(real_blkdev, O_RDONLY|O_CLOEXEC)) < 0) {
-        SLOGE("Error opening real_blkdev %s for inplace encrypt\n", real_blkdev);
+        PLOG(ERROR) << "Error opening real_blkdev " << real_blkdev << " for inplace encrypt";
         return ENABLE_INPLACE_ERR_OTHER;
     }
 
     if ( (cryptofd = open(crypto_blkdev, O_WRONLY|O_CLOEXEC)) < 0) {
-        SLOGE("Error opening crypto_blkdev %s for inplace encrypt. err=%d(%s)\n",
-              crypto_blkdev, errno, strerror(errno));
+        PLOG(ERROR) << "Error opening crypto_blkdev " << crypto_blkdev << " for inplace encrypt";
         close(realfd);
         return ENABLE_INPLACE_ERR_DEV;
     }
@@ -512,32 +492,32 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
     tot_numblocks = tot_size / CRYPT_SECTORS_PER_BUFSIZE;
     blocks_already_done = *size_already_done / CRYPT_SECTORS_PER_BUFSIZE;
 
-    SLOGE("Encrypting filesystem in place...");
+    LOG(ERROR) << "Encrypting filesystem in place...";
 
     i = previously_encrypted_upto + 1 - *size_already_done;
 
     if (lseek64(realfd, i * CRYPT_SECTOR_SIZE, SEEK_SET) < 0) {
-        SLOGE("Cannot seek to previously encrypted point on %s", real_blkdev);
+        PLOG(ERROR) << "Cannot seek to previously encrypted point on " << real_blkdev;
         goto errout;
     }
 
     if (lseek64(cryptofd, i * CRYPT_SECTOR_SIZE, SEEK_SET) < 0) {
-        SLOGE("Cannot seek to previously encrypted point on %s", crypto_blkdev);
+        PLOG(ERROR) << "Cannot seek to previously encrypted point on " << crypto_blkdev;
         goto errout;
     }
 
     for (;i < size && i % CRYPT_SECTORS_PER_BUFSIZE != 0; ++i) {
         if (unix_read(realfd, buf, CRYPT_SECTOR_SIZE) <= 0) {
-            SLOGE("Error reading initial sectors from real_blkdev %s for "
-                  "inplace encrypt\n", crypto_blkdev);
+            PLOG(ERROR) << "Error reading initial sectors from real_blkdev " << real_blkdev
+                        << " for inplace encrypt";
             goto errout;
         }
         if (unix_write(cryptofd, buf, CRYPT_SECTOR_SIZE) <= 0) {
-            SLOGE("Error writing initial sectors to crypto_blkdev %s for "
-                  "inplace encrypt\n", crypto_blkdev);
+            PLOG(ERROR) << "Error writing initial sectors to crypto_blkdev " << crypto_blkdev
+                        << " for inplace encrypt";
             goto errout;
         } else {
-            SLOGI("Encrypted 1 block at %" PRId64, i);
+            LOG(INFO) << "Encrypted 1 block at " << i;
         }
     }
 
@@ -551,33 +531,34 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
 
             cur_pct = new_pct;
             snprintf(buf, sizeof(buf), "%" PRId64, cur_pct);
-            property_set("vold.encrypt_progress", buf);
+            android::base::SetProperty("vold.encrypt_progress", buf);
         }
         if (unix_read(realfd, buf, CRYPT_INPLACE_BUFSIZE) <= 0) {
-            SLOGE("Error reading real_blkdev %s for inplace encrypt", crypto_blkdev);
+            PLOG(ERROR) << "Error reading real_blkdev " << real_blkdev << " for inplace encrypt";
             goto errout;
         }
         if (unix_write(cryptofd, buf, CRYPT_INPLACE_BUFSIZE) <= 0) {
-            SLOGE("Error writing crypto_blkdev %s for inplace encrypt", crypto_blkdev);
+            PLOG(ERROR) << "Error writing crypto_blkdev " << crypto_blkdev << " for inplace encrypt";
             goto errout;
         } else {
-            SLOGD("Encrypted %d block at %" PRId64,
-                  CRYPT_SECTORS_PER_BUFSIZE,
-                  i * CRYPT_SECTORS_PER_BUFSIZE);
+            LOG(DEBUG) << "Encrypted " << CRYPT_SECTORS_PER_BUFSIZE << " block at "
+                       << i * CRYPT_SECTORS_PER_BUFSIZE;
         }
     }
 
     /* Do any remaining sectors */
     for (i=0; i<remainder; i++) {
         if (unix_read(realfd, buf, CRYPT_SECTOR_SIZE) <= 0) {
-            SLOGE("Error reading final sectors from real_blkdev %s for inplace encrypt", crypto_blkdev);
+            LOG(ERROR) << "Error reading final sectors from real_blkdev " << real_blkdev
+                       << " for inplace encrypt";
             goto errout;
         }
         if (unix_write(cryptofd, buf, CRYPT_SECTOR_SIZE) <= 0) {
-            SLOGE("Error writing final sectors to crypto_blkdev %s for inplace encrypt", crypto_blkdev);
+            LOG(ERROR) << "Error writing final sectors to crypto_blkdev " << crypto_blkdev
+                       << " for inplace encrypt";
             goto errout;
         } else {
-            SLOGI("Encrypted 1 block at next location");
+            LOG(INFO) << "Encrypted 1 block at next location";
         }
     }
 
@@ -592,14 +573,12 @@ errout:
 }
 
 /* returns on of the ENABLE_INPLACE_* return codes */
-int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev,
-                           off64_t size, off64_t *size_already_done,
-                           off64_t tot_size,
-                           off64_t previously_encrypted_upto)
-{
+int cryptfs_enable_inplace(char* crypto_blkdev, char* real_blkdev, off64_t size,
+                           off64_t* size_already_done, off64_t tot_size,
+                           off64_t previously_encrypted_upto) {
     int rc_ext4, rc_f2fs, rc_full;
     if (previously_encrypted_upto) {
-        SLOGD("Continuing encryption from %" PRId64, previously_encrypted_upto);
+        LOG(DEBUG) << "Continuing encryption from " << previously_encrypted_upto;
     }
 
     if (*size_already_done + size < previously_encrypted_upto) {
@@ -616,19 +595,19 @@ int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev,
                                 tot_size, previously_encrypted_upto)) == 0) {
       return 0;
     }
-    SLOGD("cryptfs_enable_inplace_ext4()=%d\n", rc_ext4);
+    LOG(DEBUG) << "cryptfs_enable_inplace_ext4()=" << rc_ext4;
 
     if ((rc_f2fs = cryptfs_enable_inplace_f2fs(crypto_blkdev, real_blkdev,
                                 size, size_already_done,
                                 tot_size, previously_encrypted_upto)) == 0) {
       return 0;
     }
-    SLOGD("cryptfs_enable_inplace_f2fs()=%d\n", rc_f2fs);
+    LOG(DEBUG) << "cryptfs_enable_inplace_f2fs()=" << rc_f2fs;
 
     rc_full = cryptfs_enable_inplace_full(crypto_blkdev, real_blkdev,
                                        size, size_already_done, tot_size,
                                        previously_encrypted_upto);
-    SLOGD("cryptfs_enable_inplace_full()=%d\n", rc_full);
+    LOG(DEBUG) << "cryptfs_enable_inplace_full()=" << rc_full;
 
     /* Hack for b/17898962, the following is the symptom... */
     if (rc_ext4 == ENABLE_INPLACE_ERR_DEV
