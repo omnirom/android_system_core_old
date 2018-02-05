@@ -36,7 +36,6 @@ public:
     binder::Status monitor();
     binder::Status reset();
     binder::Status shutdown();
-    binder::Status mountAll();
 
     binder::Status onUserAdded(int32_t userId, int32_t userSerial);
     binder::Status onUserRemoved(int32_t userId);
@@ -96,6 +95,8 @@ public:
     binder::Status mountDefaultEncrypted();
     binder::Status initUser0();
     binder::Status isConvertibleToFbe(bool* _aidl_return);
+    binder::Status mountFstab(const std::string& mountPoint);
+    binder::Status encryptFstab(const std::string& mountPoint);
 
     binder::Status createUserKey(int32_t userId, int32_t userSerial, bool ephemeral);
     binder::Status destroyUserKey(int32_t userId);

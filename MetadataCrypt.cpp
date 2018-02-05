@@ -31,8 +31,9 @@
 #include <linux/dm-ioctl.h>
 
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/unique_fd.h>
-#include <cutils/properties.h>
+#include <cutils/fs.h>
 #include <fs_mgr.h>
 
 #include "EncryptInplace.h"
@@ -71,26 +72,17 @@ static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
     return true;
 }
 
-static bool read_key(bool create_if_absent, KeyBuffer* key) {
-    auto data_rec = fs_mgr_get_crypt_entry(fstab_default);
-    if (!data_rec) {
-        LOG(ERROR) << "Failed to get data_rec";
-        return false;
-    }
+static bool read_key(struct fstab_rec const* data_rec, bool create_if_absent, KeyBuffer* key) {
     if (!data_rec->key_dir) {
         LOG(ERROR) << "Failed to get key_dir";
         return false;
     }
-    LOG(DEBUG) << "key_dir: " << data_rec->key_dir;
-    if (!android::vold::pathExists(data_rec->key_dir)) {
-        if (mkdir(data_rec->key_dir, 0777) != 0) {
-            PLOG(ERROR) << "Unable to create: " << data_rec->key_dir;
-            return false;
-        }
-        LOG(DEBUG) << "Created: " << data_rec->key_dir;
-    }
     std::string key_dir = data_rec->key_dir;
     auto dir = key_dir + "/key";
+    LOG(DEBUG) << "key_dir/key: " << key;
+    if (!fs_mkdirs(dir.c_str(), 0700)) {
+        PLOG(ERROR) << "Creating directories: " << dir;
+    }
     auto temp = key_dir + "/tmp";
     if (!android::vold::retrieveKey(create_if_absent, dir, temp, key)) return false;
     return true;
@@ -103,7 +95,6 @@ static KeyBuffer default_key_params(const std::string& real_blkdev, const KeyBuf
         return KeyBuffer();
     }
     auto res = KeyBuffer() + "AES-256-XTS " + hex_key + " " + real_blkdev.c_str() + " 0";
-    LOG(DEBUG) << "crypt_params: " << std::string(res.data(), res.size());
     return res;
 }
 
@@ -211,108 +202,45 @@ static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
     return true;
 }
 
-#define DATA_PREP_TIMEOUT 1000
-static bool prep_data_fs(void)
-{
-    // NOTE: post_fs_data results in init calling back around to vold, so all
-    // callers to this method must be async
-
-    /* Do the prep of the /data filesystem */
-    property_set("vold.post_fs_data_done", "0");
-    property_set("vold.decrypt", "trigger_post_fs_data");
-    LOG(DEBUG) << "Waiting for post_fs_data_done";
-
-    /* Wait a max of 50 seconds, hopefully it takes much less */
-    for (int i = 0; ; i++) {
-        char p[PROPERTY_VALUE_MAX];
-
-        property_get("vold.post_fs_data_done", p, "0");
-        if (*p == '1') {
-            LOG(INFO) << "Successful data prep";
-            return true;
-        }
-        if (i + 1 == DATA_PREP_TIMEOUT) {
-            LOG(ERROR) << "post_fs_data timed out";
-            return false;
-        }
-        usleep(50000);
-    }
-}
-
-static void async_kick_off() {
-    LOG(DEBUG) << "Asynchronously restarting framework";
-    sleep(2); // TODO: this mirrors cryptfs, but can it be made shorter?
-    property_set("vold.decrypt", "trigger_load_persist_props");
-    if (!prep_data_fs()) return;
-    /* startup service classes main and late_start */
-    property_set("vold.decrypt", "trigger_restart_framework");
-}
-
-bool e4crypt_mount_metadata_encrypted() {
-    LOG(DEBUG) << "e4crypt_mount_default_encrypted";
-    KeyBuffer key;
-    if (!read_key(false, &key)) return false;
-    auto data_rec = fs_mgr_get_crypt_entry(fstab_default);
-    if (!data_rec) {
-        LOG(ERROR) << "Failed to get data_rec";
-        return false;
-    }
-    uint64_t nr_sec;
-    if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
-    std::string crypto_blkdev;
-    if (!create_crypto_blk_dev(kDmNameUserdata, nr_sec, DEFAULT_KEY_TARGET_TYPE,
-        default_key_params(data_rec->blk_device, key), &crypto_blkdev)) return false;
-    // FIXME handle the corrupt case
-
-    LOG(DEBUG) << "Restarting filesystem for metadata encryption";
-    mount_via_fs_mgr(data_rec->mount_point, crypto_blkdev.c_str());
-    std::thread(&async_kick_off).detach();
-    return true;
-}
-
-bool e4crypt_enable_crypto() {
-    LOG(DEBUG) << "e4crypt_enable_crypto";
-    char encrypted_state[PROPERTY_VALUE_MAX];
-    property_get("ro.crypto.state", encrypted_state, "");
-    if (strcmp(encrypted_state, "")) {
+bool e4crypt_mount_metadata_encrypted(const std::string& mount_point, bool needs_encrypt) {
+    LOG(DEBUG) << "e4crypt_mount_metadata_encrypted: " << mount_point << " " << needs_encrypt;
+    auto encrypted_state = android::base::GetProperty("ro.crypto.state", "");
+    if (encrypted_state != "") {
         LOG(DEBUG) << "e4crypt_enable_crypto got unexpected starting state: " << encrypted_state;
         return false;
     }
-
-    KeyBuffer key_ref;
-    if (!read_key(true, &key_ref)) return false;
-
-    auto data_rec = fs_mgr_get_crypt_entry(fstab_default);
+    auto data_rec = fs_mgr_get_entry_for_mount_point(fstab_default, mount_point);
     if (!data_rec) {
         LOG(ERROR) << "Failed to get data_rec";
         return false;
     }
+    KeyBuffer key;
+    if (!read_key(data_rec, needs_encrypt, &key)) return false;
     uint64_t nr_sec;
     if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
-
     std::string crypto_blkdev;
     if (!create_crypto_blk_dev(kDmNameUserdata, nr_sec, DEFAULT_KEY_TARGET_TYPE,
-        default_key_params(data_rec->blk_device, key_ref), &crypto_blkdev)) return false;
-
-    LOG(INFO) << "Beginning inplace encryption, nr_sec: " << nr_sec;
-    off64_t size_already_done = 0;
-    auto rc = cryptfs_enable_inplace(const_cast<char *>(crypto_blkdev.c_str()),
-                                     data_rec->blk_device, nr_sec, &size_already_done, nr_sec, 0);
-    if (rc != 0) {
-        LOG(ERROR) << "Inplace crypto failed with code: " << rc;
+                               default_key_params(data_rec->blk_device, key), &crypto_blkdev))
         return false;
+    // FIXME handle the corrupt case
+    if (needs_encrypt) {
+        LOG(INFO) << "Beginning inplace encryption, nr_sec: " << nr_sec;
+        off64_t size_already_done = 0;
+        auto rc =
+            cryptfs_enable_inplace(const_cast<char*>(crypto_blkdev.c_str()), data_rec->blk_device,
+                                   nr_sec, &size_already_done, nr_sec, 0, false);
+        if (rc != 0) {
+            LOG(ERROR) << "Inplace crypto failed with code: " << rc;
+            return false;
+        }
+        if (static_cast<uint64_t>(size_already_done) != nr_sec) {
+            LOG(ERROR) << "Inplace crypto only got up to sector: " << size_already_done;
+            return false;
+        }
+        LOG(INFO) << "Inplace encryption complete";
     }
-    if (static_cast<uint64_t>(size_already_done) != nr_sec) {
-        LOG(ERROR) << "Inplace crypto only got up to sector: " << size_already_done;
-        return false;
-    }
-    LOG(INFO) << "Inplace encryption complete";
 
-    property_set("ro.crypto.state", "encrypted");
-    property_set("ro.crypto.type", "file");
-
+    LOG(DEBUG) << "Mounting metadata-encrypted filesystem:" << mount_point;
     mount_via_fs_mgr(data_rec->mount_point, crypto_blkdev.c_str());
-    property_set("vold.decrypt", "trigger_reset_main");
-    std::thread(&async_kick_off).detach();
     return true;
 }
