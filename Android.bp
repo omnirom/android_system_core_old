@@ -163,6 +163,7 @@ cc_binary {
     required: [
         "mke2fs",
         "vold_prepare_subdirs",
+        "wait_for_keymaster",
     ],
 }
 
@@ -181,6 +182,28 @@ cc_binary {
         "libvold_binder",
     ],
     init_rc: ["vdc.rc"],
+}
+
+cc_binary {
+    name: "wait_for_keymaster",
+    defaults: ["vold_default_flags"],
+
+    srcs: [
+        "wait_for_keymaster.cpp",
+        "Keymaster.cpp",
+    ],
+    shared_libs: [
+        "libbase",
+        "libbinder",
+
+        "android.hardware.keymaster@3.0",
+        "android.hardware.keymaster@4.0",
+        "libhardware",
+        "libhardware_legacy",
+        "libhidlbase",
+        "libhwbinder",
+        "libkeymaster4support",
+    ],
 }
 
 cc_binary {
