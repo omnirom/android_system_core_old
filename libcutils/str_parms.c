@@ -15,7 +15,7 @@
  */
 
 #define LOG_TAG "str_params"
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 
 #define _GNU_SOURCE 1
 #include <errno.h>
