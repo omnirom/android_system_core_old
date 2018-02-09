@@ -1109,7 +1109,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
                               unsigned char *encrypted_master_key,
                               struct crypt_mnt_ftr *crypt_ftr)
 {
-    unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
+    unsigned char ikey[KEY_LEN_BYTES+IV_LEN_BYTES] = { 0 };
     EVP_CIPHER_CTX e_ctx;
     int encrypted_len, final_len;
     int rc = 0;
@@ -1196,7 +1196,7 @@ static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
                                   unsigned char** intermediate_key,
                                   size_t* intermediate_key_size)
 {
-  unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
+  unsigned char ikey[KEY_LEN_BYTES+IV_LEN_BYTES] = { 0 };
   EVP_CIPHER_CTX d_ctx;
   int decrypted_len, final_len;
 
