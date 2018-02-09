@@ -1056,7 +1056,6 @@ static int scrypt(const char *passwd, const unsigned char *salt,
     int p = 1 << ftr->p_factor;
 
     /* Turn the password into a key and IV that can decrypt the master key */
-    unsigned int keysize;
     crypto_scrypt((const uint8_t*)passwd, strlen(passwd),
                   salt, SALT_LEN, N, r, p, ikey,
                   KEY_LEN_BYTES + IV_LEN_BYTES);
