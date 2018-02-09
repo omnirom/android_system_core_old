@@ -2685,7 +2685,7 @@ int cryptfs_setfield(const char *fieldname, const char *value)
     }
 
     for (field_id = 1; field_id < num_entries; field_id++) {
-        snprintf(temp_field, sizeof(temp_field), "%s_%d", fieldname, field_id);
+        snprintf(temp_field, sizeof(temp_field), "%s_%u", fieldname, field_id);
 
         if (persist_set_key(temp_field, value + field_id * (PROPERTY_VALUE_MAX - 1), encrypted)) {
             // fail to set key, should not happen as we have already checked the available space.
