@@ -846,7 +846,10 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
   struct dm_ioctl *io;
   struct dm_target_spec *tgt;
   char *crypt_params;
-  char master_key_ascii[129]; /* Large enough to hold 512 bit key and null */
+  // We can't assume the key is only KEY_LEN_BYTES.  But we do know its limit
+  // due to the crypt_mnt_ftr struct.  We need two ASCII characters to represent
+  // each byte, and need space for the '\0' terminator.
+  char master_key_ascii[sizeof(crypt_ftr->master_key) * 2 + 1];
   size_t buff_offset;
   int i;
 
