@@ -98,6 +98,11 @@ extern "C" {
 
 #define CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE (1)
 
+// EVP_DecryptUpdate() requires not just our key length, but up to
+// block length - 1 additional bytes for its work.  We provide a buffer
+// size that will work for all possible ciphers.
+#define DECRYPTED_MASTER_KEY_BUF_SIZE (KEY_LEN_BYTES + EVP_MAX_BLOCK_LENGTH - 1)
+
 static int put_crypt_ftr_and_key(struct crypt_mnt_ftr* crypt_ftr);
 
 static unsigned char saved_master_key[KEY_LEN_BYTES];
@@ -1595,8 +1600,7 @@ static int do_crypto_complete(const char *mount_point)
 static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
                                    const char *passwd, const char *mount_point, const char *label)
 {
-  /* Allocate enough space for a 256 bit key, but we may use less */
-  unsigned char decrypted_master_key[32];
+  unsigned char decrypted_master_key[DECRYPTED_MASTER_KEY_BUF_SIZE];
   char crypto_blkdev[MAXPATHLEN];
   char real_blkdev[MAXPATHLEN];
   char tmp_mount_point[64];
@@ -1853,8 +1857,7 @@ int cryptfs_check_passwd(const char *passwd)
 int cryptfs_verify_passwd(const char *passwd)
 {
     struct crypt_mnt_ftr crypt_ftr;
-    /* Allocate enough space for a 256 bit key, but we may use less */
-    unsigned char decrypted_master_key[32];
+    unsigned char decrypted_master_key[DECRYPTED_MASTER_KEY_BUF_SIZE];
     char encrypted_state[PROPERTY_VALUE_MAX];
     int rc;
 
@@ -2004,7 +2007,7 @@ static int vold_unmountAll(void) {
 
 int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN];
-    unsigned char decrypted_master_key[KEY_LEN_BYTES];
+    unsigned char decrypted_master_key[DECRYPTED_MASTER_KEY_BUF_SIZE];
     int rc=-1, i;
     struct crypt_mnt_ftr crypt_ftr;
     struct crypt_persist_data *pdata;
