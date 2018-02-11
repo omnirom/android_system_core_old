@@ -66,11 +66,15 @@ class KeymasterOperation {
     KeymasterOperation() : mDevice{nullptr}, mOpHandle{0}, mError{km::ErrorCode::UNKNOWN_ERROR} {}
     // Move Assignment
     KeymasterOperation& operator=(KeymasterOperation&& rhs) {
-        mDevice = std::move(rhs.mDevice);
-        mOpHandle = std::move(rhs.mOpHandle);
-        mError = std::move(rhs.mError);
-        rhs.mError = km::ErrorCode::UNKNOWN_ERROR;
+        mDevice = rhs.mDevice;
+        rhs.mDevice = nullptr;
+
+        mOpHandle = rhs.mOpHandle;
         rhs.mOpHandle = 0;
+
+        mError = rhs.mError;
+        rhs.mError = km::ErrorCode::UNKNOWN_ERROR;
+
         return *this;
     }
 
