@@ -59,7 +59,14 @@ enum class IdleMaintStats {
 
 static const char* kWakeLock = "IdleMaint";
 static const int DIRTY_SEGMENTS_THRESHOLD = 100;
-static const int GC_TIMEOUT_SEC = 480;
+/*
+ * Timing policy:
+ *  1. F2FS_GC = 7 mins
+ *  2. Trim = 1 min
+ *  3. Dev GC = 2 mins
+ */
+static const int GC_TIMEOUT_SEC = 420;
+static const int DEVGC_TIMEOUT_SEC = 120;
 
 static IdleMaintStats idle_maint_stat(IdleMaintStats::kStopped);
 static std::condition_variable cv_abort, cv_stop;
@@ -248,6 +255,58 @@ static int stopGc(const std::list<std::string>& paths) {
     return android::OK;
 }
 
+static void runDevGc(void) {
+    std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)> fstab(fs_mgr_read_fstab_default(),
+                                                               fs_mgr_free_fstab);
+    struct fstab_rec *rec = NULL;
+
+    for (int i = 0; i < fstab->num_entries; i++) {
+        if (fs_mgr_has_sysfs_path(&fstab->recs[i])) {
+            rec = &fstab->recs[i];
+            break;
+        }
+    }
+    if (!rec) {
+        return;
+    }
+
+    std::string path;
+    path.append(rec->sysfs_path);
+    path = path + "/manual_gc";
+    Timer timer;
+
+    LOG(DEBUG) << "Start Dev GC on " << path;
+    while (1) {
+        std::string require;
+        if (!ReadFileToString(path, &require)) {
+            PLOG(WARNING) << "Reading manual_gc failed in " << path;
+            break;
+        }
+
+        if (require == "" || require == "off" || require == "disabled") {
+            LOG(DEBUG) << "No more to do Dev GC";
+            break;
+        }
+
+        LOG(DEBUG) << "Trigger Dev GC on " << path;
+        if (!WriteStringToFile("1", path)) {
+            PLOG(WARNING) << "Start Dev GC failed on " << path;
+            break;
+        }
+
+        if (timer.duration() >= std::chrono::seconds(DEVGC_TIMEOUT_SEC)) {
+            LOG(WARNING) << "Dev GC timeout";
+            break;
+        }
+        sleep(2);
+    }
+    LOG(DEBUG) << "Stop Dev GC on " << path;
+    if (!WriteStringToFile("0", path)) {
+        PLOG(WARNING) << "Stop Dev GC failed on " << path;
+    }
+    return;
+}
+
 int RunIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener) {
     std::unique_lock<std::mutex> lk(cv_m);
     if (idle_maint_stat != IdleMaintStats::kStopped) {
@@ -283,6 +342,7 @@ int RunIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener) {
 
     if (!gc_aborted) {
         Trim(nullptr);
+        runDevGc();
     }
 
     if (listener) {
