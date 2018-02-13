@@ -98,6 +98,11 @@ extern "C" {
 
 #define CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE (1)
 
+// EVP_DecryptUpdate() requires not just our key length, but up to
+// block length - 1 additional bytes for its work.  We provide a buffer
+// size that will work for all possible ciphers.
+#define DECRYPTED_MASTER_KEY_BUF_SIZE (KEY_LEN_BYTES + EVP_MAX_BLOCK_LENGTH - 1)
+
 static int put_crypt_ftr_and_key(struct crypt_mnt_ftr* crypt_ftr);
 
 static unsigned char saved_master_key[KEY_LEN_BYTES];
@@ -846,7 +851,10 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
   struct dm_ioctl *io;
   struct dm_target_spec *tgt;
   char *crypt_params;
-  char master_key_ascii[129]; /* Large enough to hold 512 bit key and null */
+  // We can't assume the key is only KEY_LEN_BYTES.  But we do know its limit
+  // due to the crypt_mnt_ftr struct.  We need two ASCII characters to represent
+  // each byte, and need space for the '\0' terminator.
+  char master_key_ascii[sizeof(crypt_ftr->master_key) * 2 + 1];
   size_t buff_offset;
   int i;
 
@@ -1056,7 +1064,6 @@ static int scrypt(const char *passwd, const unsigned char *salt,
     int p = 1 << ftr->p_factor;
 
     /* Turn the password into a key and IV that can decrypt the master key */
-    unsigned int keysize;
     crypto_scrypt((const uint8_t*)passwd, strlen(passwd),
                   salt, SALT_LEN, N, r, p, ikey,
                   KEY_LEN_BYTES + IV_LEN_BYTES);
@@ -1110,7 +1117,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
                               unsigned char *encrypted_master_key,
                               struct crypt_mnt_ftr *crypt_ftr)
 {
-    unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
+    unsigned char ikey[KEY_LEN_BYTES+IV_LEN_BYTES] = { 0 };
     EVP_CIPHER_CTX e_ctx;
     int encrypted_len, final_len;
     int rc = 0;
@@ -1197,7 +1204,7 @@ static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
                                   unsigned char** intermediate_key,
                                   size_t* intermediate_key_size)
 {
-  unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
+  unsigned char ikey[KEY_LEN_BYTES+IV_LEN_BYTES] = { 0 };
   EVP_CIPHER_CTX d_ctx;
   int decrypted_len, final_len;
 
@@ -1593,8 +1600,7 @@ static int do_crypto_complete(const char *mount_point)
 static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
                                    const char *passwd, const char *mount_point, const char *label)
 {
-  /* Allocate enough space for a 256 bit key, but we may use less */
-  unsigned char decrypted_master_key[32];
+  unsigned char decrypted_master_key[DECRYPTED_MASTER_KEY_BUF_SIZE];
   char crypto_blkdev[MAXPATHLEN];
   char real_blkdev[MAXPATHLEN];
   char tmp_mount_point[64];
@@ -1851,8 +1857,7 @@ int cryptfs_check_passwd(const char *passwd)
 int cryptfs_verify_passwd(const char *passwd)
 {
     struct crypt_mnt_ftr crypt_ftr;
-    /* Allocate enough space for a 256 bit key, but we may use less */
-    unsigned char decrypted_master_key[32];
+    unsigned char decrypted_master_key[DECRYPTED_MASTER_KEY_BUF_SIZE];
     char encrypted_state[PROPERTY_VALUE_MAX];
     int rc;
 
@@ -2002,7 +2007,7 @@ static int vold_unmountAll(void) {
 
 int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN];
-    unsigned char decrypted_master_key[KEY_LEN_BYTES];
+    unsigned char decrypted_master_key[DECRYPTED_MASTER_KEY_BUF_SIZE];
     int rc=-1, i;
     struct crypt_mnt_ftr crypt_ftr;
     struct crypt_persist_data *pdata;
@@ -2686,7 +2691,7 @@ int cryptfs_setfield(const char *fieldname, const char *value)
     }
 
     for (field_id = 1; field_id < num_entries; field_id++) {
-        snprintf(temp_field, sizeof(temp_field), "%s_%d", fieldname, field_id);
+        snprintf(temp_field, sizeof(temp_field), "%s_%u", fieldname, field_id);
 
         if (persist_set_key(temp_field, value + field_id * (PROPERTY_VALUE_MAX - 1), encrypted)) {
             // fail to set key, should not happen as we have already checked the available space.
