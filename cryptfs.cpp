@@ -72,7 +72,6 @@ extern "C" {
 #define DM_CRYPT_BUF_SIZE 4096
 
 #define HASH_COUNT 2000
-#define KEY_LEN_BYTES 16
 #define IV_LEN_BYTES 16
 
 #define KEY_IN_FOOTER  "footer"
@@ -101,11 +100,11 @@ extern "C" {
 // EVP_DecryptUpdate() requires not just our key length, but up to
 // block length - 1 additional bytes for its work.  We provide a buffer
 // size that will work for all possible ciphers.
-#define DECRYPTED_MASTER_KEY_BUF_SIZE (KEY_LEN_BYTES + EVP_MAX_BLOCK_LENGTH - 1)
+#define DECRYPTED_MASTER_KEY_BUF_SIZE (MAX_KEY_LEN + EVP_MAX_BLOCK_LENGTH - 1)
 
 static int put_crypt_ftr_and_key(struct crypt_mnt_ftr* crypt_ftr);
 
-static unsigned char saved_master_key[KEY_LEN_BYTES];
+static unsigned char saved_master_key[MAX_KEY_LEN];
 static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
@@ -259,6 +258,94 @@ static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, u
         strlcpy(io->name, name, sizeof(io->name));
     }
 }
+
+namespace {
+
+struct CryptType;
+
+// Use to get the CryptType in use on this device.
+const CryptType &get_crypt_type();
+
+struct CryptType {
+    const char * name;
+    __le32 keysize;
+
+    constexpr CryptType(const char *n, size_t size) : name(n), keysize(size) {}
+
+ private:
+    friend const CryptType &get_crypt_type();
+    static const CryptType &get_device_crypt_name();
+};
+
+// We only want to parse this read-only property once.  But we need to wait
+// until the system is initialized before we can read it.  So we use a static
+// scoped within this function to get it only once.
+const CryptType &get_crypt_type() {
+    static CryptType crypt_type = CryptType::get_device_crypt_name();
+    return crypt_type;
+}
+
+__le32 get_keysize() {
+    return get_crypt_type().keysize;
+}
+
+const char *get_crypt_name() {
+    return get_crypt_type().name;
+}
+
+
+
+constexpr CryptType default_crypt_type = CryptType("aes-cbc-essiv:sha256", 16);
+
+constexpr CryptType supported_crypt_types[] = {
+    default_crypt_type,
+    CryptType("speck128-xts-plain64", 32),
+    // Add new CryptTypes here.  Order is not important.
+};
+
+
+// ---------- START COMPILE-TIME SANITY CHECK BLOCK -------------------------
+// We confirm all supported_crypt_types have a small enough keysize.
+
+template <typename T, size_t N>
+constexpr size_t array_length(T (&)[N]) { return N; }
+
+constexpr bool indexOutOfBoundsForCryptTypes(size_t index) {
+    return (index >= array_length(supported_crypt_types));
+}
+
+// Note in C++11 that constexpr functions can only have a single line.
+// So our code is a bit convoluted (using recursion instead of a loop),
+// but it's asserting at compile time that all of our key lengths are valid.
+constexpr bool validateSupportedCryptTypes(size_t index) {
+    return indexOutOfBoundsForCryptTypes(index) ||
+        ((supported_crypt_types[index].keysize <= MAX_KEY_LEN) &&
+         validateSupportedCryptTypes(index + 1));
+}
+
+static_assert(validateSupportedCryptTypes(0),
+              "We have a CryptType with keysize > MAX_KEYSIZE");
+//  ---------- END COMPILE-TIME SANITY CHECK BLOCK -------------------------
+
+
+// Don't call this directly, use get_crypt_type(), which caches this result.
+const CryptType &CryptType::get_device_crypt_name() {
+    constexpr char CRYPT_TYPE_PROP[] = "ro.crypto.crypt_type_name";
+    char paramstr[PROPERTY_VALUE_MAX];
+
+    property_get(CRYPT_TYPE_PROP, paramstr, default_crypt_type.name);
+    for (auto const &ctype : supported_crypt_types) {
+        if (strcmp(paramstr, ctype.name) == 0) {
+            return ctype;
+        }
+    }
+    ALOGE("Invalid name (%s) for %s.  Defaulting to %s\n", paramstr,
+          CRYPT_TYPE_PROP, default_crypt_type.name);
+    return default_crypt_type;
+}
+
+}  // namespace
+
 
 /**
  * Gets the default device scrypt parameters for key derivation time tuning.
@@ -851,7 +938,7 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
   struct dm_ioctl *io;
   struct dm_target_spec *tgt;
   char *crypt_params;
-  // We can't assume the key is only KEY_LEN_BYTES.  But we do know its limit
+  // We can't assume the key is only get_keysize().  But we do know its limit
   // due to the crypt_mnt_ftr struct.  We need two ASCII characters to represent
   // each byte, and need space for the '\0' terminator.
   char master_key_ascii[sizeof(crypt_ftr->master_key) * 2 + 1];
@@ -1048,7 +1135,7 @@ static int pbkdf2(const char *passwd, const unsigned char *salt,
 
     /* Turn the password into a key and IV that can decrypt the master key */
     return PKCS5_PBKDF2_HMAC_SHA1(passwd, strlen(passwd), salt, SALT_LEN,
-                                  HASH_COUNT, KEY_LEN_BYTES + IV_LEN_BYTES,
+                                  HASH_COUNT, get_keysize() + IV_LEN_BYTES,
                                   ikey) != 1;
 }
 
@@ -1066,7 +1153,7 @@ static int scrypt(const char *passwd, const unsigned char *salt,
     /* Turn the password into a key and IV that can decrypt the master key */
     crypto_scrypt((const uint8_t*)passwd, strlen(passwd),
                   salt, SALT_LEN, N, r, p, ikey,
-                  KEY_LEN_BYTES + IV_LEN_BYTES);
+                  get_keysize() + IV_LEN_BYTES);
 
    return 0;
 }
@@ -1087,21 +1174,21 @@ static int scrypt_keymaster(const char *passwd, const unsigned char *salt,
 
     rc = crypto_scrypt((const uint8_t*)passwd, strlen(passwd),
                        salt, SALT_LEN, N, r, p, ikey,
-                       KEY_LEN_BYTES + IV_LEN_BYTES);
+                       get_keysize() + IV_LEN_BYTES);
 
     if (rc) {
         SLOGE("scrypt failed");
         return -1;
     }
 
-    if (keymaster_sign_object(ftr, ikey, KEY_LEN_BYTES + IV_LEN_BYTES,
+    if (keymaster_sign_object(ftr, ikey, get_keysize() + IV_LEN_BYTES,
                               &signature, &signature_size)) {
         SLOGE("Signing failed");
         return -1;
     }
 
     rc = crypto_scrypt(signature, signature_size, salt, SALT_LEN,
-                       N, r, p, ikey, KEY_LEN_BYTES + IV_LEN_BYTES);
+                       N, r, p, ikey, get_keysize() + IV_LEN_BYTES);
     free(signature);
 
     if (rc) {
@@ -1117,7 +1204,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
                               unsigned char *encrypted_master_key,
                               struct crypt_mnt_ftr *crypt_ftr)
 {
-    unsigned char ikey[KEY_LEN_BYTES+IV_LEN_BYTES] = { 0 };
+    unsigned char ikey[MAX_KEY_LEN+IV_LEN_BYTES] = { 0 };
     EVP_CIPHER_CTX e_ctx;
     int encrypted_len, final_len;
     int rc = 0;
@@ -1152,7 +1239,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
 
     /* Initialize the decryption engine */
     EVP_CIPHER_CTX_init(&e_ctx);
-    if (! EVP_EncryptInit_ex(&e_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+KEY_LEN_BYTES)) {
+    if (! EVP_EncryptInit_ex(&e_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+get_keysize())) {
         SLOGE("EVP_EncryptInit failed\n");
         return -1;
     }
@@ -1160,7 +1247,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
 
     /* Encrypt the master key */
     if (! EVP_EncryptUpdate(&e_ctx, encrypted_master_key, &encrypted_len,
-                            decrypted_master_key, KEY_LEN_BYTES)) {
+                            decrypted_master_key, get_keysize())) {
         SLOGE("EVP_EncryptUpdate failed\n");
         return -1;
     }
@@ -1169,7 +1256,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
         return -1;
     }
 
-    if (encrypted_len + final_len != KEY_LEN_BYTES) {
+    if (encrypted_len + final_len != static_cast<int>(get_keysize())) {
         SLOGE("EVP_Encryption length check failed with %d, %d bytes\n", encrypted_len, final_len);
         return -1;
     }
@@ -1183,7 +1270,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
     int r = 1 << crypt_ftr->r_factor;
     int p = 1 << crypt_ftr->p_factor;
 
-    rc = crypto_scrypt(ikey, KEY_LEN_BYTES,
+    rc = crypto_scrypt(ikey, get_keysize(),
                        crypt_ftr->salt, sizeof(crypt_ftr->salt), N, r, p,
                        crypt_ftr->scrypted_intermediate_key,
                        sizeof(crypt_ftr->scrypted_intermediate_key));
@@ -1204,7 +1291,7 @@ static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
                                   unsigned char** intermediate_key,
                                   size_t* intermediate_key_size)
 {
-  unsigned char ikey[KEY_LEN_BYTES+IV_LEN_BYTES] = { 0 };
+  unsigned char ikey[MAX_KEY_LEN+IV_LEN_BYTES] = { 0 };
   EVP_CIPHER_CTX d_ctx;
   int decrypted_len, final_len;
 
@@ -1217,29 +1304,29 @@ static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
 
   /* Initialize the decryption engine */
   EVP_CIPHER_CTX_init(&d_ctx);
-  if (! EVP_DecryptInit_ex(&d_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+KEY_LEN_BYTES)) {
+  if (! EVP_DecryptInit_ex(&d_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+get_keysize())) {
     return -1;
   }
   EVP_CIPHER_CTX_set_padding(&d_ctx, 0); /* Turn off padding as our data is block aligned */
   /* Decrypt the master key */
   if (! EVP_DecryptUpdate(&d_ctx, decrypted_master_key, &decrypted_len,
-                            encrypted_master_key, KEY_LEN_BYTES)) {
+                            encrypted_master_key, get_keysize())) {
     return -1;
   }
   if (! EVP_DecryptFinal_ex(&d_ctx, decrypted_master_key + decrypted_len, &final_len)) {
     return -1;
   }
 
-  if (decrypted_len + final_len != KEY_LEN_BYTES) {
+  if (decrypted_len + final_len != static_cast<int>(get_keysize())) {
     return -1;
   }
 
   /* Copy intermediate key if needed by params */
   if (intermediate_key && intermediate_key_size) {
-    *intermediate_key = (unsigned char*) malloc(KEY_LEN_BYTES);
+    *intermediate_key = (unsigned char*) malloc(get_keysize());
     if (*intermediate_key) {
-      memcpy(*intermediate_key, ikey, KEY_LEN_BYTES);
-      *intermediate_key_size = KEY_LEN_BYTES;
+      memcpy(*intermediate_key, ikey, get_keysize());
+      *intermediate_key_size = get_keysize();
     }
   }
 
@@ -1285,7 +1372,7 @@ static int decrypt_master_key(const char *passwd, unsigned char *decrypted_maste
 static int create_encrypted_random_key(const char *passwd, unsigned char *master_key, unsigned char *salt,
         struct crypt_mnt_ftr *crypt_ftr) {
     int fd;
-    unsigned char key_buf[KEY_LEN_BYTES];
+    unsigned char key_buf[MAX_KEY_LEN];
 
     /* Get some random bits for a key */
     fd = open("/dev/urandom", O_RDONLY|O_CLOEXEC);
@@ -1683,7 +1770,7 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
     /* Also save a the master key so we can reencrypted the key
      * the key when we want to change the password on it. */
-    memcpy(saved_master_key, decrypted_master_key, KEY_LEN_BYTES);
+    memcpy(saved_master_key, decrypted_master_key, get_keysize());
     saved_mount_point = strdup(mount_point);
     master_key_saved = 1;
     SLOGD("%s(): Master key saved\n", __FUNCTION__);
@@ -1758,7 +1845,7 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
     memset(&ext_crypt_ftr, 0, sizeof(ext_crypt_ftr));
     ext_crypt_ftr.fs_size = nr_sec;
     ext_crypt_ftr.keysize = keysize;
-    strlcpy((char*) ext_crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256",
+    strlcpy((char*) ext_crypt_ftr.crypto_type_name, get_crypt_name(),
             MAX_CRYPTO_TYPE_NAME_LEN);
 
     return create_crypto_blk_dev(
@@ -1901,7 +1988,7 @@ int cryptfs_verify_passwd(const char *passwd)
 }
 
 /* Initialize a crypt_mnt_ftr structure.  The keysize is
- * defaulted to 16 bytes, and the filesystem size to 0.
+ * defaulted to get_keysize(), and the filesystem size to 0.
  * Presumably, at a minimum, the caller will update the
  * filesystem size and crypto_type_name after calling this function.
  */
@@ -1914,7 +2001,7 @@ static int cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
     ftr->major_version = CURRENT_MAJOR_VERSION;
     ftr->minor_version = CURRENT_MINOR_VERSION;
     ftr->ftr_size = sizeof(struct crypt_mnt_ftr);
-    ftr->keysize = KEY_LEN_BYTES;
+    ftr->keysize = get_keysize();
 
     switch (keymaster_check_compatibility()) {
     case 1:
@@ -2166,7 +2253,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
             crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
         }
         crypt_ftr.crypt_type = crypt_type;
-        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
+        strlcpy((char *)crypt_ftr.crypto_type_name, get_crypt_name(), MAX_CRYPTO_TYPE_NAME_LEN);
 
         /* Make an encrypted master key */
         if (create_encrypted_random_key(onlyCreateHeader ? DEFAULT_PASSWORD : passwd,
@@ -2177,8 +2264,8 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
 
         /* Replace scrypted intermediate key if we are preparing for a reboot */
         if (onlyCreateHeader) {
-            unsigned char fake_master_key[KEY_LEN_BYTES];
-            unsigned char encrypted_fake_master_key[KEY_LEN_BYTES];
+            unsigned char fake_master_key[MAX_KEY_LEN];
+            unsigned char encrypted_fake_master_key[MAX_KEY_LEN];
             memset(fake_master_key, 0, sizeof(fake_master_key));
             encrypt_master_key(passwd, crypt_ftr.salt, fake_master_key,
                                encrypted_fake_master_key, &crypt_ftr);
