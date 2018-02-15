@@ -1604,8 +1604,7 @@ static int do_crypto_complete(const char *mount_point)
 static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
                                    const char *passwd, const char *mount_point, const char *label)
 {
-  /* Allocate enough space for a 256 bit key, but we may use less */
-  unsigned char decrypted_master_key[32];
+  unsigned char decrypted_master_key[KEY_LEN_BYTES];
   char crypto_blkdev[MAXPATHLEN];
   char real_blkdev[MAXPATHLEN];
   char tmp_mount_point[64];
@@ -1862,8 +1861,7 @@ int cryptfs_check_passwd(const char *passwd)
 int cryptfs_verify_passwd(const char *passwd)
 {
     struct crypt_mnt_ftr crypt_ftr;
-    /* Allocate enough space for a 256 bit key, but we may use less */
-    unsigned char decrypted_master_key[32];
+    unsigned char decrypted_master_key[KEY_LEN_BYTES];
     char encrypted_state[PROPERTY_VALUE_MAX];
     int rc;
 
