@@ -73,7 +73,15 @@ extern "C" {
 
 #define HASH_COUNT 2000
 #define KEY_LEN_BYTES 16
-#define IV_LEN_BYTES 16
+
+constexpr size_t INTERMEDIATE_KEY_LEN_BYTES = 16;
+constexpr size_t INTERMEDIATE_IV_LEN_BYTES = 16;
+constexpr size_t INTERMEDIATE_BUF_SIZE =
+    (INTERMEDIATE_KEY_LEN_BYTES + INTERMEDIATE_IV_LEN_BYTES);
+
+// SCRYPT_LEN is used by struct crypt_mnt_ftr for its intermediate key.
+static_assert(INTERMEDIATE_BUF_SIZE == SCRYPT_LEN,
+              "Mismatch of intermediate key sizes");
 
 #define KEY_IN_FOOTER  "footer"
 
@@ -1043,7 +1051,7 @@ static int pbkdf2(const char *passwd, const unsigned char *salt,
 
     /* Turn the password into a key and IV that can decrypt the master key */
     return PKCS5_PBKDF2_HMAC_SHA1(passwd, strlen(passwd), salt, SALT_LEN,
-                                  HASH_COUNT, KEY_LEN_BYTES + IV_LEN_BYTES,
+                                  HASH_COUNT, INTERMEDIATE_BUF_SIZE,
                                   ikey) != 1;
 }
 
@@ -1061,7 +1069,7 @@ static int scrypt(const char *passwd, const unsigned char *salt,
     /* Turn the password into a key and IV that can decrypt the master key */
     crypto_scrypt((const uint8_t*)passwd, strlen(passwd),
                   salt, SALT_LEN, N, r, p, ikey,
-                  KEY_LEN_BYTES + IV_LEN_BYTES);
+                  INTERMEDIATE_BUF_SIZE);
 
    return 0;
 }
@@ -1082,21 +1090,21 @@ static int scrypt_keymaster(const char *passwd, const unsigned char *salt,
 
     rc = crypto_scrypt((const uint8_t*)passwd, strlen(passwd),
                        salt, SALT_LEN, N, r, p, ikey,
-                       KEY_LEN_BYTES + IV_LEN_BYTES);
+                       INTERMEDIATE_BUF_SIZE);
 
     if (rc) {
         SLOGE("scrypt failed");
         return -1;
     }
 
-    if (keymaster_sign_object(ftr, ikey, KEY_LEN_BYTES + IV_LEN_BYTES,
+    if (keymaster_sign_object(ftr, ikey, INTERMEDIATE_BUF_SIZE,
                               &signature, &signature_size)) {
         SLOGE("Signing failed");
         return -1;
     }
 
     rc = crypto_scrypt(signature, signature_size, salt, SALT_LEN,
-                       N, r, p, ikey, KEY_LEN_BYTES + IV_LEN_BYTES);
+                       N, r, p, ikey, INTERMEDIATE_BUF_SIZE);
     free(signature);
 
     if (rc) {
@@ -1112,7 +1120,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
                               unsigned char *encrypted_master_key,
                               struct crypt_mnt_ftr *crypt_ftr)
 {
-    unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
+    unsigned char ikey[INTERMEDIATE_BUF_SIZE] = { 0 };
     EVP_CIPHER_CTX e_ctx;
     int encrypted_len, final_len;
     int rc = 0;
@@ -1147,7 +1155,8 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
 
     /* Initialize the decryption engine */
     EVP_CIPHER_CTX_init(&e_ctx);
-    if (! EVP_EncryptInit_ex(&e_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+KEY_LEN_BYTES)) {
+    if (! EVP_EncryptInit_ex(&e_ctx, EVP_aes_128_cbc(), NULL, ikey,
+                             ikey+INTERMEDIATE_KEY_LEN_BYTES)) {
         SLOGE("EVP_EncryptInit failed\n");
         return -1;
     }
@@ -1178,7 +1187,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
     int r = 1 << crypt_ftr->r_factor;
     int p = 1 << crypt_ftr->p_factor;
 
-    rc = crypto_scrypt(ikey, KEY_LEN_BYTES,
+    rc = crypto_scrypt(ikey, INTERMEDIATE_KEY_LEN_BYTES,
                        crypt_ftr->salt, sizeof(crypt_ftr->salt), N, r, p,
                        crypt_ftr->scrypted_intermediate_key,
                        sizeof(crypt_ftr->scrypted_intermediate_key));
@@ -1199,7 +1208,7 @@ static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
                                   unsigned char** intermediate_key,
                                   size_t* intermediate_key_size)
 {
-  unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
+  unsigned char ikey[INTERMEDIATE_BUF_SIZE] = { 0 };
   EVP_CIPHER_CTX d_ctx;
   int decrypted_len, final_len;
 
@@ -1212,7 +1221,7 @@ static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
 
   /* Initialize the decryption engine */
   EVP_CIPHER_CTX_init(&d_ctx);
-  if (! EVP_DecryptInit_ex(&d_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+KEY_LEN_BYTES)) {
+  if (! EVP_DecryptInit_ex(&d_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+INTERMEDIATE_KEY_LEN_BYTES)) {
     return -1;
   }
   EVP_CIPHER_CTX_set_padding(&d_ctx, 0); /* Turn off padding as our data is block aligned */
@@ -1231,10 +1240,10 @@ static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
 
   /* Copy intermediate key if needed by params */
   if (intermediate_key && intermediate_key_size) {
-    *intermediate_key = (unsigned char*) malloc(KEY_LEN_BYTES);
+    *intermediate_key = (unsigned char*) malloc(INTERMEDIATE_KEY_LEN_BYTES);
     if (*intermediate_key) {
-      memcpy(*intermediate_key, ikey, KEY_LEN_BYTES);
-      *intermediate_key_size = KEY_LEN_BYTES;
+      memcpy(*intermediate_key, ikey, INTERMEDIATE_KEY_LEN_BYTES);
+      *intermediate_key_size = INTERMEDIATE_KEY_LEN_BYTES;
     }
   }
 
