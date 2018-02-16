@@ -72,7 +72,6 @@ extern "C" {
 #define DM_CRYPT_BUF_SIZE 4096
 
 #define HASH_COUNT 2000
-#define DEFAULT_KEY_LEN_BYTES 16
 
 constexpr size_t INTERMEDIATE_KEY_LEN_BYTES = 16;
 constexpr size_t INTERMEDIATE_IV_LEN_BYTES = 16;
@@ -263,6 +262,122 @@ static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, u
     }
 }
 
+namespace {
+
+struct CryptoType;
+
+// Use to get the CryptoType in use on this device.
+const CryptoType &get_crypto_type();
+
+struct CryptoType {
+    // We should only be constructing CryptoTypes as part of
+    // supported_crypto_types[].  We do it via this pseudo-builder pattern,
+    // which isn't pure or fully protected as a concession to being able to
+    // do it all at compile time.  Add new CryptoTypes in
+    // supported_crypto_types[] below.
+    constexpr CryptoType() : CryptoType(nullptr, nullptr, 0xFFFFFFFF) {}
+    constexpr CryptoType set_keysize(uint32_t size) const {
+        return CryptoType(this->property_name, this->crypto_name, size);
+    }
+    constexpr CryptoType set_property_name(const char *property) const {
+        return CryptoType(property, this->crypto_name, this->keysize);
+    }
+    constexpr CryptoType set_crypto_name(const char *crypto) const {
+        return CryptoType(this->property_name, crypto, this->keysize);
+    }
+
+    constexpr const char *get_property_name() const { return property_name; }
+    constexpr const char *get_crypto_name() const { return crypto_name; }
+    constexpr uint32_t get_keysize() const { return keysize; }
+
+ private:
+    const char *property_name;
+    const char *crypto_name;
+    uint32_t keysize;
+
+    constexpr CryptoType(const char *property, const char *crypto,
+                         uint32_t ksize)
+        : property_name(property), crypto_name(crypto), keysize(ksize) {}
+    friend const CryptoType &get_crypto_type();
+    static const CryptoType &get_device_crypto_algorithm();
+};
+
+// We only want to parse this read-only property once.  But we need to wait
+// until the system is initialized before we can read it.  So we use a static
+// scoped within this function to get it only once.
+const CryptoType &get_crypto_type() {
+    static CryptoType crypto_type = CryptoType::get_device_crypto_algorithm();
+    return crypto_type;
+}
+
+constexpr CryptoType default_crypto_type = CryptoType()
+    .set_property_name("AES-128-CBC")
+    .set_crypto_name("aes-cbc-essiv:sha256")
+    .set_keysize(16);
+
+constexpr CryptoType supported_crypto_types[] = {
+    default_crypto_type,
+    CryptoType()
+        .set_property_name("Speck128/128-XTS")
+        .set_crypto_name("speck128-xts-plain64")
+        .set_keysize(32),
+    // Add new CryptoTypes here.  Order is not important.
+};
+
+
+// ---------- START COMPILE-TIME SANITY CHECK BLOCK -------------------------
+// We confirm all supported_crypto_types have a small enough keysize and
+// had both set_property_name() and set_crypto_name() called.
+
+template <typename T, size_t N>
+constexpr size_t array_length(T (&)[N]) { return N; }
+
+constexpr bool indexOutOfBoundsForCryptoTypes(size_t index) {
+    return (index >= array_length(supported_crypto_types));
+}
+
+constexpr bool isValidCryptoType(const CryptoType &crypto_type) {
+    return ((crypto_type.get_property_name() != nullptr) &&
+            (crypto_type.get_crypto_name() != nullptr) &&
+            (crypto_type.get_keysize() <= MAX_KEY_LEN));
+}
+
+// Note in C++11 that constexpr functions can only have a single line.
+// So our code is a bit convoluted (using recursion instead of a loop),
+// but it's asserting at compile time that all of our key lengths are valid.
+constexpr bool validateSupportedCryptoTypes(size_t index) {
+    return indexOutOfBoundsForCryptoTypes(index) ||
+        (isValidCryptoType(supported_crypto_types[index]) &&
+         validateSupportedCryptoTypes(index + 1));
+}
+
+static_assert(validateSupportedCryptoTypes(0),
+              "We have a CryptoType with keysize > MAX_KEY_LEN or which was "
+              "incompletely constructed.");
+//  ---------- END COMPILE-TIME SANITY CHECK BLOCK -------------------------
+
+
+// Don't call this directly, use get_crypto_type(), which caches this result.
+const CryptoType &CryptoType::get_device_crypto_algorithm() {
+    constexpr char CRYPT_ALGO_PROP[] = "ro.crypto.fde_algorithm";
+    char paramstr[PROPERTY_VALUE_MAX];
+
+    property_get(CRYPT_ALGO_PROP, paramstr,
+                 default_crypto_type.get_property_name());
+    for (auto const &ctype : supported_crypto_types) {
+        if (strcmp(paramstr, ctype.get_property_name()) == 0) {
+            return ctype;
+        }
+    }
+    ALOGE("Invalid name (%s) for %s.  Defaulting to %s\n", paramstr,
+          CRYPT_ALGO_PROP, default_crypto_type.get_property_name());
+    return default_crypto_type;
+}
+
+}  // namespace
+
+
+
 /**
  * Gets the default device scrypt parameters for key derivation time tuning.
  * The parameters should lead to about one second derivation time for the
@@ -283,11 +398,11 @@ static void get_device_scrypt_params(struct crypt_mnt_ftr *ftr) {
 }
 
 uint32_t cryptfs_get_keysize() {
-    return DEFAULT_KEY_LEN_BYTES;
+    return get_crypto_type().get_keysize();
 }
 
 const char *cryptfs_get_crypto_name() {
-    return "aes-cbc-essiv:sha256";
+    return get_crypto_type().get_crypto_name();
 }
 
 static unsigned int get_fs_size(char *dev)
