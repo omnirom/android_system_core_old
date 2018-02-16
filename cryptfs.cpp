@@ -72,7 +72,7 @@ extern "C" {
 #define DM_CRYPT_BUF_SIZE 4096
 
 #define HASH_COUNT 2000
-#define KEY_LEN_BYTES 16
+#define DEFAULT_KEY_LEN_BYTES 16
 
 constexpr size_t INTERMEDIATE_KEY_LEN_BYTES = 16;
 constexpr size_t INTERMEDIATE_IV_LEN_BYTES = 16;
@@ -108,7 +108,7 @@ static_assert(INTERMEDIATE_BUF_SIZE == SCRYPT_LEN,
 
 static int put_crypt_ftr_and_key(struct crypt_mnt_ftr* crypt_ftr);
 
-static unsigned char saved_master_key[KEY_LEN_BYTES];
+static unsigned char saved_master_key[MAX_KEY_LEN];
 static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
@@ -585,6 +585,17 @@ static int get_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
     goto errout;
   }
 
+  // We risk buffer overflows with oversized keys, so we just reject them.
+  // 0-sized keys are problematic (essentially by-passing encryption), and
+  // AES-CBC key wrapping only works for multiples of 16 bytes.
+  if ((crypt_ftr->keysize == 0) || ((crypt_ftr->keysize % 16) != 0) ||
+      (crypt_ftr->keysize > MAX_KEY_LEN)) {
+    SLOGE("Invalid keysize (%u) for block device %s; Must be non-zero, "
+          "divisible by 16, and <= %d\n", crypt_ftr->keysize, fname,
+          MAX_KEY_LEN);
+    goto errout;
+  }
+
   if (crypt_ftr->minor_version > CURRENT_MINOR_VERSION) {
     SLOGW("Warning: crypto footer minor version %d, expected <= %d, continuing...\n",
           crypt_ftr->minor_version, CURRENT_MINOR_VERSION);
@@ -854,10 +865,9 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
   struct dm_ioctl *io;
   struct dm_target_spec *tgt;
   char *crypt_params;
-  // We can't assume the key is only KEY_LEN_BYTES.  But we do know its limit
-  // due to the crypt_mnt_ftr struct.  We need two ASCII characters to represent
-  // each byte, and need space for the '\0' terminator.
-  char master_key_ascii[sizeof(crypt_ftr->master_key) * 2 + 1];
+  // We need two ASCII characters to represent each byte, and need space for
+  // the '\0' terminator.
+  char master_key_ascii[MAX_KEY_LEN * 2 + 1];
   size_t buff_offset;
   int i;
 
@@ -1164,7 +1174,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
 
     /* Encrypt the master key */
     if (! EVP_EncryptUpdate(&e_ctx, encrypted_master_key, &encrypted_len,
-                            decrypted_master_key, KEY_LEN_BYTES)) {
+                            decrypted_master_key, crypt_ftr->keysize)) {
         SLOGE("EVP_EncryptUpdate failed\n");
         return -1;
     }
@@ -1173,7 +1183,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
         return -1;
     }
 
-    if (encrypted_len + final_len != KEY_LEN_BYTES) {
+    if (encrypted_len + final_len != static_cast<int>(crypt_ftr->keysize)) {
         SLOGE("EVP_Encryption length check failed with %d, %d bytes\n", encrypted_len, final_len);
         return -1;
     }
@@ -1202,7 +1212,8 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
 }
 
 static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
-                                  unsigned char *encrypted_master_key,
+                                  const unsigned char *encrypted_master_key,
+                                  size_t keysize,
                                   unsigned char *decrypted_master_key,
                                   kdf_func kdf, void *kdf_params,
                                   unsigned char** intermediate_key,
@@ -1227,14 +1238,14 @@ static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
   EVP_CIPHER_CTX_set_padding(&d_ctx, 0); /* Turn off padding as our data is block aligned */
   /* Decrypt the master key */
   if (! EVP_DecryptUpdate(&d_ctx, decrypted_master_key, &decrypted_len,
-                            encrypted_master_key, KEY_LEN_BYTES)) {
+                            encrypted_master_key, keysize)) {
     return -1;
   }
   if (! EVP_DecryptFinal_ex(&d_ctx, decrypted_master_key + decrypted_len, &final_len)) {
     return -1;
   }
 
-  if (decrypted_len + final_len != KEY_LEN_BYTES) {
+  if (decrypted_len + final_len != static_cast<int>(keysize)) {
     return -1;
   }
 
@@ -1277,6 +1288,7 @@ static int decrypt_master_key(const char *passwd, unsigned char *decrypted_maste
 
     get_kdf_func(crypt_ftr, &kdf, &kdf_params);
     ret = decrypt_master_key_aux(passwd, crypt_ftr->salt, crypt_ftr->master_key,
+                                 crypt_ftr->keysize,
                                  decrypted_master_key, kdf, kdf_params,
                                  intermediate_key, intermediate_key_size);
     if (ret != 0) {
@@ -1289,7 +1301,7 @@ static int decrypt_master_key(const char *passwd, unsigned char *decrypted_maste
 static int create_encrypted_random_key(const char *passwd, unsigned char *master_key, unsigned char *salt,
         struct crypt_mnt_ftr *crypt_ftr) {
     int fd;
-    unsigned char key_buf[KEY_LEN_BYTES];
+    unsigned char key_buf[MAX_KEY_LEN];
 
     /* Get some random bits for a key */
     fd = open("/dev/urandom", O_RDONLY|O_CLOEXEC);
@@ -1604,7 +1616,7 @@ static int do_crypto_complete(const char *mount_point)
 static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
                                    const char *passwd, const char *mount_point, const char *label)
 {
-  unsigned char decrypted_master_key[KEY_LEN_BYTES];
+  unsigned char decrypted_master_key[MAX_KEY_LEN];
   char crypto_blkdev[MAXPATHLEN];
   char real_blkdev[MAXPATHLEN];
   char tmp_mount_point[64];
@@ -1687,7 +1699,7 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
     /* Also save a the master key so we can reencrypted the key
      * the key when we want to change the password on it. */
-    memcpy(saved_master_key, decrypted_master_key, KEY_LEN_BYTES);
+    memcpy(saved_master_key, decrypted_master_key, crypt_ftr->keysize);
     saved_mount_point = strdup(mount_point);
     master_key_saved = 1;
     SLOGD("%s(): Master key saved\n", __FUNCTION__);
@@ -1746,6 +1758,11 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
     int fd = open(real_blkdev, O_RDONLY|O_CLOEXEC);
     if (fd == -1) {
         SLOGE("Failed to open %s: %s", real_blkdev, strerror(errno));
+        return -1;
+    }
+    if (keysize > MAX_KEY_LEN) {
+        SLOGE("ext_volume keysize (%d) larger than max (%d)\n", keysize,
+              MAX_KEY_LEN);
         return -1;
     }
 
@@ -1861,7 +1878,7 @@ int cryptfs_check_passwd(const char *passwd)
 int cryptfs_verify_passwd(const char *passwd)
 {
     struct crypt_mnt_ftr crypt_ftr;
-    unsigned char decrypted_master_key[KEY_LEN_BYTES];
+    unsigned char decrypted_master_key[MAX_KEY_LEN];
     char encrypted_state[PROPERTY_VALUE_MAX];
     int rc;
 
@@ -1905,7 +1922,7 @@ int cryptfs_verify_passwd(const char *passwd)
 }
 
 /* Initialize a crypt_mnt_ftr structure.  The keysize is
- * defaulted to 16 bytes, and the filesystem size to 0.
+ * defaulted to DEFAULT_KEY_LEN_BYTES bytes, and the filesystem size to 0.
  * Presumably, at a minimum, the caller will update the
  * filesystem size and crypto_type_name after calling this function.
  */
@@ -1918,7 +1935,7 @@ static int cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
     ftr->major_version = CURRENT_MAJOR_VERSION;
     ftr->minor_version = CURRENT_MINOR_VERSION;
     ftr->ftr_size = sizeof(struct crypt_mnt_ftr);
-    ftr->keysize = KEY_LEN_BYTES;
+    ftr->keysize = DEFAULT_KEY_LEN_BYTES;
 
     switch (keymaster_check_compatibility()) {
     case 1:
@@ -2011,7 +2028,7 @@ static int vold_unmountAll(void) {
 
 int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN];
-    unsigned char decrypted_master_key[KEY_LEN_BYTES];
+    unsigned char decrypted_master_key[MAX_KEY_LEN];
     int rc=-1, i;
     struct crypt_mnt_ftr crypt_ftr;
     struct crypt_persist_data *pdata;
@@ -2050,6 +2067,9 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
             crypt_ftr.flags |= CRYPT_FORCE_COMPLETE;
             rebootEncryption = true;
         }
+    } else {
+        // We don't want to accidentally reference invalid data.
+        memset(&crypt_ftr, 0, sizeof(crypt_ftr));
     }
 
     property_get("ro.crypto.state", encrypted_state, "");
@@ -2181,8 +2201,8 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
 
         /* Replace scrypted intermediate key if we are preparing for a reboot */
         if (onlyCreateHeader) {
-            unsigned char fake_master_key[KEY_LEN_BYTES];
-            unsigned char encrypted_fake_master_key[KEY_LEN_BYTES];
+            unsigned char fake_master_key[MAX_KEY_LEN];
+            unsigned char encrypted_fake_master_key[MAX_KEY_LEN];
             memset(fake_master_key, 0, sizeof(fake_master_key));
             encrypt_master_key(passwd, crypt_ftr.salt, fake_master_key,
                                encrypted_fake_master_key, &crypt_ftr);
