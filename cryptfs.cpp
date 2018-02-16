@@ -282,6 +282,14 @@ static void get_device_scrypt_params(struct crypt_mnt_ftr *ftr) {
     ftr->p_factor = pf;
 }
 
+uint32_t cryptfs_get_keysize() {
+    return DEFAULT_KEY_LEN_BYTES;
+}
+
+const char *cryptfs_get_crypto_name() {
+    return "aes-cbc-essiv:sha256";
+}
+
 static unsigned int get_fs_size(char *dev)
 {
     int fd, block_size;
@@ -1749,20 +1757,16 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 /*
  * Called by vold when it's asked to mount an encrypted external
  * storage volume. The incoming partition has no crypto header/footer,
- * as any metadata is been stored in a separate, small partition.
+ * as any metadata is been stored in a separate, small partition.  We
+ * assume it must be using our same crypt type and keysize.
  *
  * out_crypto_blkdev must be MAXPATHLEN.
  */
 int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
-        const unsigned char* key, int keysize, char* out_crypto_blkdev) {
+        const unsigned char* key, char* out_crypto_blkdev) {
     int fd = open(real_blkdev, O_RDONLY|O_CLOEXEC);
     if (fd == -1) {
         SLOGE("Failed to open %s: %s", real_blkdev, strerror(errno));
-        return -1;
-    }
-    if (keysize > MAX_KEY_LEN) {
-        SLOGE("ext_volume keysize (%d) larger than max (%d)\n", keysize,
-              MAX_KEY_LEN);
         return -1;
     }
 
@@ -1778,8 +1782,8 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
     struct crypt_mnt_ftr ext_crypt_ftr;
     memset(&ext_crypt_ftr, 0, sizeof(ext_crypt_ftr));
     ext_crypt_ftr.fs_size = nr_sec;
-    ext_crypt_ftr.keysize = keysize;
-    strlcpy((char*) ext_crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256",
+    ext_crypt_ftr.keysize = cryptfs_get_keysize();
+    strlcpy((char*) ext_crypt_ftr.crypto_type_name, cryptfs_get_crypto_name(),
             MAX_CRYPTO_TYPE_NAME_LEN);
 
     return create_crypto_blk_dev(
@@ -1922,7 +1926,7 @@ int cryptfs_verify_passwd(const char *passwd)
 }
 
 /* Initialize a crypt_mnt_ftr structure.  The keysize is
- * defaulted to DEFAULT_KEY_LEN_BYTES bytes, and the filesystem size to 0.
+ * defaulted to cryptfs_get_keysize() bytes, and the filesystem size to 0.
  * Presumably, at a minimum, the caller will update the
  * filesystem size and crypto_type_name after calling this function.
  */
@@ -1935,7 +1939,7 @@ static int cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
     ftr->major_version = CURRENT_MAJOR_VERSION;
     ftr->minor_version = CURRENT_MINOR_VERSION;
     ftr->ftr_size = sizeof(struct crypt_mnt_ftr);
-    ftr->keysize = DEFAULT_KEY_LEN_BYTES;
+    ftr->keysize = cryptfs_get_keysize();
 
     switch (keymaster_check_compatibility()) {
     case 1:
@@ -2190,7 +2194,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
             crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
         }
         crypt_ftr.crypt_type = crypt_type;
-        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
+        strlcpy((char *)crypt_ftr.crypto_type_name, cryptfs_get_crypto_name(), MAX_CRYPTO_TYPE_NAME_LEN);
 
         /* Make an encrypted master key */
         if (create_encrypted_random_key(onlyCreateHeader ? DEFAULT_PASSWORD : passwd,

@@ -30,6 +30,8 @@
 #include <android-base/parseint.h>
 #include <ext4_utils/ext4_crypt.h>
 
+#include "cryptfs.h"
+
 #include <vector>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -480,7 +482,7 @@ status_t Disk::partitionMixed(int8_t ratio) {
     }
 
     std::string keyRaw;
-    if (ReadRandomBytes(16, keyRaw) != OK) {
+    if (ReadRandomBytes(cryptfs_get_keysize(), keyRaw) != OK) {
         LOG(ERROR) << "Failed to generate key";
         return -EIO;
     }
