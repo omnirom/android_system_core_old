@@ -30,6 +30,7 @@
  */
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <cutils/properties.h>
 
 /* The current cryptfs version */
@@ -235,7 +236,7 @@ int cryptfs_enable(int type, const char* passwd, int no_ui);
 int cryptfs_changepw(int type, const char* newpw);
 int cryptfs_enable_default(int no_ui);
 int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const unsigned char* key,
-                             int keysize, char* out_crypto_blkdev);
+                             char* out_crypto_blkdev);
 int cryptfs_revert_ext_volume(const char* label);
 int cryptfs_getfield(const char* fieldname, char* value, int len);
 int cryptfs_setfield(const char* fieldname, const char* value);
@@ -244,5 +245,8 @@ int cryptfs_get_password_type(void);
 const char* cryptfs_get_password(void);
 void cryptfs_clear_password(void);
 int cryptfs_isConvertibleToFBE(void);
+
+uint32_t cryptfs_get_keysize();
+const char* cryptfs_get_crypto_name();
 
 #endif /* ANDROID_VOLD_CRYPTFS_H */
