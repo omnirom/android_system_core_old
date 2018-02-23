@@ -134,6 +134,7 @@ cc_library_static {
                 "model/ObbVolume.cpp",
             ],
             static_libs: [
+                "arc_services_aidl",
                 "libarcobbvolume",
             ],
             shared_libs: [
@@ -155,6 +156,7 @@ cc_binary {
     product_variables: {
         arc: {
             static_libs: [
+                "arc_services_aidl",
                 "libarcobbvolume",
             ],
             shared_libs: [
