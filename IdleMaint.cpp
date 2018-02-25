@@ -225,6 +225,9 @@ static bool waitForGc(const std::list<std::string>& paths) {
 static int startGc(const std::list<std::string>& paths) {
     for (const auto& path : paths) {
         LOG(DEBUG) << "Start GC on " << path;
+        if (!WriteStringToFile("1", path + "/discard_granularity")) {
+            PLOG(WARNING) << "Set discard gralunarity failed on" << path;
+        }
         if (!WriteStringToFile("1", path + "/gc_urgent")) {
             PLOG(WARNING) << "Start GC failed on " << path;
         }
@@ -237,6 +240,9 @@ static int stopGc(const std::list<std::string>& paths) {
         LOG(DEBUG) << "Stop GC on " << path;
         if (!WriteStringToFile("0", path + "/gc_urgent")) {
             PLOG(WARNING) << "Stop GC failed on " << path;
+        }
+        if (!WriteStringToFile("16", path + "/discard_granularity")) {
+            PLOG(WARNING) << "Set discard gralunarity failed on" << path;
         }
     }
     return android::OK;

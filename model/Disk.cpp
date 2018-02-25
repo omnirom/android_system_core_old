@@ -257,6 +257,7 @@ status_t Disk::readMetadata() {
             PLOG(WARNING) << "Failed to read vendor from " << path;
             return -errno;
         }
+        tmp = android::base::Trim(tmp);
         mLabel = tmp;
         break;
     }
@@ -267,6 +268,7 @@ status_t Disk::readMetadata() {
             PLOG(WARNING) << "Failed to read manufacturer from " << path;
             return -errno;
         }
+        tmp = android::base::Trim(tmp);
         int64_t manfid;
         if (!android::base::ParseInt(tmp, &manfid)) {
             PLOG(WARNING) << "Failed to parse manufacturer " << tmp;
