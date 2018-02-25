@@ -110,17 +110,16 @@ int Loop::destroyByDevice(const char *loopDevice) {
 int Loop::destroyAll() {
     ATRACE_NAME("Loop::destroyAll");
 
-    DIR* dir;
-    struct dirent* de;
-
     std::string root = "/dev/block/";
-    if (!(dir = opendir(root.c_str()))) {
+    auto dirp = std::unique_ptr<DIR, int (*)(DIR*)>(opendir(root.c_str()), closedir);
+    if (!dirp) {
         PLOG(ERROR) << "Failed to opendir";
         return -1;
     }
 
     // Poke through all devices looking for loops
-    while ((de = readdir(dir))) {
+    struct dirent* de;
+    while ((de = readdir(dirp.get()))) {
         auto test = std::string(de->d_name);
         if (!android::base::StartsWith(test, "loop")) continue;
 
@@ -151,7 +150,6 @@ int Loop::destroyAll() {
         }
     }
 
-    closedir(dir);
     return 0;
 }
 
