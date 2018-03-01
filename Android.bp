@@ -137,9 +137,6 @@ cc_library_static {
                 "arc_services_aidl",
                 "libarcobbvolume",
             ],
-            shared_libs: [
-                "libarcmounter",
-            ],
         },
     },
 }
@@ -159,10 +156,6 @@ cc_binary {
                 "arc_services_aidl",
                 "libarcobbvolume",
             ],
-            shared_libs: [
-                "libarcmounter",
-            ],
-
         },
     },
     init_rc: ["vold.rc"],
