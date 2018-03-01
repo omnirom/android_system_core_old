@@ -759,13 +759,5 @@ binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::
     return translateBool(e4crypt_destroy_user_storage(uuid_, userId, flags));
 }
 
-binder::Status VoldNativeService::secdiscard(const std::string& path) {
-    ENFORCE_UID(AID_SYSTEM);
-    CHECK_ARGUMENT_PATH(path);
-    ACQUIRE_CRYPT_LOCK;
-
-    return translateBool(e4crypt_secdiscard(path));
-}
-
 }  // namespace vold
 }  // namespace android

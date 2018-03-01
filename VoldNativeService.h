@@ -113,8 +113,6 @@ public:
             int32_t userId, int32_t userSerial, int32_t flags);
     binder::Status destroyUserStorage(const std::unique_ptr<std::string>& uuid,
             int32_t userId, int32_t flags);
-
-    binder::Status secdiscard(const std::string& path);
 };
 
 }  // namespace vold
