@@ -835,7 +835,3 @@ bool e4crypt_destroy_volume_keys(const std::string& volume_uuid) {
     res &= destroy_volume_keys("/data/misc_de", volume_uuid);
     return res;
 }
-
-bool e4crypt_secdiscard(const std::string& path) {
-    return android::vold::runSecdiscardSingle(path);
-}

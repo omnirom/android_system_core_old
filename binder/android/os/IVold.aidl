@@ -93,8 +93,6 @@ interface IVold {
     void prepareUserStorage(@nullable @utf8InCpp String uuid, int userId, int userSerial, int storageFlags);
     void destroyUserStorage(@nullable @utf8InCpp String uuid, int userId, int storageFlags);
 
-    void secdiscard(@utf8InCpp String path);
-
     const int ENCRYPTION_FLAG_NO_UI = 4;
 
     const int ENCRYPTION_STATE_NONE = 1;
