@@ -1900,10 +1900,12 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
     ext_crypt_ftr.keysize = cryptfs_get_keysize();
     strlcpy((char*) ext_crypt_ftr.crypto_type_name, cryptfs_get_crypto_name(),
             MAX_CRYPTO_TYPE_NAME_LEN);
+    uint32_t flags = 0;
+    if (e4crypt_is_native() &&
+        android::base::GetBoolProperty("ro.crypto.allow_encrypt_override", false))
+        flags |= CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE;
 
-    return create_crypto_blk_dev(
-        &ext_crypt_ftr, key, real_blkdev, out_crypto_blkdev, label,
-        e4crypt_is_native() ? CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE : 0);
+    return create_crypto_blk_dev(&ext_crypt_ftr, key, real_blkdev, out_crypto_blkdev, label, flags);
 }
 
 /*
