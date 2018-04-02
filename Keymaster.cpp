@@ -25,6 +25,7 @@ namespace vold {
 
 using ::android::hardware::hidl_string;
 using ::android::hardware::hidl_vec;
+using ::android::hardware::keymaster::V4_0::SecurityLevel;
 
 KeymasterOperation::~KeymasterOperation() {
     if (mDevice) mDevice->abort(mOpHandle);
@@ -97,8 +98,15 @@ bool KeymasterOperation::finish(std::string* output) {
 
 Keymaster::Keymaster() {
     auto devices = KmDevice::enumerateAvailableDevices();
-    if (devices.empty()) return;
-    mDevice = std::move(devices[0]);
+    for (auto& dev : devices) {
+        // Explicitly avoid using STRONGBOX for now.
+        // TODO: Re-enable STRONGBOX, since it's what we really want. b/77338527
+        if (dev->halVersion().securityLevel != SecurityLevel::STRONGBOX) {
+            mDevice = std::move(dev);
+            break;
+        }
+    }
+    if (!mDevice) return;
     auto& version = mDevice->halVersion();
     LOG(INFO) << "Using " << version.keymasterName << " from " << version.authorName
               << " for encryption.  Security level: " << toString(version.securityLevel)
