@@ -158,17 +158,37 @@ void HealthdDraw::draw_percent(const animation* anim) {
   const animation::text_field& field = anim->text_percent;
   if (field.font == nullptr || field.font->char_width == 0 ||
       field.font->char_height == 0) {
-    return;
+
+    char cap_str[5];
+    int x, y;
+    int str_len_px;
+    int batt_height = 0;
+    // get height of battery image to draw text below
+    const animation::frame& frame = anim->frames[anim->cur_frame];
+    if (anim->num_frames != 0) {
+        // nothing else should happen actually
+        batt_height = gr_get_height(frame.surface);
+    }
+
+    snprintf(cap_str, (5), "%d%%", cur_level);
+    str_len_px = gr_measure(gr_sys_font(), cap_str);
+    x = (gr_fb_width() - str_len_px) / 2;
+    // draw it below the battery image
+    y = (gr_fb_height() + batt_height) / 2 + char_height_ * 2;
+    // Omni swag
+    gr_color(0xa1, 0xc7, 0x29, 255);
+    draw_text(gr_sys_font(), x, y, cap_str);
+
+  } else {
+    std::string str = base::StringPrintf("%d%%", cur_level);
+
+    int x, y;
+    determine_xy(field, str.size(), &x, &y);
+
+    LOGV("drawing percent %s %d %d\n", str.c_str(), x, y);
+    gr_color(field.color_r, field.color_g, field.color_b, field.color_a);
+    draw_text(field.font, x, y, str.c_str());
   }
-
-  std::string str = base::StringPrintf("%d%%", cur_level);
-
-  int x, y;
-  determine_xy(field, str.size(), &x, &y);
-
-  LOGV("drawing percent %s %d %d\n", str.c_str(), x, y);
-  gr_color(field.color_r, field.color_g, field.color_b, field.color_a);
-  draw_text(field.font, x, y, str.c_str());
 }
 
 void HealthdDraw::draw_battery(const animation* anim) {
