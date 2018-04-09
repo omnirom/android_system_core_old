@@ -42,7 +42,7 @@ LOCAL_MODULE := libhealthd_draw
 
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)
 LOCAL_STATIC_LIBRARIES := \
-	libminui \
+	libhealthd_minui \
 	libbase
 LOCAL_SRC_FILES := healthd_draw.cpp
 
@@ -106,7 +106,7 @@ LOCAL_EXPORT_C_INCLUDE_DIRS := \
     $(LOCAL_PATH)/include
 
 LOCAL_STATIC_LIBRARIES := \
-    libminui \
+    libhealthd_minui \
     libpng \
     libz \
     libutils \
@@ -167,7 +167,7 @@ LOCAL_STATIC_LIBRARIES := \
 
 ifneq ($(strip $(LOCAL_CHARGER_NO_UI)),true)
 LOCAL_STATIC_LIBRARIES += \
-    libminui \
+    libhealthd_minui \
     libpng \
     libz \
 
@@ -250,3 +250,5 @@ LOCAL_SHARED_LIBRARIES := \
     android.hardware.health@1.0 \
 
 include $(BUILD_EXECUTABLE)
+
+include $(LOCAL_PATH)/minui/Android.mk
