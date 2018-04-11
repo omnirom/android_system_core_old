@@ -86,6 +86,10 @@ status_t Format(const std::string& source) {
         cmd.push_back("-O");
         cmd.push_back("encrypt");
     }
+
+    cmd.push_back("-O");
+    cmd.push_back("verity");
+
     cmd.push_back(source);
     return ForkExecvp(cmd);
 }
