@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef _MINUI_H_
-#define _MINUI_H_
+#ifndef _MINUI_HEALTHD_H_
+#define _MINUI_HEALTHD_H_
 
 #include <sys/types.h>
 
