@@ -32,7 +32,7 @@
 #include <android-base/strings.h>
 #include <png.h>
 
-#include "minui/minui.h"
+#include "minui/minui_healthd.h"
 
 #define SURFACE_DATA_ALIGNMENT 8
 

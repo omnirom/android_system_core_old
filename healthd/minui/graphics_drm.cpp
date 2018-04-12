@@ -27,7 +27,7 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
-#include "minui/minui.h"
+#include "minui/minui_healthd.h"
 
 #define ARRAY_SIZE(A) (sizeof(A)/sizeof(*(A)))
 

@@ -18,7 +18,7 @@
 #define HEALTHD_DRAW_H
 
 #include <linux/input.h>
-#include <minui/minui.h>
+#include <minui/minui_healthd.h>
 
 #include "animation.h"
 

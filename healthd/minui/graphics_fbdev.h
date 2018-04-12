@@ -20,7 +20,7 @@
 #include <linux/fb.h>
 
 #include "graphics.h"
-#include "minui/minui.h"
+#include "minui/minui_healthd.h"
 
 class MinuiBackendFbdev : public MinuiBackend {
  public:

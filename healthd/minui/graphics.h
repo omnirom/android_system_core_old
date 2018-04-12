@@ -17,7 +17,7 @@
 #ifndef _GRAPHICS_H_
 #define _GRAPHICS_H_
 
-#include "minui/minui.h"
+#include "minui/minui_healthd.h"
 
 class MinuiBackend {
  public:

@@ -26,7 +26,7 @@
 #include <adf/adf.h>
 #include <sync/sync.h>
 
-#include "minui/minui.h"
+#include "minui/minui_healthd.h"
 
 MinuiBackendAdf::MinuiBackendAdf()
     : intf_fd(-1), dev(), current_surface(0), n_surfaces(0), surfaces() {}

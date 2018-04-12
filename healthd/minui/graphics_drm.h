@@ -22,7 +22,7 @@
 #include <xf86drmMode.h>
 
 #include "graphics.h"
-#include "minui/minui.h"
+#include "minui/minui_healthd.h"
 
 class GRSurfaceDrm : public GRSurface {
  private:

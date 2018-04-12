@@ -26,7 +26,7 @@
 
 #include <functional>
 
-#include "minui/minui.h"
+#include "minui/minui_healthd.h"
 
 #define MAX_DEVICES 16
 #define MAX_MISC_FDS 16

@@ -31,7 +31,7 @@
 #include "graphics_adf.h"
 #include "graphics_drm.h"
 #include "graphics_fbdev.h"
-#include "minui/minui.h"
+#include "minui/minui_healthd.h"
 
 static GRFont* gr_font = NULL;
 static MinuiBackend* gr_backend = nullptr;
