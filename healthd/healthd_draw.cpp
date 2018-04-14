@@ -175,8 +175,17 @@ void HealthdDraw::draw_percent(const animation* anim) {
     x = (gr_fb_width() - str_len_px) / 2;
     // draw it below the battery image
     y = (gr_fb_height() + batt_height) / 2 + char_height_ * 2;
-    // Omni swag
-    gr_color(0xa1, 0xc7, 0x29, 255);
+
+    if (cur_level < 15) {
+      gr_color(255, 0, 0, 255); // red
+    } else if (cur_level < 50) {
+      gr_color(255, 128, 0, 255); // orange
+    } else if (cur_level < 90) {
+      gr_color(255, 255, 0, 255); // yellow
+    } else { // cur_level >= 90
+      gr_color(0, 255, 0, 255); // green
+    }
+
     draw_text(gr_sys_font(), x, y, cap_str);
 
   } else {
