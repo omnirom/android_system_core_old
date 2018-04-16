@@ -39,6 +39,7 @@
 #include <android-base/logging.h>
 #include <android-base/parseint.h>
 #include <android-base/stringprintf.h>
+#include <android-base/strings.h>
 #include <cutils/fs.h>
 #include <cutils/log.h>
 
@@ -751,9 +752,11 @@ int VolumeManager::unmountAll() {
     std::list<std::string> toUnmount;
     mntent* mentry;
     while ((mentry = getmntent(fp)) != NULL) {
-        if (strncmp(mentry->mnt_dir, "/mnt/", 5) == 0
-                || strncmp(mentry->mnt_dir, "/storage/", 9) == 0) {
-            toUnmount.push_front(std::string(mentry->mnt_dir));
+        auto test = std::string(mentry->mnt_dir);
+        if ((android::base::StartsWith(test, "/mnt/") &&
+             !android::base::StartsWith(test, "/mnt/vendor")) ||
+            android::base::StartsWith(test, "/storage/")) {
+            toUnmount.push_front(test);
         }
     }
     endmntent(fp);
