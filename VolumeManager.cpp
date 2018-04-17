@@ -623,8 +623,9 @@ int VolumeManager::unmountAll() {
     mntent* mentry;
     while ((mentry = getmntent(fp)) != NULL) {
         auto test = std::string(mentry->mnt_dir);
-        if (android::base::StartsWith(test, "/mnt/")
-                || android::base::StartsWith(test, "/storage/")) {
+        if ((android::base::StartsWith(test, "/mnt/") &&
+             !android::base::StartsWith(test, "/mnt/vendor")) ||
+            android::base::StartsWith(test, "/storage/")) {
             toUnmount.push_front(test);
         }
     }
