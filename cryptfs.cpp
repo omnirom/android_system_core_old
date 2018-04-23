@@ -36,13 +36,13 @@
 #include <android-base/properties.h>
 #include <bootloader_message/bootloader_message.h>
 #include <cutils/android_reboot.h>
-#include <cutils/log.h>
 #include <cutils/properties.h>
 #include <ext4_utils/ext4_crypt.h>
 #include <ext4_utils/ext4_utils.h>
 #include <f2fs_sparseblock.h>
 #include <fs_mgr.h>
 #include <hardware_legacy/power.h>
+#include <log/log.h>
 #include <logwrap/logwrap.h>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
