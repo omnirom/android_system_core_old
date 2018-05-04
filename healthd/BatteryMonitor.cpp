@@ -281,6 +281,14 @@ bool BatteryMonitor::update(void) {
                 ChargingCurrent = getOpFastCurrent(ChargingCurrent);
             }
 #endif
+
+#ifdef HEALTHD_ENABLE_HUAWEI_FASTCHG_CHECK
+            if (ChargingCurrent == 0) {
+                path.clear();
+                path.appendFormat("%s/USB/current_max", POWER_SUPPLY_SYSFS_PATH);
+                ChargingCurrent = (access(path.string(), R_OK) == 0) ? getIntField(path) : 0;
+            }
+#endif
             path.clear();
             path.appendFormat("%s/%s/voltage_max", POWER_SUPPLY_SYSFS_PATH,
                               mChargerNames[i].string());
