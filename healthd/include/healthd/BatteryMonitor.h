@@ -62,6 +62,10 @@ class BatteryMonitor {
     bool isOpFastCharge();
     int getOpFastCurrent(int ChargingCurrent);
 #endif
+#ifdef HEALTHD_ENABLE_HUAWEI_FASTCHG_CHECK
+    bool isHuaweiFastCharge();
+    int getHuaweiFastCurrent(int ChargingCurrent);
+#endif
 };
 
 }; // namespace android
