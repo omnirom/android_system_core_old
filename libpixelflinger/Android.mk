@@ -6,14 +6,14 @@ include $(CLEAR_VARS)
 #
 
 include $(CLEAR_VARS)
-PIXELFLINGER_SRC_FILES:= \
+PIXELFLINGER_SRC_FILES := \
 	codeflinger/CodeCache.cpp \
 	format.cpp \
 	clear.cpp \
 	raster.cpp \
 	buffer.cpp
 
-ifeq ($(filter x86%,$(TARGET_ARCH)),)
+ifneq ($(TARGET_ARCH),x86, x86_64)
 PIXELFLINGER_SRC_FILES += \
 	codeflinger/ARMAssemblerInterface.cpp \
 	codeflinger/ARMAssemblerProxy.cpp \
@@ -25,7 +25,7 @@ PIXELFLINGER_SRC_FILES += \
 	picker.cpp.arm \
 	pixelflinger.cpp.arm \
 	trap.cpp.arm \
-	scanline.cpp.arm \
+	scanline.cpp.arm
 
 endif
 
@@ -83,8 +83,9 @@ LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)/include
 LOCAL_C_INCLUDES += $(LOCAL_EXPORT_C_INCLUDE_DIRS) \
 		    external/safe-iop/include
 LOCAL_SHARED_LIBRARIES := libcutils liblog libutils
-LOCAL_WHOLE_STATIC_LIBRARIES_x86 := libenc
-LOCAL_WHOLE_STATIC_LIBRARIES_x86_64 := libenc
+LOCAL_C_INCLUDES_x86 := $(TARGET_OUT_HEADERS)/libenc
+LOCAL_STATIC_LIBRARIES_x86 := libenc
+LOCAL_STATIC_LIBRARIES_x86_64 := libenc
 
 # Really this should go away entirely or at least not depend on
 # libhardware, but this at least gets us built.
