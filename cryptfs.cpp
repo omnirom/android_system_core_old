@@ -20,49 +20,54 @@
  *
  */
 
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/stat.h>
-#include <ctype.h>
-#include <fcntl.h>
-#include <inttypes.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <sys/ioctl.h>
-#include <linux/dm-ioctl.h>
-#include <libgen.h>
-#include <stdlib.h>
-#include <sys/param.h>
-#include <string.h>
-#include <sys/mount.h>
-#include <openssl/evp.h>
-#include <openssl/sha.h>
-#include <errno.h>
+#define LOG_TAG "Cryptfs"
+
+#include "cryptfs.h"
+
+#include "EncryptInplace.h"
+#include "Ext4Crypt.h"
+#include "Keymaster.h"
+#include "Process.h"
+#include "ScryptParameters.h"
+#include "VoldUtil.h"
+#include "VolumeManager.h"
+#include "secontext.h"
+
+#include <android-base/properties.h>
+#include <bootloader_message/bootloader_message.h>
+#include <cutils/android_reboot.h>
+#include <cutils/log.h>
+#include <cutils/properties.h>
 #include <ext4_utils/ext4.h>
 #include <ext4_utils/ext4_utils.h>
-#include <linux/kdev_t.h>
+#include <f2fs_sparseblock.h>
 #include <fs_mgr.h>
-#include <time.h>
-#include <math.h>
-#include <selinux/selinux.h>
-#include "cryptfs.h"
-#include "secontext.h"
-#define LOG_TAG "Cryptfs"
-#include "cutils/log.h"
-#include "cutils/properties.h"
-#include "cutils/android_reboot.h"
-#include "hardware_legacy/power.h"
+#include <hardware_legacy/power.h>
 #include <logwrap/logwrap.h>
-#include "ScryptParameters.h"
-#include "VolumeManager.h"
-#include "VoldUtil.h"
-#include "Ext4Crypt.h"
-#include "f2fs_sparseblock.h"
-#include "EncryptInplace.h"
-#include "Process.h"
-#include "Keymaster.h"
-#include "android-base/properties.h"
-#include <bootloader_message/bootloader_message.h>
+#include <openssl/evp.h>
+#include <openssl/sha.h>
+#include <selinux/selinux.h>
+
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <libgen.h>
+#include <linux/dm-ioctl.h>
+#include <linux/kdev_t.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mount.h>
+#include <sys/param.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+
 extern "C" {
 #include <crypto_scrypt.h>
 }

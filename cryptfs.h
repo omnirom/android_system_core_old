@@ -26,7 +26,10 @@
  * partition.
  */
 
+#include <linux/types.h>
 #include <stdbool.h>
+#include <stdint.h>
+
 #include <cutils/properties.h>
 
 /* The current cryptfs version */
