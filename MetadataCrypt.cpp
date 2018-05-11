@@ -79,9 +79,10 @@ static bool read_key(struct fstab_rec const* data_rec, bool create_if_absent, Ke
     }
     std::string key_dir = data_rec->key_dir;
     auto dir = key_dir + "/key";
-    LOG(DEBUG) << "key_dir/key: " << key;
-    if (!fs_mkdirs(dir.c_str(), 0700)) {
+    LOG(DEBUG) << "key_dir/key: " << dir;
+    if (fs_mkdirs(dir.c_str(), 0700)) {
         PLOG(ERROR) << "Creating directories: " << dir;
+        return false;
     }
     auto temp = key_dir + "/tmp";
     if (!android::vold::retrieveKey(create_if_absent, dir, temp, key)) return false;
