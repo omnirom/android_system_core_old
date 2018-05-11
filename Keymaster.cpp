@@ -96,8 +96,14 @@ bool KeymasterOperation::finish(std::string* output) {
     return true;
 }
 
+/* static */ bool Keymaster::hmacKeyGenerated = false;
+
 Keymaster::Keymaster() {
     auto devices = KmDevice::enumerateAvailableDevices();
+    if (!hmacKeyGenerated) {
+        KmDevice::performHmacKeyAgreement(devices);
+        hmacKeyGenerated = true;
+    }
     for (auto& dev : devices) {
         // Explicitly avoid using STRONGBOX for now.
         // TODO: Re-enable STRONGBOX, since it's what we really want. b/77338527

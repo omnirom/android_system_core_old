@@ -117,6 +117,7 @@ class Keymaster {
   private:
     std::unique_ptr<KmDevice> mDevice;
     DISALLOW_COPY_AND_ASSIGN(Keymaster);
+    static bool hmacKeyGenerated;
 };
 
 }  // namespace vold
