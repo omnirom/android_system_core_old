@@ -76,6 +76,8 @@ static const unsigned int kMajorBlockScsiP = 135;
 static const unsigned int kMajorBlockMmc = 179;
 static const unsigned int kMajorBlockExperimentalMin = 240;
 static const unsigned int kMajorBlockExperimentalMax = 254;
+static const unsigned int kMajorBlockDynamicMin = 234;
+static const unsigned int kMajorBlockDynamicMax = 512;
 
 static const char* kGptBasicData = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7";
 static const char* kGptAndroidMeta = "19A710A2-B3CA-11E4-B026-10604B889DCF";
@@ -112,6 +114,12 @@ static bool isVirtioBlkDevice(unsigned int major) {
      */
     return IsRunningInEmulator() && major >= kMajorBlockExperimentalMin
             && major <= kMajorBlockExperimentalMax;
+}
+
+static bool isNvmeBlkDevice(unsigned int major, const std::string& sysPath) {
+    return sysPath.find("nvme") != std::string::npos
+            && major >= kMajorBlockDynamicMin
+            && major <= kMajorBlockDynamicMax;
 }
 
 Disk::Disk(const std::string& eventPath, dev_t device,
@@ -290,6 +298,16 @@ status_t Disk::readMetadata() {
             LOG(DEBUG) << "Recognized experimental block major ID " << majorId
                     << " as virtio-blk (emulator's virtual SD card device)";
             mLabel = "Virtual";
+            break;
+        }
+        if (isNvmeBlkDevice(majorId, mSysPath)) {
+            std::string path(mSysPath + "/device/model");
+            std::string tmp;
+            if (!ReadFileToString(path, &tmp)) {
+                PLOG(WARNING) << "Failed to read vendor from " << path;
+                return -errno;
+            }
+            mLabel = tmp;
             break;
         }
         LOG(WARNING) << "Unsupported block major type " << majorId;
@@ -575,6 +593,13 @@ int Disk::getMaxMinors() {
             // drivers/block/virtio_blk.c has "#define PART_BITS 4", so max is
             // 2^4 - 1 = 15
             return 15;
+        }
+        if (isNvmeBlkDevice(majorId, mSysPath)) {
+            // despite kernel nvme driver supports up to 1M minors,
+            //     #define NVME_MINORS (1U << MINORBITS)
+            // sgdisk can not support more than 127 partitions, due to
+            //     #define MAX_MBR_PARTS 128
+            return 127;
         }
     }
     }
