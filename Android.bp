@@ -158,7 +158,10 @@ cc_binary {
             ],
         },
     },
-    init_rc: ["vold.rc"],
+    init_rc: [
+        "vold.rc",
+        "wait_for_keymaster.rc",
+    ],
 
     required: [
         "mke2fs",
