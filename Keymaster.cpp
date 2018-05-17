@@ -49,9 +49,6 @@ bool KeymasterOperation::updateCompletely(const char* input, size_t inputLen,
         size_t toRead = static_cast<size_t>(inputLen - inputConsumed);
         auto inputBlob = km::support::blob2hidlVec(
             reinterpret_cast<const uint8_t*>(&input[inputConsumed]), toRead);
-        // TODO(swillden): Need to handle getting a VerificationToken from the TEE if mDevice is
-        // StrongBox, so we can provide it here.  The VerificationToken will need to be
-        // requested/retrieved during Keymaster::begin().
         auto error = mDevice->update(mOpHandle, hidl_vec<km::KeyParameter>(), inputBlob,
                                      km::HardwareAuthToken(), km::VerificationToken(), hidlCB);
         if (!error.isOk()) {
@@ -105,8 +102,9 @@ Keymaster::Keymaster() {
         hmacKeyGenerated = true;
     }
     for (auto& dev : devices) {
-        // Explicitly avoid using STRONGBOX for now.
-        // TODO: Re-enable STRONGBOX, since it's what we really want. b/77338527
+        // Do not use StrongBox for device encryption / credential encryption.  If a security chip
+        // is present it will have Weaver, which already strengthens CE.  We get no additional
+        // benefit from using StrongBox here, so skip it.
         if (dev->halVersion().securityLevel != SecurityLevel::STRONGBOX) {
             mDevice = std::move(dev);
             break;
