@@ -23,7 +23,6 @@
 
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
-#include <android-base/unique_fd.h>
 #include <cutils/fs.h>
 #include <private/android_filesystem_config.h>
 
@@ -36,7 +35,6 @@
 #include <sys/wait.h>
 
 using android::base::StringPrintf;
-using android::base::unique_fd;
 
 namespace android {
 namespace vold {
@@ -59,19 +57,10 @@ status_t ObbVolume::doCreate() {
     }
 
     if (!mSourceKey.empty()) {
-        unsigned long nr_sec = 0;
-        {
-            unique_fd loop_fd(open(mLoopPath.c_str(), O_RDWR | O_CLOEXEC));
-            if (loop_fd.get() == -1) {
-                PLOG(ERROR) << getId() << " failed to open loop";
-                return -1;
-            }
-
-            get_blkdev_size(loop_fd.get(), &nr_sec);
-            if (nr_sec == 0) {
-                PLOG(ERROR) << getId() << " failed to get loop size";
-                return -1;
-            }
+        uint64_t nr_sec = 0;
+        if (GetBlockDev512Sectors(mLoopPath, &nr_sec) != OK) {
+            PLOG(ERROR) << getId() << " failed to get loop size";
+            return -1;
         }
 
         char tmp[PATH_MAX];

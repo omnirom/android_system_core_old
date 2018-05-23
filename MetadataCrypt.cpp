@@ -100,20 +100,10 @@ static KeyBuffer default_key_params(const std::string& real_blkdev, const KeyBuf
 }
 
 static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_sec) {
-    android::base::unique_fd dev_fd(
-        TEMP_FAILURE_RETRY(open(real_blkdev.c_str(), O_RDONLY | O_CLOEXEC, 0)));
-    if (dev_fd == -1) {
-        PLOG(ERROR) << "Unable to open " << real_blkdev << " to measure size";
-        return false;
-    }
-    unsigned long res;
-    // TODO: should use BLKGETSIZE64
-    get_blkdev_size(dev_fd.get(), &res);
-    if (res == 0) {
+    if (android::vold::GetBlockDev512Sectors(real_blkdev, nr_sec) != android::OK) {
         PLOG(ERROR) << "Unable to measure size of " << real_blkdev;
         return false;
     }
-    *nr_sec = res;
     return true;
 }
 
