@@ -1607,7 +1607,9 @@ static int cryptfs_restart_internal(int restart_main)
         property_get("ro.crypto.readonly", ro_prop, "");
         if (strlen(ro_prop) > 0 && std::stoi(ro_prop)) {
             struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab_default, DATA_MNT_POINT);
-            rec->flags |= MS_RDONLY;
+            if (rec) {
+                rec->flags |= MS_RDONLY;
+            }
         }
 
         /* If that succeeded, then mount the decrypted filesystem */
@@ -2948,5 +2950,5 @@ void cryptfs_clear_password()
 int cryptfs_isConvertibleToFBE()
 {
     struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab_default, DATA_MNT_POINT);
-    return fs_mgr_is_convertible_to_fbe(rec) ? 1 : 0;
+    return (rec && fs_mgr_is_convertible_to_fbe(rec)) ? 1 : 0;
 }
