@@ -1451,7 +1451,9 @@ static int cryptfs_restart_internal(int restart_main)
         property_get("ro.crypto.readonly", ro_prop, "");
         if (strlen(ro_prop) > 0 && atoi(ro_prop)) {
             struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
-            rec->flags |= MS_RDONLY;
+            if (rec) {
+                rec->flags |= MS_RDONLY;
+            }
         }
 
         /* If that succeeded, then mount the decrypted filesystem */
@@ -2061,6 +2063,10 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
 
     if (how == CRYPTO_ENABLE_WIPE) {
         struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+        if (!rec) {
+            SLOGE("cryptfs_enable: missing %s entry in fstab\n", DATA_MNT_POINT);
+            return -1;
+        }
         int fs_type = get_fs_type(rec);
         if (fs_type < 0) {
             SLOGE("cryptfs_enable: unsupported fs type %s\n", rec->fs_type);
@@ -2917,7 +2923,7 @@ void cryptfs_clear_password()
 int cryptfs_isConvertibleToFBE()
 {
     struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
-    return fs_mgr_is_convertible_to_fbe(rec) ? 1 : 0;
+    return (rec && fs_mgr_is_convertible_to_fbe(rec)) ? 1 : 0;
 }
 
 int cryptfs_create_default_ftr(struct crypt_mnt_ftr* crypt_ftr, __attribute__((unused))int key_length)
@@ -2990,5 +2996,10 @@ void cryptfs_get_file_encryption_modes(const char **contents_mode_ret,
                                        const char **filenames_mode_ret)
 {
     struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+    if (!rec) {
+        *contents_mode_ret = nullptr;
+        *filenames_mode_ret = nullptr;
+        return;
+    }
     fs_mgr_get_file_encryption_modes(rec, contents_mode_ret, filenames_mode_ret);
 }
