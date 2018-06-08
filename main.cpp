@@ -14,19 +14,21 @@
  * limitations under the License.
  */
 
-#include "Disk.h"
+#define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
+
+#include "model/Disk.h"
 #include "VolumeManager.h"
-#include "CommandListener.h"
-#include "CryptCommandListener.h"
 #include "NetlinkManager.h"
+#include "VoldNativeService.h"
+#include "VoldUtil.h"
 #include "cryptfs.h"
 #include "sehandle.h"
 
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <cutils/klog.h>
-#include <cutils/properties.h>
-#include <cutils/sockets.h>
+#include <utils/Trace.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,21 +41,24 @@
 #include <dirent.h>
 #include <fs_mgr.h>
 
-static int process_config(VolumeManager *vm, bool* has_adoptable, bool* has_quota);
+static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quota,
+                          bool* has_reserved);
 static void coldboot(const char *path);
 static void parse_args(int argc, char** argv);
-
-struct fstab *fstab;
 
 struct selabel_handle *sehandle;
 
 using android::base::StringPrintf;
 
 int main(int argc, char** argv) {
+    atrace_set_tracing_enabled(false);
     setenv("ANDROID_LOG_TAGS", "*:v", 1);
     android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
 
     LOG(INFO) << "Vold 3.0 (the awakening) firing up";
+
+    ATRACE_BEGIN("main");
+
 
     LOG(VERBOSE) << "Detected support for:"
             << (android::vold::IsFilesystemSupported("ext4") ? " ext4" : "")
@@ -61,8 +66,6 @@ int main(int argc, char** argv) {
             << (android::vold::IsFilesystemSupported("vfat") ? " vfat" : "");
 
     VolumeManager *vm;
-    CommandListener *cl;
-    CryptCommandListener *ccl;
     NetlinkManager *nm;
 
     parse_args(argc, argv);
@@ -71,10 +74,6 @@ int main(int argc, char** argv) {
     if (sehandle) {
         selinux_android_set_sehandle(sehandle);
     }
-
-    // Quickly throw a CLOEXEC on the socket we just inherited from init
-    fcntl(android_get_control_socket("vold"), F_SETFD, FD_CLOEXEC);
-    fcntl(android_get_control_socket("cryptd"), F_SETFD, FD_CLOEXEC);
 
     mkdir("/dev/block/vold", 0755);
 
@@ -92,14 +91,9 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    if (property_get_bool("vold.debug", false)) {
+    if (android::base::GetBoolProperty("vold.debug", false)) {
         vm->setDebug(true);
     }
-
-    cl = new CommandListener();
-    ccl = new CryptCommandListener();
-    vm->setBroadcaster((SocketListener *) cl);
-    nm->setBroadcaster((SocketListener *) cl);
 
     if (vm->start()) {
         PLOG(ERROR) << "Unable to start VolumeManager";
@@ -108,44 +102,44 @@ int main(int argc, char** argv) {
 
     bool has_adoptable;
     bool has_quota;
+    bool has_reserved;
 
-    if (process_config(vm, &has_adoptable, &has_quota)) {
+    if (process_config(vm, &has_adoptable, &has_quota, &has_reserved)) {
         PLOG(ERROR) << "Error reading configuration... continuing anyways";
     }
 
+    ATRACE_BEGIN("VoldNativeService::start");
+    if (android::vold::VoldNativeService::start() != android::OK) {
+        LOG(ERROR) << "Unable to start VoldNativeService";
+        exit(1);
+    }
+    ATRACE_END();
+
+    LOG(DEBUG) << "VoldNativeService::start() completed OK";
+
+    ATRACE_BEGIN("NetlinkManager::start");
     if (nm->start()) {
         PLOG(ERROR) << "Unable to start NetlinkManager";
         exit(1);
     }
-
-    /*
-     * Now that we're up, we can respond to commands
-     */
-    if (cl->startListener()) {
-        PLOG(ERROR) << "Unable to start CommandListener";
-        exit(1);
-    }
-
-    if (ccl->startListener()) {
-        PLOG(ERROR) << "Unable to start CryptCommandListener";
-        exit(1);
-    }
+    ATRACE_END();
 
     // This call should go after listeners are started to avoid
     // a deadlock between vold and init (see b/34278978 for details)
-    property_set("vold.has_adoptable", has_adoptable ? "1" : "0");
-    property_set("vold.has_quota", has_quota ? "1" : "0");
+    android::base::SetProperty("vold.has_adoptable", has_adoptable ? "1" : "0");
+    android::base::SetProperty("vold.has_quota", has_quota ? "1" : "0");
+    android::base::SetProperty("vold.has_reserved", has_reserved ? "1" : "0");
 
     // Do coldboot here so it won't block booting,
     // also the cold boot is needed in case we have flash drive
     // connected before Vold launched
     coldboot("/sys/block");
-    // Eventually we'll become the monitoring thread
-    while(1) {
-        pause();
-    }
 
-    LOG(ERROR) << "Vold exiting";
+    ATRACE_END();
+
+    android::IPCThreadState::self()->joinThreadPool();
+    LOG(INFO) << "vold shutting down";
+
     exit(0);
 }
 
@@ -209,6 +203,7 @@ static void do_coldboot(DIR *d, int lvl) {
 }
 
 static void coldboot(const char *path) {
+    ATRACE_NAME("coldboot");
     DIR *d = opendir(path);
     if(d) {
         do_coldboot(d, 0);
@@ -216,9 +211,12 @@ static void coldboot(const char *path) {
     }
 }
 
-static int process_config(VolumeManager *vm, bool* has_adoptable, bool* has_quota) {
-    fstab = fs_mgr_read_fstab_default();
-    if (!fstab) {
+static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quota,
+                          bool* has_reserved) {
+    ATRACE_NAME("process_config");
+
+    fstab_default = fs_mgr_read_fstab_default();
+    if (!fstab_default) {
         PLOG(ERROR) << "Failed to open default fstab";
         return -1;
     }
@@ -226,27 +224,32 @@ static int process_config(VolumeManager *vm, bool* has_adoptable, bool* has_quot
     /* Loop through entries looking for ones that vold manages */
     *has_adoptable = false;
     *has_quota = false;
-    for (int i = 0; i < fstab->num_entries; i++) {
-        if (fs_mgr_is_quota(&fstab->recs[i])) {
+    *has_reserved = false;
+    for (int i = 0; i < fstab_default->num_entries; i++) {
+        auto rec = &fstab_default->recs[i];
+        if (fs_mgr_is_quota(rec)) {
             *has_quota = true;
         }
+        if (rec->reserved_size > 0) {
+            *has_reserved = true;
+        }
 
-        if (fs_mgr_is_voldmanaged(&fstab->recs[i])) {
-            if (fs_mgr_is_nonremovable(&fstab->recs[i])) {
+        if (fs_mgr_is_voldmanaged(rec)) {
+            if (fs_mgr_is_nonremovable(rec)) {
                 LOG(WARNING) << "nonremovable no longer supported; ignoring volume";
                 continue;
             }
 
-            std::string sysPattern(fstab->recs[i].blk_device);
-            std::string nickname(fstab->recs[i].label);
+            std::string sysPattern(rec->blk_device);
+            std::string nickname(rec->label);
             int flags = 0;
 
-            if (fs_mgr_is_encryptable(&fstab->recs[i])) {
+            if (fs_mgr_is_encryptable(rec)) {
                 flags |= android::vold::Disk::Flags::kAdoptable;
                 *has_adoptable = true;
             }
-            if (fs_mgr_is_noemulatedsd(&fstab->recs[i])
-                    || property_get_bool("vold.debug.default_primary", false)) {
+            if (fs_mgr_is_noemulatedsd(rec)
+                    || android::base::GetBoolProperty("vold.debug.default_primary", false)) {
                 flags |= android::vold::Disk::Flags::kDefaultPrimary;
             }
 

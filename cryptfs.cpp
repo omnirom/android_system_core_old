@@ -36,13 +36,13 @@
 #include <android-base/properties.h>
 #include <bootloader_message/bootloader_message.h>
 #include <cutils/android_reboot.h>
-#include <cutils/log.h>
 #include <cutils/properties.h>
-#include <ext4_utils/ext4.h>
+#include <ext4_utils/ext4_crypt.h>
 #include <ext4_utils/ext4_utils.h>
 #include <f2fs_sparseblock.h>
 #include <fs_mgr.h>
 #include <hardware_legacy/power.h>
+#include <log/log.h>
 #include <logwrap/logwrap.h>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
@@ -77,8 +77,15 @@ extern "C" {
 #define DM_CRYPT_BUF_SIZE 4096
 
 #define HASH_COUNT 2000
-#define KEY_LEN_BYTES 16
-#define IV_LEN_BYTES 16
+
+constexpr size_t INTERMEDIATE_KEY_LEN_BYTES = 16;
+constexpr size_t INTERMEDIATE_IV_LEN_BYTES = 16;
+constexpr size_t INTERMEDIATE_BUF_SIZE =
+    (INTERMEDIATE_KEY_LEN_BYTES + INTERMEDIATE_IV_LEN_BYTES);
+
+// SCRYPT_LEN is used by struct crypt_mnt_ftr for its intermediate key.
+static_assert(INTERMEDIATE_BUF_SIZE == SCRYPT_LEN,
+              "Mismatch of intermediate key sizes");
 
 #define KEY_IN_FOOTER  "footer"
 
@@ -101,9 +108,11 @@ extern "C" {
 #define RETRY_MOUNT_ATTEMPTS 10
 #define RETRY_MOUNT_DELAY_SECONDS 1
 
+#define CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE (1)
+
 static int put_crypt_ftr_and_key(struct crypt_mnt_ftr* crypt_ftr);
 
-static unsigned char saved_master_key[KEY_LEN_BYTES];
+static unsigned char saved_master_key[MAX_KEY_LEN];
 static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
@@ -221,8 +230,6 @@ static char* password = 0;
 static int password_expiry_time = 0;
 static const int password_max_age_seconds = 60;
 
-extern struct fstab *fstab;
-
 enum class RebootType {reboot, recovery, shutdown};
 static void cryptfs_reboot(RebootType rt)
 {
@@ -260,6 +267,122 @@ static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, u
     }
 }
 
+namespace {
+
+struct CryptoType;
+
+// Use to get the CryptoType in use on this device.
+const CryptoType &get_crypto_type();
+
+struct CryptoType {
+    // We should only be constructing CryptoTypes as part of
+    // supported_crypto_types[].  We do it via this pseudo-builder pattern,
+    // which isn't pure or fully protected as a concession to being able to
+    // do it all at compile time.  Add new CryptoTypes in
+    // supported_crypto_types[] below.
+    constexpr CryptoType() : CryptoType(nullptr, nullptr, 0xFFFFFFFF) {}
+    constexpr CryptoType set_keysize(uint32_t size) const {
+        return CryptoType(this->property_name, this->crypto_name, size);
+    }
+    constexpr CryptoType set_property_name(const char *property) const {
+        return CryptoType(property, this->crypto_name, this->keysize);
+    }
+    constexpr CryptoType set_crypto_name(const char *crypto) const {
+        return CryptoType(this->property_name, crypto, this->keysize);
+    }
+
+    constexpr const char *get_property_name() const { return property_name; }
+    constexpr const char *get_crypto_name() const { return crypto_name; }
+    constexpr uint32_t get_keysize() const { return keysize; }
+
+ private:
+    const char *property_name;
+    const char *crypto_name;
+    uint32_t keysize;
+
+    constexpr CryptoType(const char *property, const char *crypto,
+                         uint32_t ksize)
+        : property_name(property), crypto_name(crypto), keysize(ksize) {}
+    friend const CryptoType &get_crypto_type();
+    static const CryptoType &get_device_crypto_algorithm();
+};
+
+// We only want to parse this read-only property once.  But we need to wait
+// until the system is initialized before we can read it.  So we use a static
+// scoped within this function to get it only once.
+const CryptoType &get_crypto_type() {
+    static CryptoType crypto_type = CryptoType::get_device_crypto_algorithm();
+    return crypto_type;
+}
+
+constexpr CryptoType default_crypto_type = CryptoType()
+    .set_property_name("AES-128-CBC")
+    .set_crypto_name("aes-cbc-essiv:sha256")
+    .set_keysize(16);
+
+constexpr CryptoType supported_crypto_types[] = {
+    default_crypto_type,
+    CryptoType()
+        .set_property_name("Speck128/128-XTS")
+        .set_crypto_name("speck128-xts-plain64")
+        .set_keysize(32),
+    // Add new CryptoTypes here.  Order is not important.
+};
+
+
+// ---------- START COMPILE-TIME SANITY CHECK BLOCK -------------------------
+// We confirm all supported_crypto_types have a small enough keysize and
+// had both set_property_name() and set_crypto_name() called.
+
+template <typename T, size_t N>
+constexpr size_t array_length(T (&)[N]) { return N; }
+
+constexpr bool indexOutOfBoundsForCryptoTypes(size_t index) {
+    return (index >= array_length(supported_crypto_types));
+}
+
+constexpr bool isValidCryptoType(const CryptoType &crypto_type) {
+    return ((crypto_type.get_property_name() != nullptr) &&
+            (crypto_type.get_crypto_name() != nullptr) &&
+            (crypto_type.get_keysize() <= MAX_KEY_LEN));
+}
+
+// Note in C++11 that constexpr functions can only have a single line.
+// So our code is a bit convoluted (using recursion instead of a loop),
+// but it's asserting at compile time that all of our key lengths are valid.
+constexpr bool validateSupportedCryptoTypes(size_t index) {
+    return indexOutOfBoundsForCryptoTypes(index) ||
+        (isValidCryptoType(supported_crypto_types[index]) &&
+         validateSupportedCryptoTypes(index + 1));
+}
+
+static_assert(validateSupportedCryptoTypes(0),
+              "We have a CryptoType with keysize > MAX_KEY_LEN or which was "
+              "incompletely constructed.");
+//  ---------- END COMPILE-TIME SANITY CHECK BLOCK -------------------------
+
+
+// Don't call this directly, use get_crypto_type(), which caches this result.
+const CryptoType &CryptoType::get_device_crypto_algorithm() {
+    constexpr char CRYPT_ALGO_PROP[] = "ro.crypto.fde_algorithm";
+    char paramstr[PROPERTY_VALUE_MAX];
+
+    property_get(CRYPT_ALGO_PROP, paramstr,
+                 default_crypto_type.get_property_name());
+    for (auto const &ctype : supported_crypto_types) {
+        if (strcmp(paramstr, ctype.get_property_name()) == 0) {
+            return ctype;
+        }
+    }
+    ALOGE("Invalid name (%s) for %s.  Defaulting to %s\n", paramstr,
+          CRYPT_ALGO_PROP, default_crypto_type.get_property_name());
+    return default_crypto_type;
+}
+
+}  // namespace
+
+
+
 /**
  * Gets the default device scrypt parameters for key derivation time tuning.
  * The parameters should lead to about one second derivation time for the
@@ -277,6 +400,14 @@ static void get_device_scrypt_params(struct crypt_mnt_ftr *ftr) {
     ftr->N_factor = Nf;
     ftr->r_factor = rf;
     ftr->p_factor = pf;
+}
+
+uint32_t cryptfs_get_keysize() {
+    return get_crypto_type().get_keysize();
+}
+
+const char *cryptfs_get_crypto_name() {
+    return get_crypto_type().get_crypto_name();
 }
 
 static unsigned int get_fs_size(char *dev)
@@ -325,7 +456,7 @@ static int get_crypt_ftr_info(char **metadata_fname, off64_t *off)
   int rc = -1;
 
   if (!cached_data) {
-    fs_mgr_get_crypt_info(fstab, key_loc, real_blkdev, sizeof(key_loc));
+    fs_mgr_get_crypt_info(fstab_default, key_loc, real_blkdev, sizeof(key_loc));
 
     if (!strcmp(key_loc, KEY_IN_FOOTER)) {
       if ( (fd = open(real_blkdev, O_RDWR|O_CLOEXEC)) < 0) {
@@ -579,6 +710,17 @@ static int get_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
   if (crypt_ftr->major_version != CURRENT_MAJOR_VERSION) {
     SLOGE("Cannot understand major version %d real block device footer; expected %d\n",
           crypt_ftr->major_version, CURRENT_MAJOR_VERSION);
+    goto errout;
+  }
+
+  // We risk buffer overflows with oversized keys, so we just reject them.
+  // 0-sized keys are problematic (essentially by-passing encryption), and
+  // AES-CBC key wrapping only works for multiples of 16 bytes.
+  if ((crypt_ftr->keysize == 0) || ((crypt_ftr->keysize % 16) != 0) ||
+      (crypt_ftr->keysize > MAX_KEY_LEN)) {
+    SLOGE("Invalid keysize (%u) for block device %s; Must be non-zero, "
+          "divisible by 16, and <= %d\n", crypt_ftr->keysize, fname,
+          MAX_KEY_LEN);
     goto errout;
   }
 
@@ -851,7 +993,9 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
   struct dm_ioctl *io;
   struct dm_target_spec *tgt;
   char *crypt_params;
-  char master_key_ascii[129]; /* Large enough to hold 512 bit key and null */
+  // We need two ASCII characters to represent each byte, and need space for
+  // the '\0' terminator.
+  char master_key_ascii[MAX_KEY_LEN * 2 + 1];
   size_t buff_offset;
   int i;
 
@@ -871,6 +1015,7 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
   convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
 
   buff_offset = crypt_params - buffer;
+  SLOGI("Extra parameters for dm_crypt: %s\n", extra_params);
   snprintf(crypt_params, sizeof(buffer) - buff_offset, "%s %s 0 %s 0 %s",
            crypt_ftr->crypto_type_name, master_key_ascii, real_blk_name,
            extra_params);
@@ -926,71 +1071,80 @@ static int get_dm_crypt_version(int fd, const char *name,  int *version)
     return -1;
 }
 
-static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr,
-        const unsigned char *master_key, const char *real_blk_name,
-        char *crypto_blk_name, const char *name) {
-  char buffer[DM_CRYPT_BUF_SIZE];
-  struct dm_ioctl *io;
-  unsigned int minor;
-  int fd=0;
-  int err;
-  int retval = -1;
-  int version[3];
-  const char *extra_params;
-  int load_count;
+static std::string extra_params_as_string(const std::vector<std::string>& extra_params_vec) {
+    if (extra_params_vec.empty()) return "";
+    std::string extra_params = std::to_string(extra_params_vec.size());
+    for (const auto& p : extra_params_vec) {
+        extra_params.append(" ");
+        extra_params.append(p);
+    }
+    return extra_params;
+}
 
-  if ((fd = open("/dev/device-mapper", O_RDWR|O_CLOEXEC)) < 0 ) {
-    SLOGE("Cannot open device-mapper\n");
-    goto errout;
-  }
+static int create_crypto_blk_dev(struct crypt_mnt_ftr* crypt_ftr, const unsigned char* master_key,
+                                 const char* real_blk_name, char* crypto_blk_name, const char* name,
+                                 uint32_t flags) {
+    char buffer[DM_CRYPT_BUF_SIZE];
+    struct dm_ioctl* io;
+    unsigned int minor;
+    int fd = 0;
+    int err;
+    int retval = -1;
+    int version[3];
+    int load_count;
+    std::vector<std::string> extra_params_vec;
 
-  io = (struct dm_ioctl *) buffer;
+    if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
+        SLOGE("Cannot open device-mapper\n");
+        goto errout;
+    }
 
-  ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
-  err = ioctl(fd, DM_DEV_CREATE, io);
-  if (err) {
-    SLOGE("Cannot create dm-crypt device %s: %s\n", name, strerror(errno));
-    goto errout;
-  }
+    io = (struct dm_ioctl*)buffer;
 
-  /* Get the device status, in particular, the name of it's device file */
-  ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
-  if (ioctl(fd, DM_DEV_STATUS, io)) {
-    SLOGE("Cannot retrieve dm-crypt device status\n");
-    goto errout;
-  }
-  minor = (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00);
-  snprintf(crypto_blk_name, MAXPATHLEN, "/dev/block/dm-%u", minor);
+    ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
+    err = ioctl(fd, DM_DEV_CREATE, io);
+    if (err) {
+        SLOGE("Cannot create dm-crypt device %s: %s\n", name, strerror(errno));
+        goto errout;
+    }
 
-  extra_params = "";
-  if (! get_dm_crypt_version(fd, name, version)) {
-      /* Support for allow_discards was added in version 1.11.0 */
-      if ((version[0] >= 2) ||
-          ((version[0] == 1) && (version[1] >= 11))) {
-          extra_params = "1 allow_discards";
-          SLOGI("Enabling support for allow_discards in dmcrypt.\n");
-      }
-  }
+    /* Get the device status, in particular, the name of it's device file */
+    ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
+    if (ioctl(fd, DM_DEV_STATUS, io)) {
+        SLOGE("Cannot retrieve dm-crypt device status\n");
+        goto errout;
+    }
+    minor = (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00);
+    snprintf(crypto_blk_name, MAXPATHLEN, "/dev/block/dm-%u", minor);
 
-  load_count = load_crypto_mapping_table(crypt_ftr, master_key, real_blk_name, name,
-                                         fd, extra_params);
-  if (load_count < 0) {
-      SLOGE("Cannot load dm-crypt mapping table.\n");
-      goto errout;
-  } else if (load_count > 1) {
-      SLOGI("Took %d tries to load dmcrypt table.\n", load_count);
-  }
+    if (!get_dm_crypt_version(fd, name, version)) {
+        /* Support for allow_discards was added in version 1.11.0 */
+        if ((version[0] >= 2) || ((version[0] == 1) && (version[1] >= 11))) {
+            extra_params_vec.emplace_back("allow_discards");
+        }
+    }
+    if (flags & CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE) {
+        extra_params_vec.emplace_back("allow_encrypt_override");
+    }
+    load_count = load_crypto_mapping_table(crypt_ftr, master_key, real_blk_name, name, fd,
+                                           extra_params_as_string(extra_params_vec).c_str());
+    if (load_count < 0) {
+        SLOGE("Cannot load dm-crypt mapping table.\n");
+        goto errout;
+    } else if (load_count > 1) {
+        SLOGI("Took %d tries to load dmcrypt table.\n", load_count);
+    }
 
-  /* Resume this device to activate it */
-  ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
+    /* Resume this device to activate it */
+    ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
 
-  if (ioctl(fd, DM_DEV_SUSPEND, io)) {
-    SLOGE("Cannot resume the dm-crypt device\n");
-    goto errout;
-  }
+    if (ioctl(fd, DM_DEV_SUSPEND, io)) {
+        SLOGE("Cannot resume the dm-crypt device\n");
+        goto errout;
+    }
 
-  /* We made it here with no errors.  Woot! */
-  retval = 0;
+    /* We made it here with no errors.  Woot! */
+    retval = 0;
 
 errout:
   close(fd);   /* If fd is <0 from a failed open call, it's safe to just ignore the close error */
@@ -1035,7 +1189,7 @@ static int pbkdf2(const char *passwd, const unsigned char *salt,
 
     /* Turn the password into a key and IV that can decrypt the master key */
     return PKCS5_PBKDF2_HMAC_SHA1(passwd, strlen(passwd), salt, SALT_LEN,
-                                  HASH_COUNT, KEY_LEN_BYTES + IV_LEN_BYTES,
+                                  HASH_COUNT, INTERMEDIATE_BUF_SIZE,
                                   ikey) != 1;
 }
 
@@ -1051,10 +1205,9 @@ static int scrypt(const char *passwd, const unsigned char *salt,
     int p = 1 << ftr->p_factor;
 
     /* Turn the password into a key and IV that can decrypt the master key */
-    unsigned int keysize;
     crypto_scrypt((const uint8_t*)passwd, strlen(passwd),
                   salt, SALT_LEN, N, r, p, ikey,
-                  KEY_LEN_BYTES + IV_LEN_BYTES);
+                  INTERMEDIATE_BUF_SIZE);
 
    return 0;
 }
@@ -1075,21 +1228,21 @@ static int scrypt_keymaster(const char *passwd, const unsigned char *salt,
 
     rc = crypto_scrypt((const uint8_t*)passwd, strlen(passwd),
                        salt, SALT_LEN, N, r, p, ikey,
-                       KEY_LEN_BYTES + IV_LEN_BYTES);
+                       INTERMEDIATE_BUF_SIZE);
 
     if (rc) {
         SLOGE("scrypt failed");
         return -1;
     }
 
-    if (keymaster_sign_object(ftr, ikey, KEY_LEN_BYTES + IV_LEN_BYTES,
+    if (keymaster_sign_object(ftr, ikey, INTERMEDIATE_BUF_SIZE,
                               &signature, &signature_size)) {
         SLOGE("Signing failed");
         return -1;
     }
 
     rc = crypto_scrypt(signature, signature_size, salt, SALT_LEN,
-                       N, r, p, ikey, KEY_LEN_BYTES + IV_LEN_BYTES);
+                       N, r, p, ikey, INTERMEDIATE_BUF_SIZE);
     free(signature);
 
     if (rc) {
@@ -1105,7 +1258,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
                               unsigned char *encrypted_master_key,
                               struct crypt_mnt_ftr *crypt_ftr)
 {
-    unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
+    unsigned char ikey[INTERMEDIATE_BUF_SIZE] = { 0 };
     EVP_CIPHER_CTX e_ctx;
     int encrypted_len, final_len;
     int rc = 0;
@@ -1140,7 +1293,8 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
 
     /* Initialize the decryption engine */
     EVP_CIPHER_CTX_init(&e_ctx);
-    if (! EVP_EncryptInit_ex(&e_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+KEY_LEN_BYTES)) {
+    if (! EVP_EncryptInit_ex(&e_ctx, EVP_aes_128_cbc(), NULL, ikey,
+                             ikey+INTERMEDIATE_KEY_LEN_BYTES)) {
         SLOGE("EVP_EncryptInit failed\n");
         return -1;
     }
@@ -1148,7 +1302,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
 
     /* Encrypt the master key */
     if (! EVP_EncryptUpdate(&e_ctx, encrypted_master_key, &encrypted_len,
-                            decrypted_master_key, KEY_LEN_BYTES)) {
+                            decrypted_master_key, crypt_ftr->keysize)) {
         SLOGE("EVP_EncryptUpdate failed\n");
         return -1;
     }
@@ -1157,7 +1311,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
         return -1;
     }
 
-    if (encrypted_len + final_len != KEY_LEN_BYTES) {
+    if (encrypted_len + final_len != static_cast<int>(crypt_ftr->keysize)) {
         SLOGE("EVP_Encryption length check failed with %d, %d bytes\n", encrypted_len, final_len);
         return -1;
     }
@@ -1171,7 +1325,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
     int r = 1 << crypt_ftr->r_factor;
     int p = 1 << crypt_ftr->p_factor;
 
-    rc = crypto_scrypt(ikey, KEY_LEN_BYTES,
+    rc = crypto_scrypt(ikey, INTERMEDIATE_KEY_LEN_BYTES,
                        crypt_ftr->salt, sizeof(crypt_ftr->salt), N, r, p,
                        crypt_ftr->scrypted_intermediate_key,
                        sizeof(crypt_ftr->scrypted_intermediate_key));
@@ -1186,13 +1340,14 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
 }
 
 static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
-                                  unsigned char *encrypted_master_key,
+                                  const unsigned char *encrypted_master_key,
+                                  size_t keysize,
                                   unsigned char *decrypted_master_key,
                                   kdf_func kdf, void *kdf_params,
                                   unsigned char** intermediate_key,
                                   size_t* intermediate_key_size)
 {
-  unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
+  unsigned char ikey[INTERMEDIATE_BUF_SIZE] = { 0 };
   EVP_CIPHER_CTX d_ctx;
   int decrypted_len, final_len;
 
@@ -1205,29 +1360,29 @@ static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
 
   /* Initialize the decryption engine */
   EVP_CIPHER_CTX_init(&d_ctx);
-  if (! EVP_DecryptInit_ex(&d_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+KEY_LEN_BYTES)) {
+  if (! EVP_DecryptInit_ex(&d_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+INTERMEDIATE_KEY_LEN_BYTES)) {
     return -1;
   }
   EVP_CIPHER_CTX_set_padding(&d_ctx, 0); /* Turn off padding as our data is block aligned */
   /* Decrypt the master key */
   if (! EVP_DecryptUpdate(&d_ctx, decrypted_master_key, &decrypted_len,
-                            encrypted_master_key, KEY_LEN_BYTES)) {
+                            encrypted_master_key, keysize)) {
     return -1;
   }
   if (! EVP_DecryptFinal_ex(&d_ctx, decrypted_master_key + decrypted_len, &final_len)) {
     return -1;
   }
 
-  if (decrypted_len + final_len != KEY_LEN_BYTES) {
+  if (decrypted_len + final_len != static_cast<int>(keysize)) {
     return -1;
   }
 
   /* Copy intermediate key if needed by params */
   if (intermediate_key && intermediate_key_size) {
-    *intermediate_key = (unsigned char*) malloc(KEY_LEN_BYTES);
+    *intermediate_key = (unsigned char*) malloc(INTERMEDIATE_KEY_LEN_BYTES);
     if (*intermediate_key) {
-      memcpy(*intermediate_key, ikey, KEY_LEN_BYTES);
-      *intermediate_key_size = KEY_LEN_BYTES;
+      memcpy(*intermediate_key, ikey, INTERMEDIATE_KEY_LEN_BYTES);
+      *intermediate_key_size = INTERMEDIATE_KEY_LEN_BYTES;
     }
   }
 
@@ -1261,6 +1416,7 @@ static int decrypt_master_key(const char *passwd, unsigned char *decrypted_maste
 
     get_kdf_func(crypt_ftr, &kdf, &kdf_params);
     ret = decrypt_master_key_aux(passwd, crypt_ftr->salt, crypt_ftr->master_key,
+                                 crypt_ftr->keysize,
                                  decrypted_master_key, kdf, kdf_params,
                                  intermediate_key, intermediate_key_size);
     if (ret != 0) {
@@ -1273,7 +1429,7 @@ static int decrypt_master_key(const char *passwd, unsigned char *decrypted_maste
 static int create_encrypted_random_key(const char *passwd, unsigned char *master_key, unsigned char *salt,
         struct crypt_mnt_ftr *crypt_ftr) {
     int fd;
-    unsigned char key_buf[KEY_LEN_BYTES];
+    unsigned char key_buf[MAX_KEY_LEN];
 
     /* Get some random bits for a key */
     fd = open("/dev/urandom", O_RDONLY|O_CLOEXEC);
@@ -1309,10 +1465,10 @@ int wait_and_unmount(const char *mountpoint, bool kill)
         if (kill) {
             if (i == (WAIT_UNMOUNT_COUNT - 3)) {
                 SLOGW("sending SIGHUP to processes with open files\n");
-                vold_killProcessesWithOpenFiles(mountpoint, SIGTERM);
+                android::vold::KillProcessesWithOpenFiles(mountpoint, SIGTERM);
             } else if (i == (WAIT_UNMOUNT_COUNT - 2)) {
                 SLOGW("sending SIGKILL to processes with open files\n");
-                vold_killProcessesWithOpenFiles(mountpoint, SIGKILL);
+                android::vold::KillProcessesWithOpenFiles(mountpoint, SIGKILL);
             }
         }
 
@@ -1323,7 +1479,7 @@ int wait_and_unmount(const char *mountpoint, bool kill)
       SLOGD("unmounting %s succeeded\n", mountpoint);
       rc = 0;
     } else {
-      vold_killProcessesWithOpenFiles(mountpoint, 0);
+      android::vold::KillProcessesWithOpenFiles(mountpoint, 0);
       SLOGE("unmounting %s failed: %s\n", mountpoint, strerror(err));
       rc = -1;
     }
@@ -1449,8 +1605,8 @@ static int cryptfs_restart_internal(int restart_main)
          */
         char ro_prop[PROPERTY_VALUE_MAX];
         property_get("ro.crypto.readonly", ro_prop, "");
-        if (strlen(ro_prop) > 0 && atoi(ro_prop)) {
-            struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+        if (strlen(ro_prop) > 0 && std::stoi(ro_prop)) {
+            struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab_default, DATA_MNT_POINT);
             if (rec) {
                 rec->flags |= MS_RDONLY;
             }
@@ -1468,7 +1624,7 @@ static int cryptfs_restart_internal(int restart_main)
             SLOGE("Failed to setexeccon");
             return -1;
         }
-        while ((mount_rc = fs_mgr_do_mount(fstab, DATA_MNT_POINT,
+        while ((mount_rc = fs_mgr_do_mount(fstab_default, DATA_MNT_POINT,
                                            crypto_blkdev, 0))
                != 0) {
             if (mount_rc == FS_MGR_DOMNT_BUSY) {
@@ -1549,7 +1705,7 @@ static int do_crypto_complete(const char *mount_point)
   }
 
   if (get_crypt_ftr_and_key(&crypt_ftr)) {
-    fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
+    fs_mgr_get_crypt_info(fstab_default, key_loc, 0, sizeof(key_loc));
 
     /*
      * Only report this error if key_loc is a file and it exists.
@@ -1590,8 +1746,7 @@ static int do_crypto_complete(const char *mount_point)
 static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
                                    const char *passwd, const char *mount_point, const char *label)
 {
-  /* Allocate enough space for a 256 bit key, but we may use less */
-  unsigned char decrypted_master_key[32];
+  unsigned char decrypted_master_key[MAX_KEY_LEN];
   char crypto_blkdev[MAXPATHLEN];
   char real_blkdev[MAXPATHLEN];
   char tmp_mount_point[64];
@@ -1617,15 +1772,14 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
     }
   }
 
-  fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
+  fs_mgr_get_crypt_info(fstab_default, 0, real_blkdev, sizeof(real_blkdev));
 
   // Create crypto block device - all (non fatal) code paths
   // need it
-  if (create_crypto_blk_dev(crypt_ftr, decrypted_master_key,
-                            real_blkdev, crypto_blkdev, label)) {
-     SLOGE("Error creating decrypted block device\n");
-     rc = -1;
-     goto errout;
+  if (create_crypto_blk_dev(crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev, label, 0)) {
+      SLOGE("Error creating decrypted block device\n");
+      rc = -1;
+      goto errout;
   }
 
   /* Work out if the problem is the password or the data */
@@ -1649,7 +1803,7 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
     snprintf(tmp_mount_point, sizeof(tmp_mount_point), "%s/tmp_mnt",
              mount_point);
     mkdir(tmp_mount_point, 0755);
-    if (fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
+    if (fs_mgr_do_mount(fstab_default, DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
       SLOGE("Error temp mounting decrypted block device\n");
       delete_crypto_blk_dev(label);
 
@@ -1675,7 +1829,7 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
     /* Also save a the master key so we can reencrypted the key
      * the key when we want to change the password on it. */
-    memcpy(saved_master_key, decrypted_master_key, KEY_LEN_BYTES);
+    memcpy(saved_master_key, decrypted_master_key, crypt_ftr->keysize);
     saved_mount_point = strdup(mount_point);
     master_key_saved = 1;
     SLOGD("%s(): Master key saved\n", __FUNCTION__);
@@ -1725,12 +1879,13 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 /*
  * Called by vold when it's asked to mount an encrypted external
  * storage volume. The incoming partition has no crypto header/footer,
- * as any metadata is been stored in a separate, small partition.
+ * as any metadata is been stored in a separate, small partition.  We
+ * assume it must be using our same crypt type and keysize.
  *
  * out_crypto_blkdev must be MAXPATHLEN.
  */
 int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
-        const unsigned char* key, int keysize, char* out_crypto_blkdev) {
+        const unsigned char* key, char* out_crypto_blkdev) {
     int fd = open(real_blkdev, O_RDONLY|O_CLOEXEC);
     if (fd == -1) {
         SLOGE("Failed to open %s: %s", real_blkdev, strerror(errno));
@@ -1749,12 +1904,15 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
     struct crypt_mnt_ftr ext_crypt_ftr;
     memset(&ext_crypt_ftr, 0, sizeof(ext_crypt_ftr));
     ext_crypt_ftr.fs_size = nr_sec;
-    ext_crypt_ftr.keysize = keysize;
-    strlcpy((char*) ext_crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256",
+    ext_crypt_ftr.keysize = cryptfs_get_keysize();
+    strlcpy((char*) ext_crypt_ftr.crypto_type_name, cryptfs_get_crypto_name(),
             MAX_CRYPTO_TYPE_NAME_LEN);
+    uint32_t flags = 0;
+    if (e4crypt_is_native() &&
+        android::base::GetBoolProperty("ro.crypto.allow_encrypt_override", false))
+        flags |= CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE;
 
-    return create_crypto_blk_dev(&ext_crypt_ftr, key, real_blkdev,
-            out_crypto_blkdev, label);
+    return create_crypto_blk_dev(&ext_crypt_ftr, key, real_blkdev, out_crypto_blkdev, label, flags);
 }
 
 /*
@@ -1845,11 +2003,10 @@ int cryptfs_check_passwd(const char *passwd)
     return rc;
 }
 
-int cryptfs_verify_passwd(char *passwd)
+int cryptfs_verify_passwd(const char *passwd)
 {
     struct crypt_mnt_ftr crypt_ftr;
-    /* Allocate enough space for a 256 bit key, but we may use less */
-    unsigned char decrypted_master_key[32];
+    unsigned char decrypted_master_key[MAX_KEY_LEN];
     char encrypted_state[PROPERTY_VALUE_MAX];
     int rc;
 
@@ -1893,7 +2050,7 @@ int cryptfs_verify_passwd(char *passwd)
 }
 
 /* Initialize a crypt_mnt_ftr structure.  The keysize is
- * defaulted to 16 bytes, and the filesystem size to 0.
+ * defaulted to cryptfs_get_keysize() bytes, and the filesystem size to 0.
  * Presumably, at a minimum, the caller will update the
  * filesystem size and crypto_type_name after calling this function.
  */
@@ -1906,7 +2063,7 @@ static int cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
     ftr->major_version = CURRENT_MAJOR_VERSION;
     ftr->minor_version = CURRENT_MINOR_VERSION;
     ftr->ftr_size = sizeof(struct crypt_mnt_ftr);
-    ftr->keysize = KEY_LEN_BYTES;
+    ftr->keysize = cryptfs_get_keysize();
 
     switch (keymaster_check_compatibility()) {
     case 1:
@@ -1933,84 +2090,6 @@ static int cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
 
     return 0;
 }
-
-static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
-{
-    const char *args[10];
-    char size_str[32]; /* Must be large enough to hold a %lld and null byte */
-    int num_args;
-    int status;
-    int tmp;
-    int rc = -1;
-
-    if (type == EXT4_FS) {
-#ifdef TARGET_USES_MKE2FS
-        args[0] = "/system/bin/mke2fs";
-        args[1] = "-M";
-        args[2] = "/data";
-        args[3] = "-b";
-        args[4] = "4096";
-        args[5] = "-t";
-        args[6] = "ext4";
-        args[7] = crypto_blkdev;
-        snprintf(size_str, sizeof(size_str), "%" PRId64, size / (4096 / 512));
-        args[8] = size_str;
-        num_args = 9;
-#else
-        args[0] = "/system/bin/make_ext4fs";
-        args[1] = "-a";
-        args[2] = "/data";
-        args[3] = "-l";
-        snprintf(size_str, sizeof(size_str), "%" PRId64, size * 512);
-        args[4] = size_str;
-        args[5] = crypto_blkdev;
-        num_args = 6;
-#endif
-        SLOGI("Making empty filesystem with command %s %s %s %s %s %s\n",
-              args[0], args[1], args[2], args[3], args[4], args[5]);
-    } else if (type == F2FS_FS) {
-        args[0] = "/system/bin/make_f2fs";
-        args[1] = "-f";
-        args[2] = "-d1";
-        args[3] = "-O";
-        args[4] = "encrypt";
-        args[5] = "-O";
-        args[6] = "quota";
-        args[7] = crypto_blkdev;
-        snprintf(size_str, sizeof(size_str), "%" PRId64, size);
-        args[8] = size_str;
-        num_args = 9;
-        SLOGI("Making empty filesystem with command %s %s %s %s %s %s %s %s %s\n",
-              args[0], args[1], args[2], args[3], args[4], args[5],
-              args[6], args[7], args[8]);
-    } else {
-        SLOGE("cryptfs_enable_wipe(): unknown filesystem type %d\n", type);
-        return -1;
-    }
-
-    tmp = android_fork_execvp(num_args, (char **)args, &status, false, true);
-
-    if (tmp != 0) {
-      SLOGE("Error creating empty filesystem on %s due to logwrap error\n", crypto_blkdev);
-    } else {
-        if (WIFEXITED(status)) {
-            if (WEXITSTATUS(status)) {
-                SLOGE("Error creating filesystem on %s, exit status %d ",
-                      crypto_blkdev, WEXITSTATUS(status));
-            } else {
-                SLOGD("Successfully created filesystem on %s\n", crypto_blkdev);
-                rc = 0;
-            }
-        } else {
-            SLOGE("Error creating filesystem on %s, did not exit normally\n", crypto_blkdev);
-       }
-    }
-
-    return rc;
-}
-
-#define CRYPTO_ENABLE_WIPE 1
-#define CRYPTO_ENABLE_INPLACE 2
 
 #define FRAMEWORK_BOOT_WAIT 60
 
@@ -2040,75 +2119,44 @@ static int cryptfs_SHA256_fileblock(const char* filename, __le8* buf)
     return 0;
 }
 
-static int get_fs_type(struct fstab_rec *rec)
-{
-    if (!strcmp(rec->fs_type, "ext4")) {
-        return EXT4_FS;
-    } else if (!strcmp(rec->fs_type, "f2fs")) {
-        return F2FS_FS;
-    } else {
-        return -1;
-    }
-}
-
-static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
-                                      char *crypto_blkdev, char *real_blkdev,
-                                      int previously_encrypted_upto)
-{
+static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr* crypt_ftr, char* crypto_blkdev,
+                                      char* real_blkdev, int previously_encrypted_upto) {
     off64_t cur_encryption_done=0, tot_encryption_size=0;
     int rc = -1;
 
     /* The size of the userdata partition, and add in the vold volumes below */
     tot_encryption_size = crypt_ftr->fs_size;
 
-    if (how == CRYPTO_ENABLE_WIPE) {
-        struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
-        if (!rec) {
-            SLOGE("cryptfs_enable: missing %s entry in fstab\n", DATA_MNT_POINT);
-            return -1;
-        }
-        int fs_type = get_fs_type(rec);
-        if (fs_type < 0) {
-            SLOGE("cryptfs_enable: unsupported fs type %s\n", rec->fs_type);
-            return -1;
-        }
-        rc = cryptfs_enable_wipe(crypto_blkdev, crypt_ftr->fs_size, fs_type);
-    } else if (how == CRYPTO_ENABLE_INPLACE) {
-        rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev,
-                                    crypt_ftr->fs_size, &cur_encryption_done,
-                                    tot_encryption_size,
-                                    previously_encrypted_upto);
+    rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev, crypt_ftr->fs_size, &cur_encryption_done,
+                                tot_encryption_size, previously_encrypted_upto, true);
 
-        if (rc == ENABLE_INPLACE_ERR_DEV) {
-            /* Hack for b/17898962 */
-            SLOGE("cryptfs_enable: crypto block dev failure. Must reboot...\n");
-            cryptfs_reboot(RebootType::reboot);
-        }
+    if (rc == ENABLE_INPLACE_ERR_DEV) {
+        /* Hack for b/17898962 */
+        SLOGE("cryptfs_enable: crypto block dev failure. Must reboot...\n");
+        cryptfs_reboot(RebootType::reboot);
+    }
 
-        if (!rc) {
-            crypt_ftr->encrypted_upto = cur_encryption_done;
-        }
+    if (!rc) {
+        crypt_ftr->encrypted_upto = cur_encryption_done;
+    }
 
-        if (!rc && crypt_ftr->encrypted_upto == crypt_ftr->fs_size) {
-            /* The inplace routine never actually sets the progress to 100% due
-             * to the round down nature of integer division, so set it here */
-            property_set("vold.encrypt_progress", "100");
-        }
-    } else {
-        /* Shouldn't happen */
-        SLOGE("cryptfs_enable: internal error, unknown option\n");
-        rc = -1;
+    if (!rc && crypt_ftr->encrypted_upto == crypt_ftr->fs_size) {
+        /* The inplace routine never actually sets the progress to 100% due
+         * to the round down nature of integer division, so set it here */
+        property_set("vold.encrypt_progress", "100");
     }
 
     return rc;
 }
 
-int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
-                            int no_ui)
-{
-    int how = 0;
+static int vold_unmountAll(void) {
+    VolumeManager* vm = VolumeManager::Instance();
+    return vm->unmountAll();
+}
+
+int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN];
-    unsigned char decrypted_master_key[KEY_LEN_BYTES];
+    unsigned char decrypted_master_key[MAX_KEY_LEN];
     int rc=-1, i;
     struct crypt_mnt_ftr crypt_ftr;
     struct crypt_persist_data *pdata;
@@ -2121,17 +2169,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
     bool onlyCreateHeader = false;
     int fd = -1;
 
-    if (!strcmp(howarg, "wipe")) {
-      how = CRYPTO_ENABLE_WIPE;
-    } else if (! strcmp(howarg, "inplace")) {
-      how = CRYPTO_ENABLE_INPLACE;
-    } else {
-      /* Shouldn't happen, as CommandListener vets the args */
-      goto error_unencrypted;
-    }
-
-    if (how == CRYPTO_ENABLE_INPLACE
-          && get_crypt_ftr_and_key(&crypt_ftr) == 0) {
+    if (get_crypt_ftr_and_key(&crypt_ftr) == 0) {
         if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS) {
             /* An encryption was underway and was interrupted */
             previously_encrypted_upto = crypt_ftr.encrypted_upto;
@@ -2157,6 +2195,9 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
             crypt_ftr.flags |= CRYPT_FORCE_COMPLETE;
             rebootEncryption = true;
         }
+    } else {
+        // We don't want to accidentally reference invalid data.
+        memset(&crypt_ftr, 0, sizeof(crypt_ftr));
     }
 
     property_get("ro.crypto.state", encrypted_state, "");
@@ -2166,8 +2207,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
     }
 
     // TODO refactor fs_mgr_get_crypt_info to get both in one call
-    fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
-    fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
+    fs_mgr_get_crypt_info(fstab_default, key_loc, 0, sizeof(key_loc));
+    fs_mgr_get_crypt_info(fstab_default, 0, real_blkdev, sizeof(real_blkdev));
 
     /* Get the size of the real block device */
     fd = open(real_blkdev, O_RDONLY|O_CLOEXEC);
@@ -2184,7 +2225,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
     close(fd);
 
     /* If doing inplace encryption, make sure the orig fs doesn't include the crypto footer */
-    if ((how == CRYPTO_ENABLE_INPLACE) && (!strcmp(key_loc, KEY_IN_FOOTER))) {
+    if (!strcmp(key_loc, KEY_IN_FOOTER)) {
         unsigned int fs_size_sec, max_fs_size_sec;
         fs_size_sec = get_fs_size(real_blkdev);
         if (fs_size_sec == 0)
@@ -2231,7 +2272,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
     }
 
     /* Do extra work for a better UX when doing the long inplace encryption */
-    if (how == CRYPTO_ENABLE_INPLACE && !onlyCreateHeader) {
+    if (!onlyCreateHeader) {
         /* Now that /data is unmounted, we need to mount a tmpfs
          * /data, set a property saying we're doing inplace encryption,
          * and restart the framework.
@@ -2277,7 +2318,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
             crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
         }
         crypt_ftr.crypt_type = crypt_type;
-        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
+        strlcpy((char *)crypt_ftr.crypto_type_name, cryptfs_get_crypto_name(), MAX_CRYPTO_TYPE_NAME_LEN);
 
         /* Make an encrypted master key */
         if (create_encrypted_random_key(onlyCreateHeader ? DEFAULT_PASSWORD : passwd,
@@ -2288,8 +2329,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
 
         /* Replace scrypted intermediate key if we are preparing for a reboot */
         if (onlyCreateHeader) {
-            unsigned char fake_master_key[KEY_LEN_BYTES];
-            unsigned char encrypted_fake_master_key[KEY_LEN_BYTES];
+            unsigned char fake_master_key[MAX_KEY_LEN];
+            unsigned char encrypted_fake_master_key[MAX_KEY_LEN];
             memset(fake_master_key, 0, sizeof(fake_master_key));
             encrypt_master_key(passwd, crypt_ftr.salt, fake_master_key,
                                encrypted_fake_master_key, &crypt_ftr);
@@ -2318,7 +2359,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
         cryptfs_reboot(RebootType::reboot);
     }
 
-    if (how == CRYPTO_ENABLE_INPLACE && (!no_ui || rebootEncryption)) {
+    if (!no_ui || rebootEncryption) {
         /* startup service classes main and late_start */
         property_set("vold.decrypt", "trigger_restart_min_framework");
         SLOGD("Just triggered restart_min_framework\n");
@@ -2332,7 +2373,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
 
     decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr, 0, 0);
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
-                          CRYPTO_BLOCK_DEVICE);
+                          CRYPTO_BLOCK_DEVICE, 0);
 
     /* If we are continuing, check checksums match */
     rc = 0;
@@ -2348,14 +2389,12 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
     }
 
     if (!rc) {
-        rc = cryptfs_enable_all_volumes(&crypt_ftr, how,
-                                        crypto_blkdev, real_blkdev,
+        rc = cryptfs_enable_all_volumes(&crypt_ftr, crypto_blkdev, real_blkdev,
                                         previously_encrypted_upto);
     }
 
     /* Calculate checksum if we are not finished */
-    if (!rc && how == CRYPTO_ENABLE_INPLACE
-            && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
+    if (!rc && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
         rc = cryptfs_SHA256_fileblock(crypto_blkdev,
                                       crypt_ftr.hash_first_block);
         if (rc) {
@@ -2371,8 +2410,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
         /* Success */
         crypt_ftr.flags &= ~CRYPT_INCONSISTENT_STATE;
 
-        if (how == CRYPTO_ENABLE_INPLACE
-              && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
+        if (crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
             SLOGD("Encrypted up to sector %lld - will continue after reboot",
                   crypt_ftr.encrypted_upto);
             crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
@@ -2380,30 +2418,29 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, const char *passwd,
 
         put_crypt_ftr_and_key(&crypt_ftr);
 
-        if (how == CRYPTO_ENABLE_WIPE
-              || crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
-          char value[PROPERTY_VALUE_MAX];
-          property_get("ro.crypto.state", value, "");
-          if (!strcmp(value, "")) {
-            /* default encryption - continue first boot sequence */
-            property_set("ro.crypto.state", "encrypted");
-            property_set("ro.crypto.type", "block");
-            release_wake_lock(lockid);
-            if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
-                // Bring up cryptkeeper that will check the password and set it
-                property_set("vold.decrypt", "trigger_shutdown_framework");
-                sleep(2);
-                property_set("vold.encrypt_progress", "");
-                cryptfs_trigger_restart_min_framework();
+        if (crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
+            char value[PROPERTY_VALUE_MAX];
+            property_get("ro.crypto.state", value, "");
+            if (!strcmp(value, "")) {
+                /* default encryption - continue first boot sequence */
+                property_set("ro.crypto.state", "encrypted");
+                property_set("ro.crypto.type", "block");
+                release_wake_lock(lockid);
+                if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
+                    // Bring up cryptkeeper that will check the password and set it
+                    property_set("vold.decrypt", "trigger_shutdown_framework");
+                    sleep(2);
+                    property_set("vold.encrypt_progress", "");
+                    cryptfs_trigger_restart_min_framework();
+                } else {
+                    cryptfs_check_passwd(DEFAULT_PASSWORD);
+                    cryptfs_restart_internal(1);
+                }
+                return 0;
             } else {
-                cryptfs_check_passwd(DEFAULT_PASSWORD);
-                cryptfs_restart_internal(1);
+                sleep(2); /* Give the UI a chance to show 100% progress */
+                cryptfs_reboot(RebootType::reboot);
             }
-            return 0;
-          } else {
-            sleep(2); /* Give the UI a chance to show 100% progress */
-            cryptfs_reboot(RebootType::reboot);
-          }
         } else {
             sleep(2); /* Partially encrypted, ensure writes flushed to ssd */
             cryptfs_reboot(RebootType::shutdown);
@@ -2462,15 +2499,12 @@ error_shutting_down:
     return -1;
 }
 
-int cryptfs_enable(char *howarg, int type, char *passwd, int no_ui)
-{
-    return cryptfs_enable_internal(howarg, type, passwd, no_ui);
+int cryptfs_enable(int type, const char* passwd, int no_ui) {
+    return cryptfs_enable_internal(type, passwd, no_ui);
 }
 
-int cryptfs_enable_default(char *howarg, int no_ui)
-{
-    return cryptfs_enable_internal(howarg, CRYPT_TYPE_DEFAULT,
-                          DEFAULT_PASSWORD, no_ui);
+int cryptfs_enable_default(int no_ui) {
+    return cryptfs_enable_internal(CRYPT_TYPE_DEFAULT, DEFAULT_PASSWORD, no_ui);
 }
 
 int cryptfs_changepw(int crypt_type, const char *newpw)
@@ -2598,30 +2632,23 @@ static int persist_set_key(const char *fieldname, const char *value, int encrypt
  * Test if key is part of the multi-entry (field, index) sequence. Return non-zero if key is in the
  * sequence and its index is greater than or equal to index. Return 0 otherwise.
  */
-static int match_multi_entry(const char *key, const char *field, unsigned index) {
-    unsigned int field_len;
-    unsigned int key_index;
-    field_len = strlen(field);
+int match_multi_entry(const char *key, const char *field, unsigned index) {
+    std::string key_ = key;
+    std::string field_ = field;
 
-    if (index == 0) {
-        // The first key in a multi-entry field is just the filedname itself.
-        if (!strcmp(key, field)) {
-            return 1;
-        }
+    std::string parsed_field;
+    unsigned parsed_index;
+
+    std::string::size_type split = key_.find_last_of('_');
+    if (split == std::string::npos) {
+        parsed_field = key_;
+        parsed_index = 0;
+    } else {
+        parsed_field = key_.substr(0, split);
+        parsed_index = std::stoi(key_.substr(split + 1));
     }
-    // Match key against "%s_%d" % (field, index)
-    if (strlen(key) < field_len + 1 + 1) {
-        // Need at least a '_' and a digit.
-        return 0;
-    }
-    if (strncmp(key, field, field_len)) {
-        // If the key does not begin with field, it's not a match.
-        return 0;
-    }
-    if (1 != sscanf(&key[field_len],"_%d", &key_index)) {
-        return 0;
-    }
-    return key_index >= index;
+
+    return parsed_field == field_ && parsed_index >= index;
 }
 
 /*
@@ -2816,7 +2843,7 @@ int cryptfs_setfield(const char *fieldname, const char *value)
     }
 
     for (field_id = 1; field_id < num_entries; field_id++) {
-        snprintf(temp_field, sizeof(temp_field), "%s_%d", fieldname, field_id);
+        snprintf(temp_field, sizeof(temp_field), "%s_%u", fieldname, field_id);
 
         if (persist_set_key(temp_field, value + field_id * (PROPERTY_VALUE_MAX - 1), encrypted)) {
             // fail to set key, should not happen as we have already checked the available space.
@@ -2922,84 +2949,6 @@ void cryptfs_clear_password()
 
 int cryptfs_isConvertibleToFBE()
 {
-    struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+    struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab_default, DATA_MNT_POINT);
     return (rec && fs_mgr_is_convertible_to_fbe(rec)) ? 1 : 0;
-}
-
-int cryptfs_create_default_ftr(struct crypt_mnt_ftr* crypt_ftr, __attribute__((unused))int key_length)
-{
-    if (cryptfs_init_crypt_mnt_ftr(crypt_ftr)) {
-        SLOGE("Failed to initialize crypt_ftr");
-        return -1;
-    }
-
-    if (create_encrypted_random_key(DEFAULT_PASSWORD, crypt_ftr->master_key,
-                                    crypt_ftr->salt, crypt_ftr)) {
-        SLOGE("Cannot create encrypted master key\n");
-        return -1;
-    }
-
-    //crypt_ftr->keysize = key_length / 8;
-    return 0;
-}
-
-int cryptfs_get_master_key(struct crypt_mnt_ftr* ftr, const char* password,
-                           unsigned char* master_key)
-{
-    int rc;
-
-    unsigned char* intermediate_key = 0;
-    size_t intermediate_key_size = 0;
-
-    if (password == 0 || *password == 0) {
-        password = DEFAULT_PASSWORD;
-    }
-
-    rc = decrypt_master_key(password, master_key, ftr, &intermediate_key,
-                            &intermediate_key_size);
-
-    if (rc) {
-        SLOGE("Can't calculate intermediate key");
-        return rc;
-    }
-
-    int N = 1 << ftr->N_factor;
-    int r = 1 << ftr->r_factor;
-    int p = 1 << ftr->p_factor;
-
-    unsigned char scrypted_intermediate_key[sizeof(ftr->scrypted_intermediate_key)];
-
-    rc = crypto_scrypt(intermediate_key, intermediate_key_size,
-                       ftr->salt, sizeof(ftr->salt), N, r, p,
-                       scrypted_intermediate_key,
-                       sizeof(scrypted_intermediate_key));
-
-    free(intermediate_key);
-
-    if (rc) {
-        SLOGE("Can't scrypt intermediate key");
-        return rc;
-    }
-
-    return memcmp(scrypted_intermediate_key, ftr->scrypted_intermediate_key,
-                  intermediate_key_size);
-}
-
-int cryptfs_set_password(struct crypt_mnt_ftr* ftr, const char* password,
-                         const unsigned char* master_key)
-{
-    return encrypt_master_key(password, ftr->salt, master_key, ftr->master_key,
-                              ftr);
-}
-
-void cryptfs_get_file_encryption_modes(const char **contents_mode_ret,
-                                       const char **filenames_mode_ret)
-{
-    struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
-    if (!rec) {
-        *contents_mode_ret = nullptr;
-        *filenames_mode_ret = nullptr;
-        return;
-    }
-    fs_mgr_get_file_encryption_modes(rec, contents_mode_ret, filenames_mode_ret);
 }

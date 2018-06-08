@@ -35,12 +35,8 @@
 
 #include <linux/kdev_t.h>
 
-#define LOG_TAG "Vold"
-
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
-#include <cutils/log.h>
-#include <cutils/properties.h>
 #include <selinux/selinux.h>
 
 #include <logwrap/logwrap.h>
@@ -65,11 +61,6 @@ bool IsSupported() {
 }
 
 status_t Check(const std::string& source) {
-    if (access(kFsckPath, X_OK)) {
-        SLOGW("Skipping fs checks\n");
-        return 0;
-    }
-
     int pass = 1;
     int rc = 0;
     do {
@@ -83,38 +74,37 @@ status_t Check(const std::string& source) {
         rc = ForkExecvp(cmd, sFsckUntrustedContext);
 
         if (rc < 0) {
-            SLOGE("Filesystem check failed due to logwrap error");
+            LOG(ERROR) << "Filesystem check failed due to logwrap error";
             errno = EIO;
             return -1;
         }
 
         switch(rc) {
         case 0:
-            SLOGI("Filesystem check completed OK");
+            LOG(INFO) << "Filesystem check completed OK";
             return 0;
 
         case 2:
-            SLOGE("Filesystem check failed (not a FAT filesystem)");
+            LOG(ERROR) << "Filesystem check failed (not a FAT filesystem)";
             errno = ENODATA;
             return -1;
 
         case 4:
             if (pass++ <= 3) {
-                SLOGW("Filesystem modified - rechecking (pass %d)",
-                        pass);
+                LOG(WARNING) << "Filesystem modified - rechecking (pass " << pass << ")";
                 continue;
             }
-            SLOGE("Failing check after too many rechecks");
+            LOG(ERROR) << "Failing check after too many rechecks";
             errno = EIO;
             return -1;
 
         case 8:
-            SLOGE("Filesystem check failed (no filesystem)");
+            LOG(ERROR) << "Filesystem check failed (no filesystem)";
             errno = ENODATA;
             return -1;
 
         default:
-            SLOGE("Filesystem check failed (unknown exit code %d)", rc);
+            LOG(ERROR) << "Filesystem check failed (unknown exit code " << rc << ")";
             errno = EIO;
             return -1;
         }
@@ -128,7 +118,6 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
         bool createLost) {
     int rc;
     unsigned long flags;
-    char mountData[255];
 
     const char* c_source = source.c_str();
     const char* c_target = target.c_str();
@@ -139,31 +128,29 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
     flags |= (ro ? MS_RDONLY : 0);
     flags |= (remount ? MS_REMOUNT : 0);
 
-    snprintf(mountData, sizeof(mountData),
+    auto mountData = android::base::StringPrintf(
             "utf8,uid=%d,gid=%d,fmask=%o,dmask=%o,shortname=mixed",
             ownerUid, ownerGid, permMask, permMask);
 
-    rc = mount(c_source, c_target, "vfat", flags, mountData);
+    rc = mount(c_source, c_target, "vfat", flags, mountData.c_str());
 
     if (rc && errno == EROFS) {
-        SLOGE("%s appears to be a read only filesystem - retrying mount RO", c_source);
+        LOG(ERROR) << source << " appears to be a read only filesystem - retrying mount RO";
         flags |= MS_RDONLY;
-        rc = mount(c_source, c_target, "vfat", flags, mountData);
+        rc = mount(c_source, c_target, "vfat", flags, mountData.c_str());
     }
 
     if (rc == 0 && createLost) {
-        char *lost_path;
-        asprintf(&lost_path, "%s/LOST.DIR", c_target);
-        if (access(lost_path, F_OK)) {
+        auto lost_path = android::base::StringPrintf("%s/LOST.DIR", target.c_str());
+        if (access(lost_path.c_str(), F_OK)) {
             /*
              * Create a LOST.DIR in the root so we have somewhere to put
              * lost cluster chains (fsck_msdos doesn't currently do this)
              */
-            if (mkdir(lost_path, 0755)) {
-                SLOGE("Unable to create LOST.DIR (%s)", strerror(errno));
+            if (mkdir(lost_path.c_str(), 0755)) {
+                PLOG(ERROR) << "Unable to create LOST.DIR";
             }
         }
-        free(lost_path);
     }
 
     return rc;
@@ -189,16 +176,16 @@ status_t Format(const std::string& source, unsigned long numSectors) {
 
     int rc = ForkExecvp(cmd);
     if (rc < 0) {
-        SLOGE("Filesystem format failed due to logwrap error");
+        LOG(ERROR) << "Filesystem format failed due to logwrap error";
         errno = EIO;
         return -1;
     }
 
     if (rc == 0) {
-        SLOGI("Filesystem formatted OK");
+        LOG(INFO) << "Filesystem formatted OK";
         return 0;
     } else {
-        SLOGE("Format failed (unknown exit code %d)", rc);
+        LOG(ERROR) << "Format failed (unknown exit code " << rc << ")";
         errno = EIO;
         return -1;
     }

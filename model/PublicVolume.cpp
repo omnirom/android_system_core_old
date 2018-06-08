@@ -14,16 +14,17 @@
  * limitations under the License.
  */
 
-#include "fs/Vfat.h"
 #include "PublicVolume.h"
 #include "Utils.h"
 #include "VolumeManager.h"
-#include "ResponseCode.h"
+#include "fs/Exfat.h"
+#include "fs/Vfat.h"
 
 #include <android-base/stringprintf.h>
 #include <android-base/logging.h>
 #include <cutils/fs.h>
 #include <private/android_filesystem_config.h>
+#include <utils/Timers.h>
 
 #include <fcntl.h>
 #include <stdlib.h>
@@ -52,10 +53,11 @@ PublicVolume::~PublicVolume() {
 }
 
 status_t PublicVolume::readMetadata() {
-    status_t res = ReadMetadataUntrusted(mDevPath, mFsType, mFsUuid, mFsLabel);
-    notifyEvent(ResponseCode::VolumeFsTypeChanged, mFsType);
-    notifyEvent(ResponseCode::VolumeFsUuidChanged, mFsUuid);
-    notifyEvent(ResponseCode::VolumeFsLabelChanged, mFsLabel);
+    status_t res = ReadMetadataUntrusted(mDevPath, &mFsType, &mFsUuid, &mFsLabel);
+
+    auto listener = getListener();
+    if (listener) listener->onVolumeMetadataChanged(getId(), mFsType, mFsUuid, mFsLabel);
+
     return res;
 }
 
@@ -92,16 +94,20 @@ status_t PublicVolume::doDestroy() {
 }
 
 status_t PublicVolume::doMount() {
-    // TODO: expand to support mounting other filesystems
     readMetadata();
 
-    if (mFsType != "vfat") {
+    if (mFsType == "vfat" && vfat::IsSupported()) {
+        if (vfat::Check(mDevPath)) {
+            LOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+    } else if (mFsType == "exfat" && exfat::IsSupported()) {
+        if (exfat::Check(mDevPath)) {
+            LOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+    } else {
         LOG(ERROR) << getId() << " unsupported filesystem " << mFsType;
-        return -EIO;
-    }
-
-    if (vfat::Check(mDevPath)) {
-        LOG(ERROR) << getId() << " failed filesystem check";
         return -EIO;
     }
 
@@ -129,10 +135,17 @@ status_t PublicVolume::doMount() {
         return -errno;
     }
 
-    if (vfat::Mount(mDevPath, mRawPath, false, false, false,
-            AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
-        PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
-        return -EIO;
+    if (mFsType == "vfat") {
+        if (vfat::Mount(mDevPath, mRawPath, false, false, false, AID_MEDIA_RW, AID_MEDIA_RW, 0007,
+                        true)) {
+            PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
+            return -EIO;
+        }
+    } else if (mFsType == "exfat") {
+        if (exfat::Mount(mDevPath, mRawPath, AID_MEDIA_RW, AID_MEDIA_RW, 0007)) {
+            PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
+            return -EIO;
+        }
     }
 
     if (getMountFlags() & MountFlags::kPrimary) {
@@ -186,9 +199,16 @@ status_t PublicVolume::doMount() {
         return -errno;
     }
 
+    nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
     while (before == GetDevice(mFuseWrite)) {
         LOG(VERBOSE) << "Waiting for FUSE to spin up...";
         usleep(50000); // 50ms
+
+        nsecs_t now = systemTime(SYSTEM_TIME_BOOTTIME);
+        if (nanoseconds_to_milliseconds(now - start) > 5000) {
+            LOG(WARNING) << "Timed out while waiting for FUSE to spin up";
+            return -ETIMEDOUT;
+        }
     }
     /* sdcardfs will have exited already. FUSE will still be running */
     TEMP_FAILURE_RETRY(waitpid(mFusePid, nullptr, 0));
@@ -225,11 +245,19 @@ status_t PublicVolume::doUnmount() {
 }
 
 status_t PublicVolume::doFormat(const std::string& fsType) {
-    if (fsType == "vfat" || fsType == "auto") {
+    if ((fsType == "vfat" || fsType == "auto") && vfat::IsSupported()) {
         if (WipeBlockDevice(mDevPath) != OK) {
             LOG(WARNING) << getId() << " failed to wipe";
         }
         if (vfat::Format(mDevPath, 0)) {
+            LOG(ERROR) << getId() << " failed to format";
+            return -errno;
+        }
+    } else if ((fsType == "exfat" || fsType == "auto") && exfat::IsSupported()) {
+        if (WipeBlockDevice(mDevPath) != OK) {
+            LOG(WARNING) << getId() << " failed to wipe";
+        }
+        if (exfat::Format(mDevPath)) {
             LOG(ERROR) << getId() << " failed to format";
             return -errno;
         }

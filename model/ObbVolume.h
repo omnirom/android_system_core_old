@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 The Android Open Source Project
+ * Copyright (C) 2017 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,32 +14,41 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_VOLD_MOVE_TASK_H
-#define ANDROID_VOLD_MOVE_TASK_H
+#ifndef ANDROID_VOLD_OBB_VOLUME_H
+#define ANDROID_VOLD_OBB_VOLUME_H
 
-#include "Utils.h"
 #include "VolumeBase.h"
 
-#include <thread>
+#include <cutils/multiuser.h>
 
 namespace android {
 namespace vold {
 
-class MoveTask {
+/*
+ * OBB container.
+ */
+class ObbVolume : public VolumeBase {
 public:
-    MoveTask(const std::shared_ptr<VolumeBase>& from, const std::shared_ptr<VolumeBase>& to);
-    virtual ~MoveTask();
+    ObbVolume(int id, const std::string& sourcePath, const std::string& sourceKey,
+            gid_t ownerGid);
+    virtual ~ObbVolume();
 
-    void start();
+protected:
+    status_t doCreate() override;
+    status_t doDestroy() override;
+    status_t doMount() override;
+    status_t doUnmount() override;
 
 private:
-    std::shared_ptr<VolumeBase> mFrom;
-    std::shared_ptr<VolumeBase> mTo;
-    std::thread mThread;
+    std::string mSourcePath;
+    std::string mSourceKey;
+    gid_t mOwnerGid;
 
-    void run();
+    std::string mLoopPath;
+    std::string mDmPath;
+    std::string mMountPath;
 
-    DISALLOW_COPY_AND_ASSIGN(MoveTask);
+    DISALLOW_COPY_AND_ASSIGN(ObbVolume);
 };
 
 }  // namespace vold

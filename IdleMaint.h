@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 The Android Open Source Project
+ * Copyright (C) 2015 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,19 @@
  * limitations under the License.
  */
 
-#include <sys/ioctl.h>
-#include <linux/fs.h>
+#ifndef ANDROID_VOLD_IDLE_MAINT_H
+#define ANDROID_VOLD_IDLE_MAINT_H
 
-void get_blkdev_size(int fd, unsigned long* nr_sec) {
-  if ((ioctl(fd, BLKGETSIZE, nr_sec)) == -1) {
-    *nr_sec = 0;
-  }
-}
+#include "android/os/IVoldTaskListener.h"
+
+namespace android {
+namespace vold {
+
+void Trim(const android::sp<android::os::IVoldTaskListener>& listener);
+int RunIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
+int AbortIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
+
+}  // namespace vold
+}  // namespace android
+
+#endif

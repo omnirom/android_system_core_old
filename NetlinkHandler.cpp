@@ -19,9 +19,7 @@
 #include <errno.h>
 #include <string.h>
 
-#define LOG_TAG "Vold"
-
-#include <cutils/log.h>
+#include <android-base/logging.h>
 
 #include <sysutils/NetlinkEvent.h>
 #include "NetlinkHandler.h"
@@ -47,11 +45,11 @@ void NetlinkHandler::onEvent(NetlinkEvent *evt) {
     const char *subsys = evt->getSubsystem();
 
     if (!subsys) {
-        SLOGW("No subsystem found in netlink event");
+        LOG(WARNING) << "No subsystem found in netlink event";
         return;
     }
 
-    if (!strcmp(subsys, "block")) {
+    if (std::string(subsys) == "block") {
         vm->handleBlockEvent(evt);
     }
 }

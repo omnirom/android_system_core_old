@@ -17,16 +17,15 @@
 #ifndef ANDROID_VOLD_BENCHMARK_H
 #define ANDROID_VOLD_BENCHMARK_H
 
-#include <utils/Errors.h>
-#include <utils/Timers.h>
+#include "android/os/IVoldTaskListener.h"
 
 #include <string>
 
 namespace android {
 namespace vold {
 
-/* Benchmark a private volume mounted at the given path */
-nsecs_t BenchmarkPrivate(const std::string& path);
+void Benchmark(const std::string& path,
+        const android::sp<android::os::IVoldTaskListener>& listener);
 
 }  // namespace vold
 }  // namespace android

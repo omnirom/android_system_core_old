@@ -21,6 +21,7 @@
 #include <android-base/logging.h>
 #include <cutils/fs.h>
 #include <private/android_filesystem_config.h>
+#include <utils/Timers.h>
 
 #include <fcntl.h>
 #include <stdlib.h>
@@ -85,6 +86,7 @@ status_t EmulatedVolume::doMount() {
                 "-m",
                 "-w",
                 "-G",
+                "-i",
                 mRawPath.c_str(),
                 label.c_str(),
                 NULL)) {
@@ -100,9 +102,16 @@ status_t EmulatedVolume::doMount() {
         return -errno;
     }
 
+    nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
     while (before == GetDevice(mFuseWrite)) {
         LOG(VERBOSE) << "Waiting for FUSE to spin up...";
         usleep(50000); // 50ms
+
+        nsecs_t now = systemTime(SYSTEM_TIME_BOOTTIME);
+        if (nanoseconds_to_milliseconds(now - start) > 5000) {
+            LOG(WARNING) << "Timed out while waiting for FUSE to spin up";
+            return -ETIMEDOUT;
+        }
     }
     /* sdcardfs will have exited already. FUSE will still be running */
     TEMP_FAILURE_RETRY(waitpid(mFusePid, nullptr, 0));

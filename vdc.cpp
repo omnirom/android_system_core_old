@@ -24,158 +24,94 @@
 #include <stdlib.h>
 #include <poll.h>
 
-#include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include "android/os/IVold.h"
+
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
+#include <binder/IServiceManager.h>
+#include <binder/Status.h>
 
-#include <cutils/sockets.h>
 #include <private/android_filesystem_config.h>
 
 static void usage(char *progname);
-static int do_monitor(int sock, int stop_after_cmd);
-static int do_cmd(int sock, int argc, char **argv);
 
-static constexpr int kCommandTimeoutMs = 20 * 1000;
+static android::sp<android::IBinder> getServiceAggressive() {
+    android::sp<android::IBinder> res;
+    auto sm = android::defaultServiceManager();
+    auto name = android::String16("vold");
+    for (int i = 0; i < 5000; i++) {
+        res = sm->checkService(name);
+        if (res) {
+            LOG(VERBOSE) << "Waited " << (i * 10) << "ms for vold";
+            break;
+        }
+        usleep(10000); // 10ms
+    }
+    return res;
+}
 
-int main(int argc, char **argv) {
-    int sock;
-    int wait_for_socket;
-    char *progname;
+static void checkStatus(android::binder::Status status) {
+    if (status.isOk()) return;
+    LOG(ERROR) << "Failed: " << status.toString8().string();
+    exit(ENOTTY);
+}
 
-    progname = argv[0];
-
+int main(int argc, char** argv) {
+    setenv("ANDROID_LOG_TAGS", "*:v", 1);
     if (getppid() == 1) {
         // If init is calling us then it's during boot and we should log to kmsg
         android::base::InitLogging(argv, &android::base::KernelLogger);
     } else {
         android::base::InitLogging(argv, &android::base::StderrLogger);
     }
+    std::vector<std::string> args(argv + 1, argv + argc);
 
-    wait_for_socket = argc > 1 && strcmp(argv[1], "--wait") == 0;
-    if (wait_for_socket) {
-        argv++;
-        argc--;
+    if (args.size() > 0 && args[0] == "--wait") {
+        // Just ignore the --wait flag
+        args.erase(args.begin());
     }
 
-    if (argc < 2) {
-        usage(progname);
+    if (args.size() < 2) {
+        usage(argv[0]);
         exit(5);
     }
-
-    const char* sockname = "vold";
-    if (!strcmp(argv[1], "cryptfs")) {
-        sockname = "cryptd";
+    android::sp<android::IBinder> binder = getServiceAggressive();
+    if (!binder) {
+        LOG(ERROR) << "Failed to obtain vold Binder";
+        exit(EINVAL);
     }
+    auto vold = android::interface_cast<android::os::IVold>(binder);
 
-    while ((sock = socket_local_client(sockname,
-                                 ANDROID_SOCKET_NAMESPACE_RESERVED,
-                                 SOCK_STREAM)) < 0) {
-        if (!wait_for_socket) {
-            PLOG(ERROR) << "Error connecting to " << sockname;
-            exit(4);
-        } else {
-            usleep(10000);
-        }
-    }
-
-    if (!strcmp(argv[1], "monitor")) {
-        exit(do_monitor(sock, 0));
+    if (args[0] == "cryptfs" && args[1] == "enablefilecrypto") {
+        checkStatus(vold->fbeEnable());
+    } else if (args[0] == "cryptfs" && args[1] == "init_user0") {
+        checkStatus(vold->initUser0());
+    } else if (args[0] == "cryptfs" && args[1] == "enablecrypto") {
+        int passwordType = android::os::IVold::PASSWORD_TYPE_DEFAULT;
+        int encryptionFlags = android::os::IVold::ENCRYPTION_FLAG_NO_UI;
+        checkStatus(vold->fdeEnable(passwordType, "", encryptionFlags));
+    } else if (args[0] == "cryptfs" && args[1] == "mountdefaultencrypted") {
+        checkStatus(vold->mountDefaultEncrypted());
+    } else if (args[0] == "volume" && args[1] == "shutdown") {
+        checkStatus(vold->shutdown());
+    } else if (args[0] == "cryptfs" && args[1] == "checkEncryption" && args.size() == 3) {
+        checkStatus(vold->checkEncryption(args[2]));
+    } else if (args[0] == "cryptfs" && args[1] == "mountFstab" && args.size() == 3) {
+        checkStatus(vold->mountFstab(args[2]));
+    } else if (args[0] == "cryptfs" && args[1] == "encryptFstab" && args.size() == 3) {
+        checkStatus(vold->encryptFstab(args[2]));
     } else {
-        exit(do_cmd(sock, argc, argv));
+        LOG(ERROR) << "Raw commands are no longer supported";
+        exit(EINVAL);
     }
-}
-
-static int do_cmd(int sock, int argc, char **argv) {
-    int seq = getpid();
-
-    std::string cmd(android::base::StringPrintf("%d ", seq));
-    for (int i = 1; i < argc; i++) {
-        if (!strchr(argv[i], ' ')) {
-            cmd.append(argv[i]);
-        } else {
-            cmd.push_back('\"');
-            cmd.append(argv[i]);
-            cmd.push_back('\"');
-        }
-
-        if (i < argc - 1) {
-            cmd.push_back(' ');
-        }
-    }
-
-    if (TEMP_FAILURE_RETRY(write(sock, cmd.c_str(), cmd.length() + 1)) < 0) {
-        PLOG(ERROR) << "Failed to write command";
-        return errno;
-    }
-
-    return do_monitor(sock, seq);
-}
-
-static int do_monitor(int sock, int stop_after_seq) {
-    char buffer[4096];
-    int timeout = kCommandTimeoutMs;
-
-    if (stop_after_seq == 0) {
-        LOG(INFO) << "Connected to vold";
-        timeout = -1;
-    }
-
-    while (1) {
-        struct pollfd poll_sock = { sock, POLLIN, 0 };
-        int rc = TEMP_FAILURE_RETRY(poll(&poll_sock, 1, timeout));
-        if (rc == 0) {
-            LOG(ERROR) << "Timeout waiting for " << stop_after_seq;
-            return ETIMEDOUT;
-        } else if (rc < 0) {
-            PLOG(ERROR) << "Failed during poll";
-            return errno;
-        }
-
-        if (!(poll_sock.revents & POLLIN)) {
-            LOG(INFO) << "No data; trying again";
-            continue;
-        }
-
-        memset(buffer, 0, sizeof(buffer));
-        rc = TEMP_FAILURE_RETRY(read(sock, buffer, sizeof(buffer)));
-        if (rc == 0) {
-            LOG(ERROR) << "Lost connection, did vold crash?";
-            return ECONNRESET;
-        } else if (rc < 0) {
-            PLOG(ERROR) << "Error reading data";
-            return errno;
-        }
-
-        int offset = 0;
-        for (int i = 0; i < rc; i++) {
-            if (buffer[i] == '\0') {
-                char* res = buffer + offset;
-                fprintf(stdout, "%s\n", res);
-
-                int code = atoi(strtok(res, " "));
-                if (code >= 200 && code < 600) {
-                    int seq = atoi(strtok(nullptr, " "));
-                    if (seq == stop_after_seq) {
-                        if (code == 200) {
-                            return 0;
-                        } else {
-                            return code;
-                        }
-                    }
-                }
-
-                offset = i + 1;
-            }
-        }
-    }
-    return EIO;
+    return 0;
 }
 
 static void usage(char *progname) {
-    LOG(INFO) << "Usage: " << progname << " [--wait] <monitor>|<cmd> [arg1] [arg2...]";
+    LOG(INFO) << "Usage: " << progname << " [--wait] <system> <subcommand> [args...]";
 }

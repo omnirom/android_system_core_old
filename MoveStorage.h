@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2015 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,30 +14,19 @@
  * limitations under the License.
  */
 
-#ifndef _ASEC_H
-#define _ASEC_H
+#ifndef ANDROID_VOLD_MOVE_STORAGE_H
+#define ANDROID_VOLD_MOVE_STORAGE_H
 
-struct asec_superblock {
-#define ASEC_SB_MAGIC 0xc0def00d
-    unsigned int magic;
+#include "android/os/IVoldTaskListener.h"
+#include "model/VolumeBase.h"
 
-#define ASEC_SB_VER 1
-    unsigned char ver;
+namespace android {
+namespace vold {
 
-#define ASEC_SB_C_CIPHER_NONE    0
-#define ASEC_SB_C_CIPHER_TWOFISH 1
-#define ASEC_SB_C_CIPHER_AES     2
-    unsigned char c_cipher;
+void MoveStorage(const std::shared_ptr<VolumeBase>& from, const std::shared_ptr<VolumeBase>& to,
+        const android::sp<android::os::IVoldTaskListener>& listener);
 
-#define ASEC_SB_C_CHAIN_NONE 0
-    unsigned char c_chain;
-
-#define ASEC_SB_C_OPTS_NONE 0
-#define ASEC_SB_C_OPTS_EXT4 1
-    unsigned char c_opts;
-
-#define ASEC_SB_C_MODE_NONE 0
-    unsigned char c_mode;
-} __attribute__((packed));
+}  // namespace vold
+}  // namespace android
 
 #endif

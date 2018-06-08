@@ -20,7 +20,6 @@
 #include "EmulatedVolume.h"
 #include "Utils.h"
 #include "VolumeManager.h"
-#include "ResponseCode.h"
 #include "cryptfs.h"
 
 #include <android-base/stringprintf.h>
@@ -54,16 +53,22 @@ PrivateVolume::~PrivateVolume() {
 }
 
 status_t PrivateVolume::readMetadata() {
-    status_t res = ReadMetadata(mDmDevPath, mFsType, mFsUuid, mFsLabel);
-    notifyEvent(ResponseCode::VolumeFsTypeChanged, mFsType);
-    notifyEvent(ResponseCode::VolumeFsUuidChanged, mFsUuid);
-    notifyEvent(ResponseCode::VolumeFsLabelChanged, mFsLabel);
+    status_t res = ReadMetadata(mDmDevPath, &mFsType, &mFsUuid, &mFsLabel);
+
+    auto listener = getListener();
+    if (listener) listener->onVolumeMetadataChanged(getId(), mFsType, mFsUuid, mFsLabel);
+
     return res;
 }
 
 status_t PrivateVolume::doCreate() {
     if (CreateDeviceNode(mRawDevPath, mRawDevice)) {
         return -EIO;
+    }
+    if (mKeyRaw.size() != cryptfs_get_keysize()) {
+      PLOG(ERROR) << getId() << " Raw keysize " << mKeyRaw.size() <<
+          " does not match crypt keysize " << cryptfs_get_keysize();
+      return -EIO;
     }
 
     // Recover from stale vold by tearing down any old mappings
@@ -74,7 +79,7 @@ status_t PrivateVolume::doCreate() {
     unsigned char* key = (unsigned char*) mKeyRaw.data();
     char crypto_blkdev[MAXPATHLEN];
     int res = cryptfs_setup_ext_volume(getId().c_str(), mRawDevPath.c_str(),
-            key, mKeyRaw.size(), crypto_blkdev);
+            key, crypto_blkdev);
     mDmDevPath = crypto_blkdev;
     if (res != 0) {
         PLOG(ERROR) << getId() << " failed to setup cryptfs";

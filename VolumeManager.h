@@ -21,76 +21,40 @@
 #include <fnmatch.h>
 #include <stdlib.h>
 
-#ifdef __cplusplus
-
 #include <list>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 
+#include <android-base/unique_fd.h>
 #include <cutils/multiuser.h>
 #include <utils/List.h>
 #include <utils/Timers.h>
-#include <sysutils/SocketListener.h>
 #include <sysutils/NetlinkEvent.h>
 
-#include "Disk.h"
-#include "VolumeBase.h"
+#include "android/os/IVoldListener.h"
 
-/* The length of an MD5 hash when encoded into ASCII hex characters */
-#define MD5_ASCII_LENGTH_PLUS_NULL ((MD5_DIGEST_LENGTH*2)+1)
+#include "model/Disk.h"
+#include "model/VolumeBase.h"
 
-typedef enum { ASEC, OBB } container_type_t;
-
-class ContainerData {
-public:
-    ContainerData(char* _id, container_type_t _type)
-            : id(_id)
-            , type(_type)
-    {}
-
-    ~ContainerData() {
-        if (id != NULL) {
-            free(id);
-            id = NULL;
-        }
-    }
-
-    char *id;
-    container_type_t type;
-};
-
-typedef android::List<ContainerData*> AsecIdCollection;
+#define DEBUG_APPFUSE 0
 
 class VolumeManager {
-public:
-    static const char *SEC_ASECDIR_EXT;
-    static const char *SEC_ASECDIR_INT;
-    static const char *ASECDIR;
-    static const char *LOOPDIR;
-
-    //TODO remove this with better solution, b/64143519
-    static bool shutting_down;
-
 private:
     static VolumeManager *sInstance;
 
-    SocketListener        *mBroadcaster;
-
-    AsecIdCollection      *mActiveContainers;
     bool                   mDebug;
-
-    // for adjusting /proc/sys/vm/dirty_ratio when UMS is active
-    int                    mUmsSharingCount;
-    int                    mSavedDirtyRatio;
-    int                    mUmsDirtyRatio;
 
 public:
     virtual ~VolumeManager();
 
     // TODO: pipe all requests through VM to avoid exposing this lock
     std::mutex& getLock() { return mLock; }
+    std::mutex& getCryptLock() { return mCryptLock; }
+
+    void setListener(android::sp<android::os::IVoldListener> listener) { mListener = listener; }
+    android::sp<android::os::IVoldListener> getListener() { return mListener; }
 
     int start();
     int stop();
@@ -123,14 +87,14 @@ public:
 
     void listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list);
 
-    nsecs_t benchmarkPrivate(const std::string& id);
-
-    int forgetPartition(const std::string& partGuid);
+    int forgetPartition(const std::string& partGuid, const std::string& fsUuid);
 
     int onUserAdded(userid_t userId, int userSerialNumber);
     int onUserRemoved(userid_t userId);
     int onUserStarted(userid_t userId);
     int onUserStopped(userid_t userId);
+
+    int onSecureKeyguardStateChanged(bool isShowing);
 
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
 
@@ -143,51 +107,10 @@ public:
     /* Unmount all volumes, usually for encryption */
     int unmountAll();
 
-    /* ASEC */
-    int findAsec(const char *id, char *asecPath = NULL, size_t asecPathLen = 0,
-            const char **directory = NULL) const;
-    int createAsec(const char *id, unsigned long numSectors, const char *fstype,
-                   const char *key, const int ownerUid, bool isExternal);
-    int resizeAsec(const char *id, unsigned long numSectors, const char *key);
-    int finalizeAsec(const char *id);
-
-    /**
-     * Fixes ASEC permissions on a filesystem that has owners and permissions.
-     * This currently means EXT4-based ASEC containers.
-     *
-     * There is a single file that can be marked as "private" and will not have
-     * world-readable permission. The group for that file will be set to the gid
-     * supplied.
-     *
-     * Returns 0 on success.
-     */
-    int fixupAsecPermissions(const char *id, gid_t gid, const char* privateFilename);
-    int destroyAsec(const char *id, bool force);
-    int mountAsec(const char *id, const char *key, int ownerUid, bool readOnly);
-    int unmountAsec(const char *id, bool force);
-    int renameAsec(const char *id1, const char *id2);
-    int getAsecMountPath(const char *id, char *buffer, int maxlen);
-    int getAsecFilesystemPath(const char *id, char *buffer, int maxlen);
-
-    /* Loopback images */
-    int listMountedObbs(SocketClient* cli);
-    int mountObb(const char *fileName, const char *key, int ownerUid);
-    int unmountObb(const char *fileName, bool force);
-    int getObbMountPath(const char *id, char *buffer, int maxlen);
-
-    /* Shared between ASEC and Loopback images */
-    int unmountLoopImage(const char *containerId, const char *loopId,
-            const char *fileName, const char *mountPoint, bool force);
-
     int updateVirtualDisk();
     int setDebug(bool enable);
 
-    void setBroadcaster(SocketListener *sl) { mBroadcaster = sl; }
-    SocketListener *getBroadcaster() { return mBroadcaster; }
-
     static VolumeManager *Instance();
-
-    static char *asecHash(const char *id, char *buffer, size_t len);
 
     /*
      * Ensure that all directories along given path exist, creating parent
@@ -196,21 +119,34 @@ public:
      * is treated as filename and ignored, unless the path ends with "/".  Also
      * ensures that path belongs to a volume managed by vold.
      */
-    int mkdirs(char* path);
+    int mkdirs(const std::string& path);
+
+    int createObb(const std::string& path, const std::string& key, int32_t ownerGid,
+            std::string* outVolId);
+    int destroyObb(const std::string& volId);
+
+    int mountAppFuse(uid_t uid, pid_t pid, int mountId, android::base::unique_fd* device_fd);
+    int unmountAppFuse(uid_t uid, pid_t pid, int mountId);
 
 private:
     VolumeManager();
     void readInitialState();
-    bool isMountpointMounted(const char *mp);
-    bool isAsecInDirectory(const char *dir, const char *asec) const;
-    bool isLegalAsecId(const char *id) const;
 
     int linkPrimary(userid_t userId);
 
+    void handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk);
+    void handleDiskChanged(dev_t device);
+    void handleDiskRemoved(dev_t device);
+
     std::mutex mLock;
+    std::mutex mCryptLock;
+
+    android::sp<android::os::IVoldListener> mListener;
 
     std::list<std::shared_ptr<DiskSource>> mDiskSources;
     std::list<std::shared_ptr<android::vold::Disk>> mDisks;
+    std::list<std::shared_ptr<android::vold::Disk>> mPendingDisks;
+    std::list<std::shared_ptr<android::vold::VolumeBase>> mObbVolumes;
 
     std::unordered_map<userid_t, int> mAddedUsers;
     std::unordered_set<userid_t> mStartedUsers;
@@ -219,14 +155,9 @@ private:
     std::shared_ptr<android::vold::Disk> mVirtualDisk;
     std::shared_ptr<android::vold::VolumeBase> mInternalEmulated;
     std::shared_ptr<android::vold::VolumeBase> mPrimary;
-};
 
-extern "C" {
-#endif /* __cplusplus */
-#define UNMOUNT_NOT_MOUNTED_ERR (-2)
-    int vold_unmountAll(void);
-#ifdef __cplusplus
-}
-#endif
+    int mNextObbId;
+    bool mSecureKeyguardShowing;
+};
 
 #endif
