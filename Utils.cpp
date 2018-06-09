@@ -545,9 +545,7 @@ uint64_t GetTreeBytes(const std::string& path) {
         PLOG(WARNING) << "Failed to open " << path;
         return -1;
     } else {
-        uint64_t res = calculate_dir_size(dirfd);
-        close(dirfd);
-        return res;
+        return calculate_dir_size(dirfd);
     }
 }
 
