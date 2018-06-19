@@ -159,12 +159,8 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
 status_t Format(const std::string& source, unsigned long numSectors) {
     std::vector<std::string> cmd;
     cmd.push_back(kMkfsPath);
-    cmd.push_back("-F");
-    cmd.push_back("32");
     cmd.push_back("-O");
     cmd.push_back("android");
-    cmd.push_back("-c");
-    cmd.push_back("64");
     cmd.push_back("-A");
 
     if (numSectors) {
