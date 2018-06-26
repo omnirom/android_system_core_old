@@ -35,12 +35,9 @@
 
 #include <linux/kdev_t.h>
 
-#define LOG_TAG "Vold"
-
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
-#include <cutils/log.h>
 #include <cutils/properties.h>
 #include <logwrap/logwrap.h>
 #include <selinux/selinux.h>
@@ -101,7 +98,8 @@ status_t Check(const std::string& source, const std::string& target) {
             if (result == 0) {
                 break;
             }
-            ALOGW("%s(): umount(%s)=%d: %s\n", __func__, c_target, result, strerror(errno));
+            LOG(WARNING) << __func__ << "(): umount(" << c_target << ")=" << result << ": "
+                         << strerror(errno);
             sleep(1);
         }
     }
@@ -111,10 +109,10 @@ status_t Check(const std::string& source, const std::string& target) {
      * (e.g. recent SDK system images). Detect these and skip the check.
      */
     if (access(kFsckPath, X_OK)) {
-        ALOGD("Not running %s on %s (executable not in system image)\n",
-                kFsckPath, c_source);
+        LOG(DEBUG) << "Not running " << kFsckPath << " on " << c_source
+                   << " (executable not in system image)";
     } else {
-        ALOGD("Running %s on %s\n", kFsckPath, c_source);
+        LOG(DEBUG) << "Running " << kFsckPath << " on " << c_source;
 
         std::vector<std::string> cmd;
         cmd.push_back(kFsckPath);
@@ -145,7 +143,7 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
     rc = mount(c_source, c_target, "ext4", flags, NULL);
 
     if (rc && errno == EROFS) {
-        SLOGE("%s appears to be a read only filesystem - retrying mount RO", c_source);
+        LOG(ERROR) << source << " appears to be a read only filesystem - retrying mount RO";
         flags |= MS_RDONLY;
         rc = mount(c_source, c_target, "ext4", flags, NULL);
     }
