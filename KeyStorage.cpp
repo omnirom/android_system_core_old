@@ -141,7 +141,7 @@ static AuthorizationSet beginParams(const KeyAuthentication& auth,
         LOG(DEBUG) << "Supplying auth token to Keymaster";
         paramBuilder.Authorization(TAG_AUTH_TOKEN, blob2hidlVec(auth.token));
     }
-    return paramBuilder;
+    return std::move(paramBuilder);
 }
 
 static bool readFileToString(const std::string& filename, std::string* result) {
