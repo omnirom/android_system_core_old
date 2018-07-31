@@ -262,11 +262,12 @@ binder::Status VoldNativeService::onUserRemoved(int32_t userId) {
     return translate(VolumeManager::Instance()->onUserRemoved(userId));
 }
 
-binder::Status VoldNativeService::onUserStarted(int32_t userId) {
+binder::Status VoldNativeService::onUserStarted(int32_t userId,
+        const std::vector<std::string>& packageNames) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->onUserStarted(userId));
+    return translate(VolumeManager::Instance()->onUserStarted(userId, packageNames));
 }
 
 binder::Status VoldNativeService::onUserStopped(int32_t userId) {

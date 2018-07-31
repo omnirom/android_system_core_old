@@ -372,7 +372,7 @@ int VolumeManager::onUserRemoved(userid_t userId) {
     return 0;
 }
 
-int VolumeManager::onUserStarted(userid_t userId) {
+int VolumeManager::onUserStarted(userid_t userId, const std::vector<std::string>& packageNames) {
     // Note that sometimes the system will spin up processes from Zygote
     // before actually starting the user, so we're okay if Zygote
     // already created this directory.

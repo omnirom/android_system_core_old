@@ -91,7 +91,7 @@ public:
 
     int onUserAdded(userid_t userId, int userSerialNumber);
     int onUserRemoved(userid_t userId);
-    int onUserStarted(userid_t userId);
+    int onUserStarted(userid_t userId, const std::vector<std::string>& packageNames);
     int onUserStopped(userid_t userId);
 
     int addAppIds(const std::vector<std::string>& packageNames, const std::vector<int32_t>& appIds);
