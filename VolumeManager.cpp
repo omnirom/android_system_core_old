@@ -391,6 +391,16 @@ int VolumeManager::onUserStopped(userid_t userId) {
     return 0;
 }
 
+int VolumeManager::addAppIds(const std::vector<std::string>& packageNames,
+        const std::vector<int32_t>& appIds) {
+    return 0;
+}
+
+int VolumeManager::addSandboxIds(const std::vector<int32_t>& appIds,
+        const std::vector<std::string>& sandboxIds) {
+    return 0;
+}
+
 int VolumeManager::onSecureKeyguardStateChanged(bool isShowing) {
     mSecureKeyguardShowing = isShowing;
     if (!mSecureKeyguardShowing) {

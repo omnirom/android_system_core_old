@@ -42,6 +42,11 @@ public:
     binder::Status onUserStarted(int32_t userId);
     binder::Status onUserStopped(int32_t userId);
 
+    binder::Status addAppIds(const std::vector<std::string>& packageNames,
+            const std::vector<int32_t>& appIds);
+    binder::Status addSandboxIds(const std::vector<int32_t>& appIds,
+            const std::vector<std::string>& sandboxIds);
+
     binder::Status onSecureKeyguardStateChanged(bool isShowing);
 
     binder::Status partition(const std::string& diskId, int32_t partitionType, int32_t ratio);

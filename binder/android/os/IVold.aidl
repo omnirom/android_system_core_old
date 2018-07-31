@@ -32,6 +32,9 @@ interface IVold {
     void onUserStarted(int userId);
     void onUserStopped(int userId);
 
+    void addAppIds(in @utf8InCpp String[] packageNames, in int[] appIds);
+    void addSandboxIds(in int[] appIds, in @utf8InCpp String[] sandboxIds);
+
     void onSecureKeyguardStateChanged(boolean isShowing);
 
     void partition(@utf8InCpp String diskId, int partitionType, int ratio);
