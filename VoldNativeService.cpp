@@ -247,6 +247,7 @@ binder::Status VoldNativeService::shutdown() {
     return translate(VolumeManager::Instance()->shutdown());
 }
 
+// TODO: sanity-check these string arguments
 binder::Status VoldNativeService::onUserAdded(int32_t userId, int32_t userSerial) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
@@ -273,6 +274,24 @@ binder::Status VoldNativeService::onUserStopped(int32_t userId) {
     ACQUIRE_LOCK;
 
     return translate(VolumeManager::Instance()->onUserStopped(userId));
+}
+
+// TODO: sanity-check these string arguments
+binder::Status VoldNativeService::addAppIds(const std::vector<std::string>& packageNames,
+        const std::vector<int32_t>& appIds) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->addAppIds(packageNames, appIds));
+}
+
+// TODO: sanity-check these string arguments
+binder::Status VoldNativeService::addSandboxIds(const std::vector<int32_t>& appIds,
+        const std::vector<std::string>& sandboxIds) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->addSandboxIds(appIds, sandboxIds));
 }
 
 binder::Status VoldNativeService::onSecureKeyguardStateChanged(bool isShowing) {

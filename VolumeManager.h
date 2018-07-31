@@ -94,6 +94,10 @@ public:
     int onUserStarted(userid_t userId);
     int onUserStopped(userid_t userId);
 
+    int addAppIds(const std::vector<std::string>& packageNames, const std::vector<int32_t>& appIds);
+    int addSandboxIds(const std::vector<int32_t>& appIds,
+            const std::vector<std::string>& sandboxIds);
+
     int onSecureKeyguardStateChanged(bool isShowing);
 
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
