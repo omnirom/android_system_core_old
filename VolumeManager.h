@@ -136,7 +136,20 @@ private:
     VolumeManager();
     void readInitialState();
 
-    int linkPrimary(userid_t userId);
+    int linkPrimary(userid_t userId, const std::vector<std::string>& packageNames);
+
+    std::string prepareSandboxSource(uid_t uid, const std::string& sandboxId,
+            const std::string& sandboxRootDir);
+    std::string prepareSandboxTarget(const std::string& packageName, uid_t uid,
+            const std::string& volumeLabel, const std::string& mntTargetRootDir, bool isUserDependent);
+    std::string preparePkgDataSource(const std::string& packageName, uid_t uid,
+            const std::string& dataRootDir);
+    std::string preparePkgDataTarget(const std::string& packageName, uid_t uid,
+            const std::string& pkgSandboxDir);
+    int mountSandboxesForPrimaryVol(const std::string& primaryRoot, userid_t userId,
+            const std::vector<std::string>& packageNames, bool isPrimaryEmulated);
+    std::string prepareSubDirs(const std::string& pathPrefix, const std::string& subDirs,
+            mode_t mode, uid_t uid, gid_t gid);
 
     void handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk);
     void handleDiskChanged(dev_t device);

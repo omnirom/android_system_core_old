@@ -129,6 +129,7 @@ status_t PublicVolume::doMount() {
     } else {
         setPath(mRawPath);
     }
+    setLabel(stableName);
 
     if (fs_prepare_dir(mRawPath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
         PLOG(ERROR) << getId() << " failed to create mount points";

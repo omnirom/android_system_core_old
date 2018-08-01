@@ -136,6 +136,16 @@ status_t VolumeBase::setInternalPath(const std::string& internalPath) {
     return OK;
 }
 
+status_t VolumeBase::setLabel(const std::string& label) {
+    if (mState != State::kChecking) {
+        LOG(WARNING) << getId() << " label change requires state checking";
+        return -EBUSY;
+    }
+
+    mLabel = label;
+    return OK;
+}
+
 android::sp<android::os::IVoldListener> VolumeBase::getListener() {
     if (mSilent) {
         return nullptr;

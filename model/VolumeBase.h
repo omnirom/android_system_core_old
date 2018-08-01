@@ -84,6 +84,7 @@ public:
     State getState() { return mState; }
     const std::string& getPath() { return mPath; }
     const std::string& getInternalPath() { return mInternalPath; }
+    const std::string& getLabel() { return mLabel; }
 
     status_t setDiskId(const std::string& diskId);
     status_t setPartGuid(const std::string& partGuid);
@@ -114,6 +115,7 @@ protected:
     status_t setId(const std::string& id);
     status_t setPath(const std::string& path);
     status_t setInternalPath(const std::string& internalPath);
+    status_t setLabel(const std::string& label);
 
     android::sp<android::os::IVoldListener> getListener();
 
@@ -140,6 +142,12 @@ private:
     std::string mInternalPath;
     /* Flag indicating that volume should emit no events */
     bool mSilent;
+    /**
+     * Label used for representing the package sandboxes on external storage volumes.
+     * For emulated volume, this would be "emulated" and for public volumes, UUID if available,
+     * otherwise some other unique id.
+     */
+    std::string mLabel;
 
     /* Volumes stacked on top of this volume */
     std::list<std::shared_ptr<VolumeBase>> mVolumes;
