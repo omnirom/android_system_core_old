@@ -114,15 +114,12 @@ static struct flag_list fs_mgr_flags[] = {
 #define EM_ICE          2
 #define EM_AES_256_CTS  3
 #define EM_AES_256_HEH  4
-#define EM_SPECK_128_256_XTS 5
-#define EM_SPECK_128_256_CTS 6
-#define EM_ICE_WRAPPED_KEY_SUPPORTED 7
+#define EM_ICE_WRAPPED_KEY_SUPPORTED 5
 
 static const struct flag_list file_contents_encryption_modes[] = {
     {"aes-256-xts", EM_AES_256_XTS},
-    {"speck128/256-xts", EM_SPECK_128_256_XTS},
     {"software", EM_AES_256_XTS}, /* alias for backwards compatibility */
-    {"ice", EM_ICE},              /* hardware-specific inline cryptographic engine */
+    {"ice", EM_ICE}, /* hardware-specific inline cryptographic engine */
     {"ice_wrapped_key_supported", EM_ICE_WRAPPED_KEY_SUPPORTED}, /* ICE engine with wrapped key support */
     {0, 0},
 };
@@ -130,7 +127,6 @@ static const struct flag_list file_contents_encryption_modes[] = {
 static const struct flag_list file_names_encryption_modes[] = {
     {"aes-256-cts", EM_AES_256_CTS},
     {"aes-256-heh", EM_AES_256_HEH},
-    {"speck128/256-cts", EM_SPECK_128_256_CTS},
     {0, 0},
 };
 
