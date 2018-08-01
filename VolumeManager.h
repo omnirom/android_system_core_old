@@ -160,6 +160,10 @@ private:
     std::shared_ptr<android::vold::VolumeBase> mInternalEmulated;
     std::shared_ptr<android::vold::VolumeBase> mPrimary;
 
+    std::unordered_map<std::string, appid_t> mAppIds;
+    std::unordered_map<appid_t, std::string> mSandboxIds;
+    std::unordered_map<userid_t, std::vector<std::string>> mUserPackages;
+
     int mNextObbId;
     bool mSecureKeyguardShowing;
 };
