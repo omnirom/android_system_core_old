@@ -146,6 +146,69 @@ binder::Status checkArgumentHex(const std::string& hex) {
     return ok();
 }
 
+binder::Status checkArgumentPackageName(const std::string& packageName) {
+    // This logic is borrowed from PackageParser.java
+    bool hasSep = false;
+    bool front = true;
+
+    for (size_t i = 0; i < packageName.length(); ++i) {
+        char c = packageName[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+            front = false;
+            continue;
+        }
+        if (!front) {
+            if ((c >= '0' && c <= '9') || c == '_') {
+                continue;
+            }
+        }
+        if (c == '.') {
+            hasSep = true;
+            front = true;
+            continue;
+        }
+        return exception(binder::Status::EX_ILLEGAL_ARGUMENT,
+                StringPrintf("Bad package character %c in %s", c, packageName.c_str()));
+    }
+
+    if (front) {
+        return exception(binder::Status::EX_ILLEGAL_ARGUMENT,
+                StringPrintf("Missing separator in %s", packageName.c_str()));
+    }
+
+    return ok();
+}
+
+binder::Status checkArgumentPackageNames(const std::vector<std::string>& packageNames) {
+    for (size_t i = 0; i < packageNames.size(); ++i) {
+        binder::Status status = checkArgumentPackageName(packageNames[i]);
+        if (!status.isOk()) {
+            return status;
+        }
+    }
+    return ok();
+}
+
+binder::Status checkArgumentSandboxId(const std::string& sandboxId) {
+    // sandboxId will be in either the format shared:<shared-user-id> or <package-name>
+    // and <shared-user-id> name has same requirements as <package-name>.
+    std::size_t nameStartIndex = 0;
+    if (sandboxId.find("shared:") == 0) {
+        nameStartIndex = 7; // len("shared:")
+    }
+    return checkArgumentPackageName(sandboxId.substr(nameStartIndex));
+}
+
+binder::Status checkArgumentSandboxIds(const std::vector<std::string>& sandboxIds) {
+    for (size_t i = 0; i < sandboxIds.size(); ++i) {
+        binder::Status status = checkArgumentSandboxId(sandboxIds[i]);
+        if (!status.isOk()) {
+            return status;
+        }
+    }
+    return ok();
+}
+
 #define ENFORCE_UID(uid) {                                  \
     binder::Status status = checkUid((uid));                \
     if (!status.isOk()) {                                   \
@@ -172,6 +235,20 @@ binder::Status checkArgumentHex(const std::string& hex) {
     if (!status.isOk()) {                                   \
         return status;                                      \
     }                                                       \
+}
+
+#define CHECK_ARGUMENT_PACKAGE_NAMES(packageNames) {                        \
+    binder::Status status = checkArgumentPackageNames((packageNames));      \
+    if (!status.isOk()) {                                                   \
+        return status;                                                      \
+    }                                                                       \
+}
+
+#define CHECK_ARGUMENT_SANDBOX_IDS(sandboxIds) {                            \
+    binder::Status status = checkArgumentSandboxIds((sandboxIds));          \
+    if (!status.isOk()) {                                                   \
+        return status;                                                      \
+    }                                                                       \
 }
 
 #define ACQUIRE_LOCK \
@@ -247,7 +324,6 @@ binder::Status VoldNativeService::shutdown() {
     return translate(VolumeManager::Instance()->shutdown());
 }
 
-// TODO: sanity-check these string arguments
 binder::Status VoldNativeService::onUserAdded(int32_t userId, int32_t userSerial) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
@@ -265,6 +341,7 @@ binder::Status VoldNativeService::onUserRemoved(int32_t userId) {
 binder::Status VoldNativeService::onUserStarted(int32_t userId,
         const std::vector<std::string>& packageNames) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PACKAGE_NAMES(packageNames);
     ACQUIRE_LOCK;
 
     return translate(VolumeManager::Instance()->onUserStarted(userId, packageNames));
@@ -277,19 +354,19 @@ binder::Status VoldNativeService::onUserStopped(int32_t userId) {
     return translate(VolumeManager::Instance()->onUserStopped(userId));
 }
 
-// TODO: sanity-check these string arguments
 binder::Status VoldNativeService::addAppIds(const std::vector<std::string>& packageNames,
         const std::vector<int32_t>& appIds) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PACKAGE_NAMES(packageNames);
     ACQUIRE_LOCK;
 
     return translate(VolumeManager::Instance()->addAppIds(packageNames, appIds));
 }
 
-// TODO: sanity-check these string arguments
 binder::Status VoldNativeService::addSandboxIds(const std::vector<int32_t>& appIds,
         const std::vector<std::string>& sandboxIds) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_SANDBOX_IDS(sandboxIds);
     ACQUIRE_LOCK;
 
     return translate(VolumeManager::Instance()->addSandboxIds(appIds, sandboxIds));
