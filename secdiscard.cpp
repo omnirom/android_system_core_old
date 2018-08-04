@@ -57,7 +57,33 @@ int main(int argc, const char * const argv[]) {
         usage(argv[0]);
         return -1;
     }
+
     for (auto const &target: options.targets) {
+// F2FS-specific ioctl
+// It requires the below kernel commit merged in v4.16-rc1.
+//   1ad71a27124c ("f2fs: add an ioctl to disable GC for specific file")
+// In android-4.4,
+//   56ee1e817908 ("f2fs: updates on v4.16-rc1")
+// In android-4.9,
+//   2f17e34672a8 ("f2fs: updates on v4.16-rc1")
+// In android-4.14,
+//   ce767d9a55bc ("f2fs: updates on v4.16-rc1")
+#ifndef F2FS_IOC_SET_PIN_FILE
+#ifndef F2FS_IOCTL_MAGIC
+#define F2FS_IOCTL_MAGIC		0xf5
+#endif
+#define F2FS_IOC_SET_PIN_FILE	_IOW(F2FS_IOCTL_MAGIC, 13, __u32)
+#define F2FS_IOC_GET_PIN_FILE	_IOW(F2FS_IOCTL_MAGIC, 14, __u32)
+#endif
+        android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(
+            target.c_str(), O_WRONLY, 0)));
+        if (fd == -1) {
+            LOG(ERROR) << "Secure discard open failed for: " << target;
+            return 0;
+        }
+        __u32 set = 1;
+        ioctl(fd, F2FS_IOC_SET_PIN_FILE, &set);
+
         LOG(DEBUG) << "Securely discarding '" << target << "' unlink=" << options.unlink;
         if (!secdiscard_path(target)) {
             LOG(ERROR) << "Secure discard failed for: " << target;
@@ -67,6 +93,8 @@ int main(int argc, const char * const argv[]) {
                 PLOG(ERROR) << "Unable to unlink: " << target;
             }
         }
+        set = 0;
+        ioctl(fd, F2FS_IOC_SET_PIN_FILE, &set);
         LOG(DEBUG) << "Discarded: " << target;
     }
     return 0;
