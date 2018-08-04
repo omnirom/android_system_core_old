@@ -358,7 +358,24 @@ int VolumeManager::linkPrimary(userid_t userId, const std::vector<std::string>& 
                 return -errno;
             }
         }
-        return mountSandboxesForPrimaryVol(source, userId, packageNames, isPrimaryEmulated);
+        if (mountSandboxesForPrimaryVol(source, userId, packageNames, isPrimaryEmulated) != 0) {
+            return -errno;
+        }
+        // Keep /sdcard working for shell process
+        std::string primarySource(mPrimary->getPath());
+        if (isPrimaryEmulated) {
+            StringAppendF(&primarySource, "/%d", userId);
+        }
+        std::string target(StringPrintf("/mnt/user/%d/primary", userId));
+        if (TEMP_FAILURE_RETRY(unlink(target.c_str()))) {
+            if (errno != ENOENT) {
+                PLOG(WARNING) << "Failed to unlink " << target;
+            }
+        }
+        if (TEMP_FAILURE_RETRY(symlink(primarySource.c_str(), target.c_str()))) {
+            PLOG(WARNING) << "Failed to link " << primarySource << " at " << target;
+            return -errno;
+        }
     } else {
         std::string source(mPrimary->getPath());
         if (mPrimary->getType() == android::vold::VolumeBase::Type::kEmulated) {
@@ -396,10 +413,14 @@ int VolumeManager::mountSandboxesForPrimaryVol(const std::string& primaryRoot, u
         return -errno;
     }
 
-    std::string segment = StringPrintf("%d/package/", userId);
-    std::string mntTargetRoot = prepareSubDirs("/mnt/user", segment.c_str(),
-            0700, AID_ROOT, AID_ROOT);
-    if (mntTargetRoot.empty()) {
+    std::string mntTargetRoot = StringPrintf("/mnt/user/%d", userId);
+    if (fs_prepare_dir(mntTargetRoot.c_str(), 0751, AID_ROOT, AID_ROOT) != 0) {
+        PLOG(ERROR) << "fs_prepare_dir failed on " << mntTargetRoot;
+        return -errno;
+    }
+    mntTargetRoot.append("/package");
+    if (fs_prepare_dir(mntTargetRoot.c_str(), 0700, AID_ROOT, AID_ROOT) != 0) {
+        PLOG(ERROR) << "fs_prepare_dir failed on " << mntTargetRoot;
         return -errno;
     }
 
