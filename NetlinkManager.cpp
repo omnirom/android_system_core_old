@@ -26,9 +26,7 @@
 
 #include <linux/netlink.h>
 
-#define LOG_TAG "Vold"
-
-#include <cutils/log.h>
+#include <android-base/logging.h>
 
 #include "NetlinkManager.h"
 #include "NetlinkHandler.h"
@@ -60,7 +58,7 @@ int NetlinkManager::start() {
 
     if ((mSock = socket(PF_NETLINK, SOCK_DGRAM | SOCK_CLOEXEC,
             NETLINK_KOBJECT_UEVENT)) < 0) {
-        SLOGE("Unable to create uevent socket: %s", strerror(errno));
+        PLOG(ERROR) << "Unable to create uevent socket";
         return -1;
     }
 
@@ -69,23 +67,23 @@ int NetlinkManager::start() {
     // Try using SO_RCVBUF if that fails.
     if ((setsockopt(mSock, SOL_SOCKET, SO_RCVBUFFORCE, &sz, sizeof(sz)) < 0) &&
         (setsockopt(mSock, SOL_SOCKET, SO_RCVBUF, &sz, sizeof(sz)) < 0)) {
-        SLOGE("Unable to set uevent socket SO_RCVBUF/SO_RCVBUFFORCE option: %s", strerror(errno));
+        PLOG(ERROR) << "Unable to set uevent socket SO_RCVBUF/SO_RCVBUFFORCE option";
         goto out;
     }
 
     if (setsockopt(mSock, SOL_SOCKET, SO_PASSCRED, &on, sizeof(on)) < 0) {
-        SLOGE("Unable to set uevent socket SO_PASSCRED option: %s", strerror(errno));
+        PLOG(ERROR) << "Unable to set uevent socket SO_PASSCRED option";
         goto out;
     }
 
     if (bind(mSock, (struct sockaddr *) &nladdr, sizeof(nladdr)) < 0) {
-        SLOGE("Unable to bind uevent socket: %s", strerror(errno));
+        PLOG(ERROR) << "Unable to bind uevent socket";
         goto out;
     }
 
     mHandler = new NetlinkHandler(mSock);
     if (mHandler->start()) {
-        SLOGE("Unable to start NetlinkHandler: %s", strerror(errno));
+        PLOG(ERROR) << "Unable to start NetlinkHandler";
         goto out;
     }
 
@@ -100,7 +98,7 @@ int NetlinkManager::stop() {
     int status = 0;
 
     if (mHandler->stop()) {
-        SLOGE("Unable to stop NetlinkHandler: %s", strerror(errno));
+        PLOG(ERROR) << "Unable to stop NetlinkHandler";
         status = -1;
     }
     delete mHandler;

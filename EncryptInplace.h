@@ -24,9 +24,8 @@
 #define RETRY_MOUNT_ATTEMPTS 10
 #define RETRY_MOUNT_DELAY_SECONDS 1
 
-int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev,
-                           off64_t size, off64_t *size_already_done,
-                           off64_t tot_size,
-                           off64_t previously_encrypted_upto);
+int cryptfs_enable_inplace(char* crypto_blkdev, char* real_blkdev, off64_t size,
+                           off64_t* size_already_done, off64_t tot_size,
+                           off64_t previously_encrypted_upto, bool set_progress_properties);
 
 #endif

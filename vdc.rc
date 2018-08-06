@@ -7,6 +7,6 @@ on defaultcrypto
 # One shot invocation to encrypt unencrypted volumes
 on encrypt
     start surfaceflinger
-    exec - root -- /system/bin/vdc --wait cryptfs enablecrypto inplace default noui
+    exec - root -- /system/bin/vdc --wait cryptfs enablecrypto
     # vold will set vold.decrypt to trigger_restart_framework (default
     # encryption)

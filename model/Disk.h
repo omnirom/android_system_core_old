@@ -79,9 +79,6 @@ public:
     status_t partitionPrivate();
     status_t partitionMixed(int8_t ratio);
 
-    void notifyEvent(int msg);
-    void notifyEvent(int msg, const std::string& value);
-
 private:
     /* ID that uniquely references this disk */
     std::string mId;

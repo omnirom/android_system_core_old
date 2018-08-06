@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2017 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,12 @@
  * limitations under the License.
  */
 
-#ifndef _LOOP_H
-#define _LOOP_H
+package android.os;
 
-#include <string>
-#include <unistd.h>
-#include <linux/loop.h>
+import android.os.PersistableBundle;
 
-class Loop {
-public:
-    static const int LOOP_MAX = 4096;
-public:
-    static int create(const std::string& file, std::string& out_device);
-    static int destroyByDevice(const char *loopDevice);
-    static int destroyAll();
-    static int createImageFile(const char *file, unsigned long numSectors);
-    static int resizeImageFile(const char *file, unsigned long numSectors);
-};
-
-#endif
+/** {@hide} */
+oneway interface IVoldTaskListener {
+    void onStatus(int status, in PersistableBundle extras);
+    void onFinished(int status, in PersistableBundle extras);
+}

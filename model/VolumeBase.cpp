@@ -17,7 +17,6 @@
 #include "Utils.h"
 #include "VolumeBase.h"
 #include "VolumeManager.h"
-#include "ResponseCode.h"
 
 #include <android-base/stringprintf.h>
 #include <android-base/logging.h>
@@ -44,7 +43,9 @@ VolumeBase::~VolumeBase() {
 
 void VolumeBase::setState(State state) {
     mState = state;
-    notifyEvent(ResponseCode::VolumeStateChanged, StringPrintf("%d", mState));
+
+    auto listener = getListener();
+    if (listener) listener->onVolumeStateChanged(getId(), static_cast<int32_t>(mState));
 }
 
 status_t VolumeBase::setDiskId(const std::string& diskId) {
@@ -114,7 +115,10 @@ status_t VolumeBase::setPath(const std::string& path) {
     }
 
     mPath = path;
-    notifyEvent(ResponseCode::VolumePathChanged, mPath);
+
+    auto listener = getListener();
+    if (listener) listener->onVolumePathChanged(getId(), mPath);
+
     return OK;
 }
 
@@ -125,20 +129,19 @@ status_t VolumeBase::setInternalPath(const std::string& internalPath) {
     }
 
     mInternalPath = internalPath;
-    notifyEvent(ResponseCode::VolumeInternalPathChanged, mInternalPath);
+
+    auto listener = getListener();
+    if (listener) listener->onVolumeInternalPathChanged(getId(), mInternalPath);
+
     return OK;
 }
 
-void VolumeBase::notifyEvent(int event) {
-    if (mSilent) return;
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(event,
-            getId().c_str(), false);
-}
-
-void VolumeBase::notifyEvent(int event, const std::string& value) {
-    if (mSilent) return;
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(event,
-            StringPrintf("%s %s", getId().c_str(), value.c_str()).c_str(), false);
+android::sp<android::os::IVoldListener> VolumeBase::getListener() {
+    if (mSilent) {
+        return nullptr;
+    } else {
+        return VolumeManager::Instance()->getListener();
+    }
 }
 
 void VolumeBase::addVolume(const std::shared_ptr<VolumeBase>& volume) {
@@ -163,8 +166,11 @@ status_t VolumeBase::create() {
 
     mCreated = true;
     status_t res = doCreate();
-    notifyEvent(ResponseCode::VolumeCreated,
-            StringPrintf("%d \"%s\" \"%s\"", mType, mDiskId.c_str(), mPartGuid.c_str()));
+
+    auto listener = getListener();
+    if (listener) listener->onVolumeCreated(getId(),
+            static_cast<int32_t>(mType), mDiskId, mPartGuid);
+
     setState(State::kUnmounted);
     return res;
 }
@@ -183,7 +189,10 @@ status_t VolumeBase::destroy() {
         setState(State::kRemoved);
     }
 
-    notifyEvent(ResponseCode::VolumeDestroyed);
+
+    auto listener = getListener();
+    if (listener) listener->onVolumeDestroyed(getId());
+
     status_t res = doDestroy();
     mCreated = false;
     return res;

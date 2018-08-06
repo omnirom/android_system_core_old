@@ -20,14 +20,17 @@
 #include "Utils.h"
 #include "VolumeBase.h"
 #include "VolumeManager.h"
-#include "ResponseCode.h"
 #include "Ext4Crypt.h"
 
 #include <android-base/file.h>
+#include <android-base/logging.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
-#include <android-base/logging.h>
-#include <diskconfig/diskconfig.h>
+#include <android-base/strings.h>
+#include <android-base/parseint.h>
+#include <ext4_utils/ext4_crypt.h>
+
+#include "cryptfs.h"
 
 #include <vector>
 #include <fcntl.h>
@@ -160,7 +163,10 @@ void Disk::listVolumes(VolumeBase::Type type, std::list<std::string>& list) {
 status_t Disk::create() {
     CHECK(!mCreated);
     mCreated = true;
-    notifyEvent(ResponseCode::DiskCreated, StringPrintf("%d", mFlags));
+
+    auto listener = VolumeManager::Instance()->getListener();
+    if (listener) listener->onDiskCreated(getId(), mFlags);
+
     readMetadata();
     readPartitions();
     return OK;
@@ -170,7 +176,10 @@ status_t Disk::destroy() {
     CHECK(mCreated);
     destroyAllVolumes();
     mCreated = false;
-    notifyEvent(ResponseCode::DiskDestroyed);
+
+    auto listener = VolumeManager::Instance()->getListener();
+    if (listener) listener->onDiskDestroyed(getId());
+
     return OK;
 }
 
@@ -256,6 +265,7 @@ status_t Disk::readMetadata() {
             PLOG(WARNING) << "Failed to read vendor from " << path;
             return -errno;
         }
+        tmp = android::base::Trim(tmp);
         mLabel = tmp;
         break;
     }
@@ -266,7 +276,12 @@ status_t Disk::readMetadata() {
             PLOG(WARNING) << "Failed to read manufacturer from " << path;
             return -errno;
         }
-        uint64_t manfid = strtoll(tmp.c_str(), nullptr, 16);
+        tmp = android::base::Trim(tmp);
+        int64_t manfid;
+        if (!android::base::ParseInt(tmp, &manfid)) {
+            PLOG(WARNING) << "Failed to parse manufacturer " << tmp;
+            return -EINVAL;
+        }
         // Our goal here is to give the user a meaningful label, ideally
         // matching whatever is silk-screened on the card.  To reduce
         // user confusion, this list doesn't contain white-label manfid.
@@ -300,14 +315,15 @@ status_t Disk::readMetadata() {
     }
     }
 
-    notifyEvent(ResponseCode::DiskSizeChanged, StringPrintf("%" PRIu64, mSize));
-    notifyEvent(ResponseCode::DiskLabelChanged, mLabel);
-    notifyEvent(ResponseCode::DiskSysPathChanged, mSysPath);
+    auto listener = VolumeManager::Instance()->getListener();
+    if (listener) listener->onDiskMetadataChanged(getId(),
+            mSize, mLabel, mSysPath);
+
     return OK;
 }
 
 status_t Disk::readPartitions() {
-    int8_t maxMinors = getMaxMinors();
+    int maxMinors = getMaxMinors();
     if (maxMinors < 0) {
         return -ENOTSUP;
     }
@@ -325,7 +341,10 @@ status_t Disk::readPartitions() {
     status_t res = ForkExecvp(cmd, output);
     if (res != OK) {
         LOG(WARNING) << "sgdisk failed to scan " << mDevPath;
-        notifyEvent(ResponseCode::DiskScanned);
+
+        auto listener = VolumeManager::Instance()->getListener();
+        if (listener) listener->onDiskScanned(getId());
+
         mJustPartitioned = false;
         return res;
     }
@@ -333,45 +352,57 @@ status_t Disk::readPartitions() {
     Table table = Table::kUnknown;
     bool foundParts = false;
     for (const auto& line : output) {
-        char* cline = (char*) line.c_str();
-        char* token = strtok(cline, kSgdiskToken);
-        if (token == nullptr) continue;
+        auto split = android::base::Split(line, kSgdiskToken);
+        auto it = split.begin();
+        if (it == split.end()) continue;
 
-        if (!strcmp(token, "DISK")) {
-            const char* type = strtok(nullptr, kSgdiskToken);
-            if (!strcmp(type, "mbr")) {
+        if (*it == "DISK") {
+            if (++it == split.end()) continue;
+            if (*it == "mbr") {
                 table = Table::kMbr;
-            } else if (!strcmp(type, "gpt")) {
+            } else if (*it == "gpt") {
                 table = Table::kGpt;
+            } else {
+                LOG(WARNING) << "Invalid partition table " << *it;
+                continue;
             }
-        } else if (!strcmp(token, "PART")) {
+        } else if (*it == "PART") {
             foundParts = true;
-            int i = strtol(strtok(nullptr, kSgdiskToken), nullptr, 10);
-            if (i <= 0 || i > maxMinors) {
-                LOG(WARNING) << mId << " is ignoring partition " << i
-                        << " beyond max supported devices";
+
+            if (++it == split.end()) continue;
+            int i = 0;
+            if (!android::base::ParseInt(*it, &i, 1, maxMinors)) {
+                LOG(WARNING) << "Invalid partition number " << *it;
                 continue;
             }
             dev_t partDevice = makedev(major(mDevice), minor(mDevice) + i);
 
             if (table == Table::kMbr) {
-                const char* type = strtok(nullptr, kSgdiskToken);
+                if (++it == split.end()) continue;
+                int type = 0;
+                if (!android::base::ParseInt("0x" + *it, &type)) {
+                    LOG(WARNING) << "Invalid partition type " << *it;
+                    continue;
+                }
 
-                switch (strtol(type, nullptr, 16)) {
-                case 0x06: // FAT16
-                case 0x0b: // W95 FAT32 (LBA)
-                case 0x0c: // W95 FAT32 (LBA)
-                case 0x0e: // W95 FAT16 (LBA)
-                    createPublicVolume(partDevice);
-                    break;
+                switch (type) {
+                    case 0x06:  // FAT16
+                    case 0x07:  // HPFS/NTFS/exFAT
+                    case 0x0b:  // W95 FAT32 (LBA)
+                    case 0x0c:  // W95 FAT32 (LBA)
+                    case 0x0e:  // W95 FAT16 (LBA)
+                        createPublicVolume(partDevice);
+                        break;
                 }
             } else if (table == Table::kGpt) {
-                const char* typeGuid = strtok(nullptr, kSgdiskToken);
-                const char* partGuid = strtok(nullptr, kSgdiskToken);
+                if (++it == split.end()) continue;
+                auto typeGuid = *it;
+                if (++it == split.end()) continue;
+                auto partGuid = *it;
 
-                if (!strcasecmp(typeGuid, kGptBasicData)) {
+                if (android::base::EqualsIgnoreCase(typeGuid, kGptBasicData)) {
                     createPublicVolume(partDevice);
-                } else if (!strcasecmp(typeGuid, kGptAndroidExpand)) {
+                } else if (android::base::EqualsIgnoreCase(typeGuid, kGptAndroidExpand)) {
                     createPrivateVolume(partDevice, partGuid);
                 }
             }
@@ -384,14 +415,16 @@ status_t Disk::readPartitions() {
 
         std::string fsType;
         std::string unused;
-        if (ReadMetadataUntrusted(mDevPath, fsType, unused, unused) == OK) {
+        if (ReadMetadataUntrusted(mDevPath, &fsType, &unused, &unused) == OK) {
             createPublicVolume(mDevice);
         } else {
             LOG(WARNING) << mId << " failed to identify, giving up";
         }
     }
 
-    notifyEvent(ResponseCode::DiskScanned);
+    auto listener = VolumeManager::Instance()->getListener();
+    if (listener) listener->onDiskScanned(getId());
+
     mJustPartitioned = false;
     return OK;
 }
@@ -406,7 +439,6 @@ status_t Disk::unmountAll() {
 status_t Disk::partitionPublic() {
     int res;
 
-    // TODO: improve this code
     destroyAllVolumes();
     mJustPartitioned = true;
 
@@ -422,41 +454,21 @@ status_t Disk::partitionPublic() {
         LOG(WARNING) << "Failed to zap; status " << res;
     }
 
-    struct disk_info dinfo;
-    memset(&dinfo, 0, sizeof(dinfo));
+    // Now let's build the new MBR table. We heavily rely on sgdisk to
+    // force optimal alignment on the created partitions.
+    cmd.clear();
+    cmd.push_back(kSgdiskPath);
+    cmd.push_back("--new=0:0:-0");
+    cmd.push_back("--typecode=0:0c00");
+    cmd.push_back("--gpttombr=1");
+    cmd.push_back(mDevPath);
 
-    if (!(dinfo.part_lst = (struct part_info *) malloc(
-            MAX_NUM_PARTS * sizeof(struct part_info)))) {
-        return -1;
+    if ((res = ForkExecvp(cmd)) != 0) {
+        LOG(ERROR) << "Failed to partition; status " << res;
+        return res;
     }
 
-    memset(dinfo.part_lst, 0, MAX_NUM_PARTS * sizeof(struct part_info));
-    dinfo.device = strdup(mDevPath.c_str());
-    dinfo.scheme = PART_SCHEME_MBR;
-    dinfo.sect_size = 512;
-    dinfo.skip_lba = 2048;
-    dinfo.num_lba = 0;
-    dinfo.num_parts = 1;
-
-    struct part_info *pinfo = &dinfo.part_lst[0];
-
-    pinfo->name = strdup("android_sdcard");
-    pinfo->flags |= PART_ACTIVE_FLAG;
-    pinfo->type = PC_PART_TYPE_FAT32;
-    pinfo->len_kb = -1;
-
-    int rc = apply_disk_config(&dinfo, 0);
-    if (rc) {
-        LOG(ERROR) << "Failed to apply disk configuration: " << rc;
-        goto out;
-    }
-
-out:
-    free(pinfo->name);
-    free(dinfo.device);
-    free(dinfo.part_lst);
-
-    return rc;
+    return OK;
 }
 
 status_t Disk::partitionPrivate() {
@@ -465,12 +477,6 @@ status_t Disk::partitionPrivate() {
 
 status_t Disk::partitionMixed(int8_t ratio) {
     int res;
-
-    if (e4crypt_is_native()
-            && !android::base::GetBoolProperty("persist.sys.adoptable_fbe", false)) {
-        LOG(ERROR) << "Private volumes not yet supported on FBE devices";
-        return -EINVAL;
-    }
 
     destroyAllVolumes();
     mJustPartitioned = true;
@@ -496,7 +502,7 @@ status_t Disk::partitionMixed(int8_t ratio) {
     }
 
     std::string keyRaw;
-    if (ReadRandomBytes(16, keyRaw) != OK) {
+    if (ReadRandomBytes(cryptfs_get_keysize(), keyRaw) != OK) {
         LOG(ERROR) << "Failed to generate key";
         return -EIO;
     }
@@ -553,16 +559,6 @@ status_t Disk::partitionMixed(int8_t ratio) {
     return OK;
 }
 
-void Disk::notifyEvent(int event) {
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(event,
-            getId().c_str(), false);
-}
-
-void Disk::notifyEvent(int event, const std::string& value) {
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(event,
-            StringPrintf("%s %s", getId().c_str(), value.c_str()).c_str(), false);
-}
-
 int Disk::getMaxMinors() {
     // Figure out maximum partition devices supported
     unsigned int majorId = major(mDevice);
@@ -573,7 +569,7 @@ int Disk::getMaxMinors() {
             LOG(ERROR) << "Failed to read max minors";
             return -errno;
         }
-        return atoi(tmp.c_str());
+        return std::stoi(tmp);
     }
     case kMajorBlockScsiA: case kMajorBlockScsiB: case kMajorBlockScsiC: case kMajorBlockScsiD:
     case kMajorBlockScsiE: case kMajorBlockScsiF: case kMajorBlockScsiG: case kMajorBlockScsiH:
@@ -590,7 +586,7 @@ int Disk::getMaxMinors() {
             LOG(ERROR) << "Failed to read max minors";
             return -errno;
         }
-        return atoi(tmp.c_str());
+        return std::stoi(tmp);
     }
     default: {
         if (isVirtioBlkDevice(majorId)) {
