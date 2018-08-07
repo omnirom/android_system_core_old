@@ -406,6 +406,13 @@ int VolumeManager::mountSandboxesForPrimaryVol(const std::string& primaryRoot, u
     if (sandboxRoot.empty()) {
         return -errno;
     }
+    std::string sharedSandboxRoot;
+    StringAppendF(&sharedSandboxRoot, "%s/shared", sandboxRoot.c_str());
+    // Create shared sandbox base dir for apps with sharedUserIds
+    if (fs_prepare_dir(sharedSandboxRoot.c_str(), 0700, AID_ROOT, AID_ROOT) != 0) {
+        PLOG(ERROR) << "fs_prepare_dir failed on " << sharedSandboxRoot;
+        return -errno;
+    }
 
     std::string dataRoot = prepareSubDirs(primaryRoot, "Android/data/",
             0700, AID_ROOT, AID_ROOT);
@@ -511,8 +518,12 @@ std::string VolumeManager::prepareSubDirs(const std::string& pathPrefix,
 
 std::string VolumeManager::prepareSandboxSource(uid_t uid, const std::string& sandboxId,
         const std::string& sandboxRootDir) {
-    std::string sandboxSourceDir = StringPrintf("%s/%s",
-            sandboxRootDir.c_str(), sandboxId.c_str());
+    std::string sandboxSourceDir(sandboxRootDir);
+    if (android::base::StartsWith(sandboxId, "shared:")) {
+        StringAppendF(&sandboxSourceDir, "/shared/%s", sandboxId.substr(7).c_str());
+    } else {
+        StringAppendF(&sandboxSourceDir, "/%s", sandboxId.c_str());
+    }
     if (fs_prepare_dir(sandboxSourceDir.c_str(), 0755, uid, uid) != 0) {
         PLOG(ERROR) << "fs_prepare_dir failed on " << sandboxSourceDir;
         return kEmptyString;
