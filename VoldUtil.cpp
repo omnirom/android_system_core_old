@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,13 @@
  * limitations under the License.
  */
 
-#ifndef _VOLD_COMMAND_H
-#define _VOLD_COMMAND_H
+#include <sys/ioctl.h>
+#include <linux/fs.h>
 
-#include <sysutils/FrameworkCommand.h>
+struct fstab *fstab_default;
 
-class VoldCommand : public FrameworkCommand {
-public:
-    explicit VoldCommand(const char *cmd);
-    virtual ~VoldCommand() {}
-};
-
-#endif
+void get_blkdev_size(int fd, unsigned long* nr_sec) {
+  if ((ioctl(fd, BLKGETSIZE, nr_sec)) == -1) {
+    *nr_sec = 0;
+  }
+}

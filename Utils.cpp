@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
-#include "sehandle.h"
 #include "Utils.h"
+
 #include "Process.h"
-#include "VolumeManager.h"
+#include "sehandle.h"
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/properties.h>
+#include <android-base/strings.h>
 #include <android-base/stringprintf.h>
 #include <cutils/fs.h>
 #include <logwrap/logwrap.h>
@@ -54,12 +55,19 @@ security_context_t sBlkidUntrustedContext = nullptr;
 security_context_t sFsckContext = nullptr;
 security_context_t sFsckUntrustedContext = nullptr;
 
+bool sSleepOnUnmount = true;
+
 static const char* kBlkidPath = "/system/bin/blkid";
 static const char* kKeyPath = "/data/misc/vold";
 
 static const char* kProcFilesystems = "/proc/filesystems";
 
+// Lock used to protect process-level SELinux changes from racing with each
+// other between multiple threads.
+static std::mutex kSecurityLock;
+
 status_t CreateDeviceNode(const std::string& path, dev_t dev) {
+    std::lock_guard<std::mutex> lock(kSecurityLock);
     const char* cpath = path.c_str();
     status_t res = 0;
 
@@ -97,6 +105,7 @@ status_t DestroyDeviceNode(const std::string& path) {
 }
 
 status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
+    std::lock_guard<std::mutex> lock(kSecurityLock);
     const char* cpath = path.c_str();
 
     char* secontext = nullptr;
@@ -127,22 +136,22 @@ status_t ForceUnmount(const std::string& path) {
     }
     // Apps might still be handling eject request, so wait before
     // we start sending signals
-    if (!VolumeManager::shutting_down) sleep(5);
+    if (sSleepOnUnmount) sleep(5);
 
-    Process::killProcessesWithOpenFiles(cpath, SIGINT);
-    if (!VolumeManager::shutting_down) sleep(5);
+    KillProcessesWithOpenFiles(path, SIGINT);
+    if (sSleepOnUnmount) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
 
-    Process::killProcessesWithOpenFiles(cpath, SIGTERM);
-    if (!VolumeManager::shutting_down) sleep(5);
+    KillProcessesWithOpenFiles(path, SIGTERM);
+    if (sSleepOnUnmount) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
 
-    Process::killProcessesWithOpenFiles(cpath, SIGKILL);
-    if (!VolumeManager::shutting_down) sleep(5);
+    KillProcessesWithOpenFiles(path, SIGKILL);
+    if (sSleepOnUnmount) sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
@@ -151,25 +160,24 @@ status_t ForceUnmount(const std::string& path) {
 }
 
 status_t KillProcessesUsingPath(const std::string& path) {
-    const char* cpath = path.c_str();
-    if (Process::killProcessesWithOpenFiles(cpath, SIGINT) == 0) {
+    if (KillProcessesWithOpenFiles(path, SIGINT) == 0) {
         return OK;
     }
-    if (!VolumeManager::shutting_down) sleep(5);
+    if (sSleepOnUnmount) sleep(5);
 
-    if (Process::killProcessesWithOpenFiles(cpath, SIGTERM) == 0) {
+    if (KillProcessesWithOpenFiles(path, SIGTERM) == 0) {
         return OK;
     }
-    if (!VolumeManager::shutting_down) sleep(5);
+    if (sSleepOnUnmount) sleep(5);
 
-    if (Process::killProcessesWithOpenFiles(cpath, SIGKILL) == 0) {
+    if (KillProcessesWithOpenFiles(path, SIGKILL) == 0) {
         return OK;
     }
-    if (!VolumeManager::shutting_down) sleep(5);
+    if (sSleepOnUnmount) sleep(5);
 
     // Send SIGKILL a second time to determine if we've
     // actually killed everyone with open files
-    if (Process::killProcessesWithOpenFiles(cpath, SIGKILL) == 0) {
+    if (KillProcessesWithOpenFiles(path, SIGKILL) == 0) {
         return OK;
     }
     PLOG(ERROR) << "Failed to kill processes using " << path;
@@ -184,11 +192,28 @@ status_t BindMount(const std::string& source, const std::string& target) {
     return OK;
 }
 
-static status_t readMetadata(const std::string& path, std::string& fsType,
-        std::string& fsUuid, std::string& fsLabel, bool untrusted) {
-    fsType.clear();
-    fsUuid.clear();
-    fsLabel.clear();
+bool FindValue(const std::string& raw, const std::string& key, std::string* value) {
+    auto qual = key + "=\"";
+    auto start = raw.find(qual);
+    if (start > 0 && raw[start - 1] != ' ') {
+        start = raw.find(qual, start + 1);
+    }
+
+    if (start == std::string::npos) return false;
+    start += qual.length();
+
+    auto end = raw.find("\"", start);
+    if (end == std::string::npos) return false;
+
+    *value = raw.substr(start, end - start);
+    return true;
+}
+
+static status_t readMetadata(const std::string& path, std::string* fsType,
+        std::string* fsUuid, std::string* fsLabel, bool untrusted) {
+    fsType->clear();
+    fsUuid->clear();
+    fsLabel->clear();
 
     std::vector<std::string> cmd;
     cmd.push_back(kBlkidPath);
@@ -209,36 +234,23 @@ static status_t readMetadata(const std::string& path, std::string& fsType,
         return res;
     }
 
-    char value[128];
     for (const auto& line : output) {
         // Extract values from blkid output, if defined
-        const char* cline = line.c_str();
-        const char* start = strstr(cline, "TYPE=");
-        if (start != nullptr && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
-            fsType = value;
-        }
-
-        start = strstr(cline, "UUID=");
-        if (start != nullptr && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
-            fsUuid = value;
-        }
-
-        start = strstr(cline, "LABEL=");
-        if (start != nullptr && sscanf(start + 6, "\"%127[^\"]\"", value) == 1) {
-            fsLabel = value;
-        }
+        FindValue(line, "TYPE", fsType);
+        FindValue(line, "UUID", fsUuid);
+        FindValue(line, "LABEL", fsLabel);
     }
 
     return OK;
 }
 
-status_t ReadMetadata(const std::string& path, std::string& fsType,
-        std::string& fsUuid, std::string& fsLabel) {
+status_t ReadMetadata(const std::string& path, std::string* fsType,
+        std::string* fsUuid, std::string* fsLabel) {
     return readMetadata(path, fsType, fsUuid, fsLabel, false);
 }
 
-status_t ReadMetadataUntrusted(const std::string& path, std::string& fsType,
-        std::string& fsUuid, std::string& fsLabel) {
+status_t ReadMetadataUntrusted(const std::string& path, std::string* fsType,
+        std::string* fsUuid, std::string* fsLabel) {
     return readMetadata(path, fsType, fsUuid, fsLabel, true);
 }
 
@@ -247,6 +259,7 @@ status_t ForkExecvp(const std::vector<std::string>& args) {
 }
 
 status_t ForkExecvp(const std::vector<std::string>& args, security_context_t context) {
+    std::lock_guard<std::mutex> lock(kSecurityLock);
     size_t argc = args.size();
     char** argv = (char**) calloc(argc, sizeof(char*));
     for (size_t i = 0; i < argc; i++) {
@@ -258,14 +271,18 @@ status_t ForkExecvp(const std::vector<std::string>& args, security_context_t con
         }
     }
 
-    if (setexeccon(context)) {
-        LOG(ERROR) << "Failed to setexeccon";
-        abort();
+    if (context) {
+        if (setexeccon(context)) {
+            LOG(ERROR) << "Failed to setexeccon";
+            abort();
+        }
     }
     status_t res = android_fork_execvp(argc, argv, NULL, false, true);
-    if (setexeccon(nullptr)) {
-        LOG(ERROR) << "Failed to setexeccon";
-        abort();
+    if (context) {
+        if (setexeccon(nullptr)) {
+            LOG(ERROR) << "Failed to setexeccon";
+            abort();
+        }
     }
 
     free(argv);
@@ -279,6 +296,7 @@ status_t ForkExecvp(const std::vector<std::string>& args,
 
 status_t ForkExecvp(const std::vector<std::string>& args,
         std::vector<std::string>& output, security_context_t context) {
+    std::lock_guard<std::mutex> lock(kSecurityLock);
     std::string cmd;
     for (size_t i = 0; i < args.size(); i++) {
         cmd += args[i] + " ";
@@ -290,14 +308,18 @@ status_t ForkExecvp(const std::vector<std::string>& args,
     }
     output.clear();
 
-    if (setexeccon(context)) {
-        LOG(ERROR) << "Failed to setexeccon";
-        abort();
+    if (context) {
+        if (setexeccon(context)) {
+            LOG(ERROR) << "Failed to setexeccon";
+            abort();
+        }
     }
     FILE* fp = popen(cmd.c_str(), "r"); // NOLINT
-    if (setexeccon(nullptr)) {
-        LOG(ERROR) << "Failed to setexeccon";
-        abort();
+    if (context) {
+        if (setexeccon(nullptr)) {
+            LOG(ERROR) << "Failed to setexeccon";
+            abort();
+        }
     }
 
     if (!fp) {
@@ -583,54 +605,62 @@ std::string BuildKeyPath(const std::string& partGuid) {
 }
 
 std::string BuildDataSystemLegacyPath(userid_t userId) {
-    return StringPrintf("%s/system/users/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/system/users/%u", BuildDataPath("").c_str(), userId);
 }
 
 std::string BuildDataSystemCePath(userid_t userId) {
-    return StringPrintf("%s/system_ce/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/system_ce/%u", BuildDataPath("").c_str(), userId);
 }
 
 std::string BuildDataSystemDePath(userid_t userId) {
-    return StringPrintf("%s/system_de/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/system_de/%u", BuildDataPath("").c_str(), userId);
 }
 
 std::string BuildDataMiscLegacyPath(userid_t userId) {
-    return StringPrintf("%s/misc/user/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/misc/user/%u", BuildDataPath("").c_str(), userId);
 }
 
 std::string BuildDataMiscCePath(userid_t userId) {
-    return StringPrintf("%s/misc_ce/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/misc_ce/%u", BuildDataPath("").c_str(), userId);
 }
 
 std::string BuildDataMiscDePath(userid_t userId) {
-    return StringPrintf("%s/misc_de/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/misc_de/%u", BuildDataPath("").c_str(), userId);
 }
 
 // Keep in sync with installd (frameworks/native/cmds/installd/utils.h)
 std::string BuildDataProfilesDePath(userid_t userId) {
-    return StringPrintf("%s/misc/profiles/cur/%u", BuildDataPath(nullptr).c_str(), userId);
+    return StringPrintf("%s/misc/profiles/cur/%u", BuildDataPath("").c_str(), userId);
 }
 
-std::string BuildDataPath(const char* volumeUuid) {
+std::string BuildDataVendorCePath(userid_t userId) {
+    return StringPrintf("%s/vendor_ce/%u", BuildDataPath("").c_str(), userId);
+}
+
+std::string BuildDataVendorDePath(userid_t userId) {
+    return StringPrintf("%s/vendor_de/%u", BuildDataPath("").c_str(), userId);
+}
+
+std::string BuildDataPath(const std::string& volumeUuid) {
     // TODO: unify with installd path generation logic
-    if (volumeUuid == nullptr) {
+    if (volumeUuid.empty()) {
         return "/data";
     } else {
         CHECK(isValidFilename(volumeUuid));
-        return StringPrintf("/mnt/expand/%s", volumeUuid);
+        return StringPrintf("/mnt/expand/%s", volumeUuid.c_str());
     }
 }
 
-std::string BuildDataMediaCePath(const char* volumeUuid, userid_t userId) {
+std::string BuildDataMediaCePath(const std::string& volumeUuid, userid_t userId) {
     // TODO: unify with installd path generation logic
     std::string data(BuildDataPath(volumeUuid));
     return StringPrintf("%s/media/%u", data.c_str(), userId);
 }
 
-std::string BuildDataUserCePath(const char* volumeUuid, userid_t userId) {
+std::string BuildDataUserCePath(const std::string& volumeUuid, userid_t userId) {
     // TODO: unify with installd path generation logic
     std::string data(BuildDataPath(volumeUuid));
-    if (volumeUuid == nullptr && userId == 0) {
+    if (volumeUuid.empty() && userId == 0) {
         std::string legacy = StringPrintf("%s/data", data.c_str());
         struct stat sb;
         if (lstat(legacy.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode)) {
@@ -641,7 +671,7 @@ std::string BuildDataUserCePath(const char* volumeUuid, userid_t userId) {
     return StringPrintf("%s/user/%u", data.c_str(), userId);
 }
 
-std::string BuildDataUserDePath(const char* volumeUuid, userid_t userId) {
+std::string BuildDataUserDePath(const std::string& volumeUuid, userid_t userId) {
     // TODO: unify with installd path generation logic
     std::string data(BuildDataPath(volumeUuid));
     return StringPrintf("%s/user_de/%u", data.c_str(), userId);
@@ -671,15 +701,27 @@ status_t RestoreconRecursive(const std::string& path) {
     return OK;
 }
 
-status_t SaneReadLinkAt(int dirfd, const char* path, char* buf, size_t bufsiz) {
-    ssize_t len = readlinkat(dirfd, path, buf, bufsiz);
-    if (len < 0) {
-        return -1;
-    } else if (len == (ssize_t) bufsiz) {
-        return -1;
-    } else {
-        buf[len] = '\0';
-        return 0;
+bool Readlinkat(int dirfd, const std::string& path, std::string* result) {
+    // Shamelessly borrowed from android::base::Readlink()
+    result->clear();
+
+    // Most Linux file systems (ext2 and ext4, say) limit symbolic links to
+    // 4095 bytes. Since we'll copy out into the string anyway, it doesn't
+    // waste memory to just start there. We add 1 so that we can recognize
+    // whether it actually fit (rather than being truncated to 4095).
+    std::vector<char> buf(4095 + 1);
+    while (true) {
+        ssize_t size = readlinkat(dirfd, path.c_str(), &buf[0], buf.size());
+        // Unrecoverable error?
+        if (size == -1)
+            return false;
+        // It fit! (If size == buf.size(), it may have been truncated.)
+        if (static_cast<size_t>(size) < buf.size()) {
+            result->assign(&buf[0], size);
+            return true;
+        }
+        // Double our buffer and try again.
+        buf.resize(buf.size() * 2);
     }
 }
 

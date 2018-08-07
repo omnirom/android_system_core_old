@@ -19,20 +19,13 @@
 
 #include "KeyBuffer.h"
 
+#include <android-base/macros.h>
 #include <utils/Errors.h>
 #include <cutils/multiuser.h>
 #include <selinux/selinux.h>
 
 #include <vector>
 #include <string>
-
-// DISALLOW_COPY_AND_ASSIGN disallows the copy and operator= functions. It goes in the private:
-// declarations in a class.
-#if !defined(DISALLOW_COPY_AND_ASSIGN)
-#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
-    TypeName(const TypeName&) = delete;  \
-    void operator=(const TypeName&) = delete
-#endif
 
 struct DIR;
 
@@ -44,6 +37,9 @@ extern security_context_t sBlkidContext;
 extern security_context_t sBlkidUntrustedContext;
 extern security_context_t sFsckContext;
 extern security_context_t sFsckUntrustedContext;
+
+// TODO remove this with better solution, b/64143519
+extern bool sSleepOnUnmount;
 
 status_t CreateDeviceNode(const std::string& path, dev_t dev);
 status_t DestroyDeviceNode(const std::string& path);
@@ -60,13 +56,15 @@ status_t KillProcessesUsingPath(const std::string& path);
 /* Creates bind mount from source to target */
 status_t BindMount(const std::string& source, const std::string& target);
 
+bool FindValue(const std::string& raw, const std::string& key, std::string* value);
+
 /* Reads filesystem metadata from device at path */
-status_t ReadMetadata(const std::string& path, std::string& fsType,
-        std::string& fsUuid, std::string& fsLabel);
+status_t ReadMetadata(const std::string& path, std::string* fsType,
+        std::string* fsUuid, std::string* fsLabel);
 
 /* Reads filesystem metadata from untrusted device at path */
-status_t ReadMetadataUntrusted(const std::string& path, std::string& fsType,
-        std::string& fsUuid, std::string& fsLabel);
+status_t ReadMetadataUntrusted(const std::string& path, std::string* fsType,
+        std::string* fsUuid, std::string* fsLabel);
 
 /* Returns either WEXITSTATUS() status, or a negative errno */
 status_t ForkExecvp(const std::vector<std::string>& args);
@@ -109,17 +107,20 @@ std::string BuildDataMiscLegacyPath(userid_t userid);
 std::string BuildDataMiscCePath(userid_t userid);
 std::string BuildDataMiscDePath(userid_t userid);
 std::string BuildDataProfilesDePath(userid_t userid);
+std::string BuildDataVendorCePath(userid_t userid);
+std::string BuildDataVendorDePath(userid_t userid);
 
-std::string BuildDataPath(const char* volumeUuid);
-std::string BuildDataMediaCePath(const char* volumeUuid, userid_t userid);
-std::string BuildDataUserCePath(const char* volumeUuid, userid_t userid);
-std::string BuildDataUserDePath(const char* volumeUuid, userid_t userid);
+std::string BuildDataPath(const std::string& volumeUuid);
+std::string BuildDataMediaCePath(const std::string& volumeUuid, userid_t userid);
+std::string BuildDataUserCePath(const std::string& volumeUuid, userid_t userid);
+std::string BuildDataUserDePath(const std::string& volumeUuid, userid_t userid);
 
 dev_t GetDevice(const std::string& path);
 
 status_t RestoreconRecursive(const std::string& path);
 
-status_t SaneReadLinkAt(int dirfd, const char* path, char* buf, size_t bufsiz);
+// TODO: promote to android::base
+bool Readlinkat(int dirfd, const std::string& path, std::string* result);
 
 /* Checks if Android is running in QEMU */
 bool IsRunningInEmulator();

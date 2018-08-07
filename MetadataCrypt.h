@@ -17,7 +17,8 @@
 #ifndef _METADATA_CRYPT_H
 #define _METADATA_CRYPT_H
 
-bool e4crypt_mount_metadata_encrypted();
-bool e4crypt_enable_crypto();
+#include <string>
+
+bool e4crypt_mount_metadata_encrypted(const std::string& mount_point, bool needs_encrypt);
 
 #endif

@@ -18,8 +18,6 @@
 
 #include <selinux/selinux.h>
 
-__BEGIN_DECLS
 security_context_t secontextFsck();
-__END_DECLS
 
 #endif

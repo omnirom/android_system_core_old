@@ -61,11 +61,6 @@ bool IsSupported() {
 }
 
 status_t Check(const std::string& source) {
-    if (access(kFsckPath, X_OK)) {
-        LOG(WARNING) << "Skipping fs checks";
-        return 0;
-    }
-
     int pass = 1;
     int rc = 0;
     do {
@@ -123,7 +118,6 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
         bool createLost) {
     int rc;
     unsigned long flags;
-    char mountData[255];
 
     const char* c_source = source.c_str();
     const char* c_target = target.c_str();
@@ -134,31 +128,29 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
     flags |= (ro ? MS_RDONLY : 0);
     flags |= (remount ? MS_REMOUNT : 0);
 
-    snprintf(mountData, sizeof(mountData),
+    auto mountData = android::base::StringPrintf(
             "utf8,uid=%d,gid=%d,fmask=%o,dmask=%o,shortname=mixed",
             ownerUid, ownerGid, permMask, permMask);
 
-    rc = mount(c_source, c_target, "vfat", flags, mountData);
+    rc = mount(c_source, c_target, "vfat", flags, mountData.c_str());
 
     if (rc && errno == EROFS) {
         LOG(ERROR) << source << " appears to be a read only filesystem - retrying mount RO";
         flags |= MS_RDONLY;
-        rc = mount(c_source, c_target, "vfat", flags, mountData);
+        rc = mount(c_source, c_target, "vfat", flags, mountData.c_str());
     }
 
     if (rc == 0 && createLost) {
-        char *lost_path;
-        asprintf(&lost_path, "%s/LOST.DIR", c_target);
-        if (access(lost_path, F_OK)) {
+        auto lost_path = android::base::StringPrintf("%s/LOST.DIR", target.c_str());
+        if (access(lost_path.c_str(), F_OK)) {
             /*
              * Create a LOST.DIR in the root so we have somewhere to put
              * lost cluster chains (fsck_msdos doesn't currently do this)
              */
-            if (mkdir(lost_path, 0755)) {
+            if (mkdir(lost_path.c_str(), 0755)) {
                 PLOG(ERROR) << "Unable to create LOST.DIR";
             }
         }
-        free(lost_path);
     }
 
     return rc;
