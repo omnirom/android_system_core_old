@@ -113,8 +113,8 @@ interface IVold {
 
     const int PASSWORD_TYPE_PASSWORD = 0;
     const int PASSWORD_TYPE_DEFAULT = 1;
-    const int PASSWORD_TYPE_PIN = 2;
-    const int PASSWORD_TYPE_PATTERN = 3;
+    const int PASSWORD_TYPE_PATTERN = 2;
+    const int PASSWORD_TYPE_PIN = 3;
 
     const int STORAGE_FLAG_DE = 1;
     const int STORAGE_FLAG_CE = 2;
