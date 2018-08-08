@@ -179,6 +179,7 @@ private:
 
     int mNextObbId;
     bool mSecureKeyguardShowing;
+    bool mMntStorageCreated;
 };
 
 #endif
