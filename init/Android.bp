@@ -57,6 +57,12 @@ cc_defaults {
         uml: {
             cppflags: ["-DUSER_MODE_LINUX"],
         },
+	omnirom: {
+            target_init_vendor_lib: {
+                cflags: ["-DTARGET_INIT_VENDOR_LIB"],
+		whole_static_libs: ["%s"],
+	    },
+        },
     },
     static_libs: [
         "libseccomp_policy",

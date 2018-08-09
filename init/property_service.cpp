@@ -85,6 +85,11 @@ namespace init {
 
 static bool persistent_properties_loaded = false;
 
+#ifdef TARGET_INIT_VENDOR_LIB
+extern void vendor_load_properties(void);
+#endif
+
+
 static int property_set_fd = -1;
 
 static PropertyInfoAreaFile property_info_area;
@@ -767,6 +772,13 @@ void load_persist_props(void) {
     }
     persistent_properties_loaded = true;
     property_set("ro.persistent_properties.ready", "true");
+
+#ifdef TARGET_INIT_VENDOR_LIB
+    /* vendor-specific properties
+     */
+    vendor_load_properties();
+#endif
+
 }
 
 // If the ro.product.[brand|device|manufacturer|model|name] properties have not been explicitly
