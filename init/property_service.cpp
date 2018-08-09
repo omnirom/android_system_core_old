@@ -62,6 +62,7 @@
 #include "selinux.h"
 #include "subcontext.h"
 #include "util.h"
+#include "vendor_init.h"
 
 using namespace std::literals;
 
@@ -762,6 +763,7 @@ void load_system_props() {
     load_properties_from_file("/vendor/build.prop", NULL);
     load_properties_from_file("/factory/factory.prop", "ro.*");
     load_recovery_id_prop();
+    vendor_load_properties();
 }
 
 static int SelinuxAuditCallback(void* data, security_class_t /*cls*/, char* buf, size_t len) {
