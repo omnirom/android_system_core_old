@@ -64,7 +64,7 @@ def get_recovery_dtbo_offset(args):
 def write_header(args):
     BOOT_MAGIC = 'ANDROID!'.encode()
     args.output.write(pack('8s', BOOT_MAGIC))
-    args.output.write(pack('11I',
+    args.output.write(pack('10I',
         filesize(args.kernel),                          # size in bytes
         args.base + args.kernel_offset,                 # physical load addr
         filesize(args.ramdisk),                         # size in bytes
@@ -73,8 +73,7 @@ def write_header(args):
         args.base + args.second_offset,                 # physical load addr
         args.base + args.tags_offset,                   # physical addr for kernel tags
         args.pagesize,                                  # flash page size we assume
-        args.header_version,                            # version of bootimage header
-        filesize(args.dt),                              # size in bytes
+        max(args.header_version, filesize(args.dt)),    # version of bootimage header or dt size in bytes
         (args.os_version << 11) | args.os_patch_level)) # os version and patch level
     args.output.write(pack('16s', args.board.encode())) # asciiz product name
     args.output.write(pack('512s', args.cmdline[:512].encode()))
@@ -83,11 +82,11 @@ def write_header(args):
     update_sha(sha, args.kernel)
     update_sha(sha, args.ramdisk)
     update_sha(sha, args.second)
+    update_sha(sha, args.dt)
 
     if args.header_version > 0:
         update_sha(sha, args.recovery_dtbo)
 
-    update_sha(sha, args.dt)
     img_id = pack('32s', sha.digest())
 
     args.output.write(img_id)
@@ -186,7 +185,12 @@ def parse_cmdline():
     parser.add_argument('--dt', help='path to the device tree image', type=FileType('rb'))
     parser.add_argument('-o', '--output', help='output file name', type=FileType('wb'),
                         required=True)
-    return parser.parse_args()
+
+    args = parser.parse_args()
+    if args.header_version > 0 and args.dt != None:
+        raise ValueError('header_version and dt cannot be set at the same time')
+
+    return args
 
 
 def write_data(args):
