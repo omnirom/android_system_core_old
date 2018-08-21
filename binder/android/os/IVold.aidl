@@ -126,6 +126,7 @@ interface IVold {
     const int REMOUNT_MODE_DEFAULT = 1;
     const int REMOUNT_MODE_READ = 2;
     const int REMOUNT_MODE_WRITE = 3;
+    const int REMOUNT_MODE_FULL = 4;
 
     const int VOLUME_STATE_UNMOUNTED = 0;
     const int VOLUME_STATE_CHECKING = 1;
