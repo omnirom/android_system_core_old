@@ -96,6 +96,9 @@ interface IVold {
     void prepareUserStorage(@nullable @utf8InCpp String uuid, int userId, int userSerial, int storageFlags);
     void destroyUserStorage(@nullable @utf8InCpp String uuid, int userId, int storageFlags);
 
+    void mountExternalStorageForApp(in @utf8InCpp String packageName,
+            int appId, in @utf8InCpp String sandboxId, int userId);
+
     const int ENCRYPTION_FLAG_NO_UI = 4;
 
     const int ENCRYPTION_STATE_NONE = 1;

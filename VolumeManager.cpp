@@ -375,22 +375,12 @@ int VolumeManager::linkPrimary(userid_t userId, const std::vector<std::string>& 
             mMntStorageCreated = true;
         }
 
-        std::string source(StringPrintf("/mnt/storage/%s", mPrimary->getLabel().c_str()));
-        bool isPrimaryEmulated =
-                (mPrimary->getType() == android::vold::VolumeBase::Type::kEmulated);
-        if (isPrimaryEmulated) {
-            StringAppendF(&source, "/%d", userId);
-            if (fs_prepare_dir(source.c_str(), 0755, AID_ROOT, AID_ROOT) != 0) {
-                PLOG(ERROR) << "fs_prepare_dir failed on " << source;
-                return -errno;
-            }
-        }
-        if (mountSandboxesForPrimaryVol(source, userId, packageNames, isPrimaryEmulated) != 0) {
+        if (mountSandboxesForPrimaryVol(userId, packageNames) != 0) {
             return -errno;
         }
         // Keep /sdcard working for shell process
         std::string primarySource(mPrimary->getPath());
-        if (isPrimaryEmulated) {
+        if (mPrimary->getType() == android::vold::VolumeBase::Type::kEmulated) {
             StringAppendF(&primarySource, "/%d", userId);
         }
         std::string target(StringPrintf("/mnt/user/%d/primary", userId));
@@ -425,8 +415,18 @@ int VolumeManager::linkPrimary(userid_t userId, const std::vector<std::string>& 
     return 0;
 }
 
-int VolumeManager::mountSandboxesForPrimaryVol(const std::string& primaryRoot, userid_t userId,
-        const std::vector<std::string>& packageNames, bool isPrimaryEmulated) {
+int VolumeManager::mountSandboxesForPrimaryVol(userid_t userId,
+        const std::vector<std::string>& packageNames) {
+    std::string primaryRoot(StringPrintf("/mnt/storage/%s", mPrimary->getLabel().c_str()));
+    bool isPrimaryEmulated =
+            (mPrimary->getType() == android::vold::VolumeBase::Type::kEmulated);
+    if (isPrimaryEmulated) {
+        StringAppendF(&primaryRoot, "/%d", userId);
+        if (fs_prepare_dir(primaryRoot.c_str(), 0755, AID_ROOT, AID_ROOT) != 0) {
+            PLOG(ERROR) << "fs_prepare_dir failed on " << primaryRoot;
+            return -errno;
+        }
+    }
 
     std::string sandboxRoot = prepareSubDirs(primaryRoot, "Android/sandbox/",
             0700, AID_ROOT, AID_ROOT);
@@ -633,6 +633,24 @@ int VolumeManager::addSandboxIds(const std::vector<int32_t>& appIds,
         const std::vector<std::string>& sandboxIds) {
     for (size_t i = 0; i < appIds.size(); ++i) {
         mSandboxIds[appIds[i]] = sandboxIds[i];
+    }
+    return 0;
+}
+
+int VolumeManager::mountExternalStorageForApp(const std::string& packageName, appid_t appId,
+        const std::string& sandboxId, userid_t userId) {
+    if (!GetBoolProperty(kIsolatedStorage, false)) {
+        return 0;
+    } else if (mStartedUsers.find(userId) == mStartedUsers.end()) {
+        // User not started, no need to do anything now. Required bind mounts for the package will
+        // be created when the user starts.
+        return 0;
+    }
+    mUserPackages[userId].push_back(packageName);
+    mAppIds[packageName] = appId;
+    mSandboxIds[appId] = sandboxId;
+    if (mPrimary) {
+        return mountSandboxesForPrimaryVol(userId, {packageName});
     }
     return 0;
 }

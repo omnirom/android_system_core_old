@@ -251,6 +251,20 @@ binder::Status checkArgumentSandboxIds(const std::vector<std::string>& sandboxId
     }                                                                       \
 }
 
+#define CHECK_ARGUMENT_PACKAGE_NAME(packageName) {                          \
+    binder::Status status = checkArgumentPackageName((packageName));        \
+    if (!status.isOk()) {                                                   \
+        return status;                                                      \
+    }                                                                       \
+}
+
+#define CHECK_ARGUMENT_SANDBOX_ID(sandboxId) {                              \
+    binder::Status status = checkArgumentSandboxId((sandboxId));            \
+    if (!status.isOk()) {                                                   \
+        return status;                                                      \
+    }                                                                       \
+}
+
 #define ACQUIRE_LOCK \
     std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock()); \
     ATRACE_CALL();
@@ -854,6 +868,17 @@ binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::
 
     ACQUIRE_CRYPT_LOCK;
     return translateBool(e4crypt_destroy_user_storage(uuid_, userId, flags));
+}
+
+binder::Status VoldNativeService::mountExternalStorageForApp(const std::string& packageName,
+        int32_t appId, const std::string& sandboxId, int32_t userId) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PACKAGE_NAME(packageName);
+    CHECK_ARGUMENT_SANDBOX_ID(sandboxId);
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->mountExternalStorageForApp(
+            packageName, appId, sandboxId, userId));
 }
 
 }  // namespace vold

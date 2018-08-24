@@ -97,6 +97,8 @@ public:
     int addAppIds(const std::vector<std::string>& packageNames, const std::vector<int32_t>& appIds);
     int addSandboxIds(const std::vector<int32_t>& appIds,
             const std::vector<std::string>& sandboxIds);
+    int mountExternalStorageForApp(const std::string& packageName, appid_t appId,
+            const std::string& sandboxId, userid_t userId);
 
     int onSecureKeyguardStateChanged(bool isShowing);
 
@@ -146,8 +148,8 @@ private:
             const std::string& dataRootDir);
     std::string preparePkgDataTarget(const std::string& packageName, uid_t uid,
             const std::string& pkgSandboxDir);
-    int mountSandboxesForPrimaryVol(const std::string& primaryRoot, userid_t userId,
-            const std::vector<std::string>& packageNames, bool isPrimaryEmulated);
+    int mountSandboxesForPrimaryVol(userid_t userId,
+            const std::vector<std::string>& packageNames);
     std::string prepareSubDirs(const std::string& pathPrefix, const std::string& subDirs,
             mode_t mode, uid_t uid, gid_t gid);
 
