@@ -102,6 +102,13 @@ interface IVold {
     void mountExternalStorageForApp(in @utf8InCpp String packageName, int appId,
                                     in @utf8InCpp String sandboxId, int userId);
 
+    boolean startCheckpoint(int retry);
+    boolean needsCheckpoint();
+    void abortChanges();
+    boolean commitChanges();
+    boolean prepareDriveForCheckpoint(@utf8InCpp String mountPoint);
+    boolean markBootAttempt();
+
     const int ENCRYPTION_FLAG_NO_UI = 4;
 
     const int ENCRYPTION_STATE_NONE = 1;
