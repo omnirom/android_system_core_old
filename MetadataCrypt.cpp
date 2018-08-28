@@ -36,6 +36,7 @@
 #include <cutils/fs.h>
 #include <fs_mgr.h>
 
+#include "Checkpoint.h"
 #include "EncryptInplace.h"
 #include "KeyStorage.h"
 #include "KeyUtil.h"
@@ -59,7 +60,8 @@ static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
         return false;
     }
     auto mount_rc = fs_mgr_do_mount(fstab_default, const_cast<char*>(mount_point),
-                                    const_cast<char*>(blk_device), nullptr);
+                                    const_cast<char*>(blk_device), nullptr,
+                                    android::vold::cp_needsCheckpoint());
     if (setexeccon(nullptr)) {
         PLOG(ERROR) << "Failed to clear setexeccon";
         return false;
