@@ -122,7 +122,8 @@ static bool generateKeymasterKey(Keymaster& keymaster, const KeyAuthentication& 
             return false;
         }
         const hw_auth_token_t* at = reinterpret_cast<const hw_auth_token_t*>(auth.token.data());
-        paramBuilder.Authorization(km::TAG_USER_SECURE_ID, at->user_id);
+        auto user_id = at->user_id;  // Make a copy because at->user_id is unaligned.
+        paramBuilder.Authorization(km::TAG_USER_SECURE_ID, user_id);
         paramBuilder.Authorization(km::TAG_USER_AUTH_TYPE, km::HardwareAuthenticatorType::PASSWORD);
         paramBuilder.Authorization(km::TAG_AUTH_TIMEOUT, AUTH_TIMEOUT);
     }
