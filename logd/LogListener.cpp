@@ -145,14 +145,14 @@ int LogListener::getLogSocket() {
     static const char socketName[] = "logdw";
     int sock = android_get_control_socket(socketName);
 
-    if (sock < 0) {  // logd started up in init.sh
+    if (sock < 0) {
         sock = socket_local_server(
             socketName, ANDROID_SOCKET_NAMESPACE_RESERVED, SOCK_DGRAM);
+    }
 
-        int on = 1;
-        if (setsockopt(sock, SOL_SOCKET, SO_PASSCRED, &on, sizeof(on))) {
-            return -1;
-        }
+    int on = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_PASSCRED, &on, sizeof(on)) < 0) {
+        return -1;
     }
     return sock;
 }
