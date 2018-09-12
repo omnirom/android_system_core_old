@@ -73,7 +73,7 @@ int main(int argc, const char * const argv[]) {
 #define F2FS_IOCTL_MAGIC		0xf5
 #endif
 #define F2FS_IOC_SET_PIN_FILE	_IOW(F2FS_IOCTL_MAGIC, 13, __u32)
-#define F2FS_IOC_GET_PIN_FILE	_IOW(F2FS_IOCTL_MAGIC, 14, __u32)
+#define F2FS_IOC_GET_PIN_FILE	_IOR(F2FS_IOCTL_MAGIC, 14, __u32)
 #endif
         android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(
             target.c_str(), O_WRONLY, 0)));
