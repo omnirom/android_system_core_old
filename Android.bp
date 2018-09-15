@@ -244,6 +244,5 @@ filegroup {
         "binder/android/os/IVoldListener.aidl",
         "binder/android/os/IVoldTaskListener.aidl",
     ],
+    path: "binder",
 }
-
-subdirs = ["tests"]
