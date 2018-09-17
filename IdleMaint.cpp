@@ -24,11 +24,13 @@
 
 #include <android-base/chrono_utils.h>
 #include <android-base/file.h>
-#include <android-base/stringprintf.h>
 #include <android-base/logging.h>
+#include <android-base/stringprintf.h>
+#include <android-base/strings.h>
+#include <android/hardware/health/filesystem/1.0/IFileSystem.h>
 #include <fs_mgr.h>
-#include <private/android_filesystem_config.h>
 #include <hardware_legacy/power.h>
+#include <private/android_filesystem_config.h>
 
 #include <dirent.h>
 #include <sys/mount.h>
@@ -43,6 +45,11 @@ using android::base::Realpath;
 using android::base::StringPrintf;
 using android::base::Timer;
 using android::base::WriteStringToFile;
+using android::hardware::Return;
+using android::hardware::Void;
+using android::hardware::health::filesystem::V1_0::IFileSystem;
+using android::hardware::health::filesystem::V1_0::IGarbageCollectCallback;
+using android::hardware::health::filesystem::V1_0::Result;
 
 namespace android {
 namespace vold {
@@ -257,7 +264,7 @@ static int stopGc(const std::list<std::string>& paths) {
     return android::OK;
 }
 
-static void runDevGc(void) {
+static void runDevGcFstab(void) {
     std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)> fstab(fs_mgr_read_fstab_default(),
                                                                fs_mgr_free_fstab);
     struct fstab_rec *rec = NULL;
@@ -284,7 +291,7 @@ static void runDevGc(void) {
             PLOG(WARNING) << "Reading manual_gc failed in " << path;
             break;
         }
-
+        require = android::base::Trim(require);
         if (require == "" || require == "off" || require == "disabled") {
             LOG(DEBUG) << "No more to do Dev GC";
             break;
@@ -307,6 +314,57 @@ static void runDevGc(void) {
         PLOG(WARNING) << "Stop Dev GC failed on " << path;
     }
     return;
+}
+
+class GcCallback : public IGarbageCollectCallback {
+  public:
+    Return<void> onFinish(Result result) override {
+        std::unique_lock<std::mutex> lock(mMutex);
+        mFinished = true;
+        mResult = result;
+        lock.unlock();
+        mCv.notify_all();
+        return Void();
+    }
+    void wait(uint64_t seconds) {
+        std::unique_lock<std::mutex> lock(mMutex);
+        mCv.wait_for(lock, std::chrono::seconds(seconds), [this] { return mFinished; });
+
+        if (!mFinished) {
+            LOG(WARNING) << "Dev GC on HAL timeout";
+        } else if (mResult != Result::SUCCESS) {
+            LOG(WARNING) << "Dev GC on HAL failed with " << toString(mResult);
+        } else {
+            LOG(INFO) << "Dev GC on HAL successful";
+        }
+    }
+
+  private:
+    std::mutex mMutex;
+    std::condition_variable mCv;
+    bool mFinished{false};
+    Result mResult{Result::UNKNOWN_ERROR};
+};
+
+static void runDevGcOnHal(sp<IFileSystem> service) {
+    LOG(DEBUG) << "Start Dev GC on HAL";
+    sp<GcCallback> cb = new GcCallback();
+    auto ret = service->garbageCollect(DEVGC_TIMEOUT_SEC, cb);
+    if (!ret.isOk()) {
+        LOG(WARNING) << "Cannot start Dev GC on HAL: " << ret.description();
+        return;
+    }
+    cb->wait(DEVGC_TIMEOUT_SEC);
+}
+
+static void runDevGc(void) {
+    auto service = IFileSystem::getService();
+    if (service != nullptr) {
+        runDevGcOnHal(service);
+    } else {
+        // fallback to legacy code path
+        runDevGcFstab();
+    }
 }
 
 int RunIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener) {

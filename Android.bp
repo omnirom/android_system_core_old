@@ -139,6 +139,9 @@ cc_library_static {
             ],
         },
     },
+    shared_libs: [
+        "android.hardware.health.filesystem@1.0",
+    ],
 }
 
 cc_binary {
@@ -167,6 +170,11 @@ cc_binary {
         "mke2fs",
         "vold_prepare_subdirs",
         "wait_for_keymaster",
+    ],
+
+    shared_libs: [
+        "android.hardware.health.filesystem@1.0",
+        "libhidltransport",
     ],
 }
 
