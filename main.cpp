@@ -28,6 +28,7 @@
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <cutils/klog.h>
+#include <hidl/HidlTransportSupport.h>
 #include <utils/Trace.h>
 
 #include <stdio.h>
@@ -107,6 +108,8 @@ int main(int argc, char** argv) {
     if (process_config(vm, &has_adoptable, &has_quota, &has_reserved)) {
         PLOG(ERROR) << "Error reading configuration... continuing anyways";
     }
+
+    android::hardware::configureRpcThreadpool(1, false /* callerWillJoin */);
 
     ATRACE_BEGIN("VoldNativeService::start");
     if (android::vold::VoldNativeService::start() != android::OK) {
