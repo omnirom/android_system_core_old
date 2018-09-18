@@ -21,6 +21,7 @@
 #include "fs/Vfat.h"
 
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <cutils/fs.h>
 #include <private/android_filesystem_config.h>
@@ -34,6 +35,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+using android::base::GetBoolProperty;
 using android::base::StringPrintf;
 
 namespace android {
@@ -42,6 +44,8 @@ namespace vold {
 static const char* kFusePath = "/system/bin/sdcard";
 
 static const char* kAsecPath = "/mnt/secure/asec";
+
+static const char* kIsolatedStorage = "persist.sys.isolated_storage";
 
 PublicVolume::PublicVolume(dev_t device) : VolumeBase(Type::kPublic), mDevice(device), mFusePid(0) {
     setId(StringPrintf("public:%u,%u", major(device), minor(device)));
@@ -179,16 +183,36 @@ status_t PublicVolume::doMount() {
                 PLOG(ERROR) << "Failed to exec";
             }
         } else {
+            // In Pre-Q, apps have full read access to secondary storage devices but only
+            // write access for their package specific directories. In Q, they only have access
+            // to their own sandboxes and they can write anywhere inside the sandbox. Instead of
+            // updating sdcardfs to allow packages writing into their own sandboxes, we could
+            // just allow them to write anywhere by passing "-w".
             // clang-format off
-            if (execl(kFusePath, kFusePath,
-                    "-u", "1023", // AID_MEDIA_RW
-                    "-g", "1023", // AID_MEDIA_RW
-                    "-U", std::to_string(getMountUserId()).c_str(),
-                    mRawPath.c_str(),
-                    stableName.c_str(),
-                    NULL)) {
-                // clang-format on
-                PLOG(ERROR) << "Failed to exec";
+            if (GetBoolProperty(kIsolatedStorage, false)) {
+                if (execl(kFusePath, kFusePath,
+                        "-u", "1023", // AID_MEDIA_RW
+                        "-g", "1023", // AID_MEDIA_RW
+                        "-U", std::to_string(getMountUserId()).c_str(),
+                        "-w",
+                        mRawPath.c_str(),
+                        stableName.c_str(),
+                        NULL)) {
+                    // clang-format on
+                    PLOG(ERROR) << "Failed to exec";
+                }
+            } else {
+                // clang-format off
+                if (execl(kFusePath, kFusePath,
+                        "-u", "1023", // AID_MEDIA_RW
+                        "-g", "1023", // AID_MEDIA_RW
+                        "-U", std::to_string(getMountUserId()).c_str(),
+                        mRawPath.c_str(),
+                        stableName.c_str(),
+                        NULL)) {
+                    // clang-format on
+                    PLOG(ERROR) << "Failed to exec";
+                }
             }
         }
 

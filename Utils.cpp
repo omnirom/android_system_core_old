@@ -24,6 +24,7 @@
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
+#include <android-base/unique_fd.h>
 #include <cutils/fs.h>
 #include <logwrap/logwrap.h>
 #include <private/android_filesystem_config.h>
@@ -785,6 +786,75 @@ status_t UnmountTree(const std::string& prefix) {
             PLOG(ERROR) << "Failed to unmount " << path;
         }
     }
+    return OK;
+}
+
+static status_t delete_dir_contents(DIR* dir) {
+    // Shamelessly borrowed from android::installd
+    int dfd = dirfd(dir);
+    if (dfd < 0) {
+        return -errno;
+    }
+
+    status_t result;
+    struct dirent* de;
+    while ((de = readdir(dir))) {
+        const char* name = de->d_name;
+        if (de->d_type == DT_DIR) {
+            /* always skip "." and ".." */
+            if (name[0] == '.') {
+                if (name[1] == 0) continue;
+                if ((name[1] == '.') && (name[2] == 0)) continue;
+            }
+
+            android::base::unique_fd subfd(
+                openat(dfd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+            if (subfd.get() == -1) {
+                PLOG(ERROR) << "Couldn't openat " << name;
+                result = -errno;
+                continue;
+            }
+            std::unique_ptr<DIR, decltype(&closedir)> subdirp(fdopendir(subfd), closedir);
+            if (!subdirp) {
+                PLOG(ERROR) << "Couldn't fdopendir " << name;
+                result = -errno;
+                continue;
+            }
+            result = delete_dir_contents(subdirp.get());
+            if (unlinkat(dfd, name, AT_REMOVEDIR) < 0) {
+                PLOG(ERROR) << "Couldn't unlinkat " << name;
+                result = -errno;
+            }
+        } else {
+            if (unlinkat(dfd, name, 0) < 0) {
+                PLOG(ERROR) << "Couldn't unlinkat " << name;
+                result = -errno;
+            }
+        }
+    }
+    return result;
+}
+
+status_t DeleteDirContentsAndDir(const std::string& pathname) {
+    // Shamelessly borrowed from android::installd
+    std::unique_ptr<DIR, decltype(&closedir)> dirp(opendir(pathname.c_str()), closedir);
+    if (!dirp) {
+        if (errno == ENOENT) {
+            return OK;
+        }
+        PLOG(ERROR) << "Failed to opendir " << pathname;
+        return -errno;
+    }
+    status_t res = delete_dir_contents(dirp.get());
+    if (res < 0) {
+        return res;
+    }
+    dirp.reset(nullptr);
+    if (rmdir(pathname.c_str()) != 0) {
+        PLOG(ERROR) << "rmdir failed on " << pathname;
+        return -errno;
+    }
+    LOG(VERBOSE) << "Success: rmdir on " << pathname;
     return OK;
 }
 

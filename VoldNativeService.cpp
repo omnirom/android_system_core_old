@@ -445,10 +445,16 @@ binder::Status VoldNativeService::mount(const std::string& volId, int32_t mountF
     vol->setMountUserId(mountUserId);
 
     int res = vol->mount();
-    if ((mountFlags & MOUNT_FLAG_PRIMARY) != 0) {
-        VolumeManager::Instance()->setPrimary(vol);
+    if (res != OK) {
+        return translate(res);
     }
-    return translate(res);
+    if ((mountFlags & MOUNT_FLAG_PRIMARY) != 0) {
+        res = VolumeManager::Instance()->setPrimary(vol);
+        if (res != OK) {
+            return translate(res);
+        }
+    }
+    return translate(OK);
 }
 
 binder::Status VoldNativeService::unmount(const std::string& volId) {

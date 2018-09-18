@@ -132,6 +132,8 @@ bool IsRunningInEmulator();
 
 status_t UnmountTree(const std::string& prefix);
 
+status_t DeleteDirContentsAndDir(const std::string& pathname);
+
 }  // namespace vold
 }  // namespace android
 

@@ -99,6 +99,9 @@ class VolumeManager {
     int mountExternalStorageForApp(const std::string& packageName, appid_t appId,
                                    const std::string& sandboxId, userid_t userId);
 
+    int onVolumeMounted(android::vold::VolumeBase* vol);
+    int onVolumeUnmounted(android::vold::VolumeBase* vol);
+
     int onSecureKeyguardStateChanged(bool isShowing);
 
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
@@ -137,8 +140,14 @@ class VolumeManager {
     VolumeManager();
     void readInitialState();
 
-    int linkPrimary(userid_t userId, const std::vector<std::string>& packageNames);
+    int linkPrimary(userid_t userId);
 
+    int prepareSandboxes(userid_t userId, const std::vector<std::string>& packageNames,
+                         const std::vector<std::string>& visibleVolLabels);
+    int mountPkgSpecificDirsForRunningProcs(userid_t userId,
+                                            const std::vector<std::string>& packageNames,
+                                            const std::vector<std::string>& visibleVolLabels);
+    int destroySandboxesForVol(android::vold::VolumeBase* vol, userid_t userId);
     std::string prepareSandboxSource(uid_t uid, const std::string& sandboxId,
                                      const std::string& sandboxRootDir);
     std::string prepareSandboxTarget(const std::string& packageName, uid_t uid,
@@ -146,11 +155,13 @@ class VolumeManager {
                                      const std::string& mntTargetRootDir, bool isUserDependent);
     std::string preparePkgDataSource(const std::string& packageName, uid_t uid,
                                      const std::string& dataRootDir);
-    std::string preparePkgDataTarget(const std::string& packageName, uid_t uid,
-                                     const std::string& pkgSandboxDir);
-    int mountSandboxesForPrimaryVol(userid_t userId, const std::vector<std::string>& packageNames);
     std::string prepareSubDirs(const std::string& pathPrefix, const std::string& subDirs,
                                mode_t mode, uid_t uid, gid_t gid);
+    bool createPkgSpecificDirRoots(const std::string& volumeRoot);
+    bool createPkgSpecificDirs(const std::string& packageName, uid_t uid,
+                               const std::string& volumeRoot, const std::string& sandboxDirRoot);
+    int mountPkgSpecificDir(const std::string& mntSourceRoot, const std::string& mntTargetRoot,
+                            const std::string& packageName, const char* dirName);
 
     void handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk);
     void handleDiskChanged(dev_t device);
@@ -177,10 +188,10 @@ class VolumeManager {
     std::unordered_map<std::string, appid_t> mAppIds;
     std::unordered_map<appid_t, std::string> mSandboxIds;
     std::unordered_map<userid_t, std::vector<std::string>> mUserPackages;
+    std::unordered_set<std::string> mVisibleVolumeIds;
 
     int mNextObbId;
     bool mSecureKeyguardShowing;
-    bool mMntStorageCreated;
 };
 
 #endif

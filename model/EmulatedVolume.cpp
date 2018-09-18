@@ -16,6 +16,7 @@
 
 #include "EmulatedVolume.h"
 #include "Utils.h"
+#include "VolumeManager.h"
 
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
