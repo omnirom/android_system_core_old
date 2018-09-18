@@ -63,7 +63,8 @@ static bool prepare_dir(struct selabel_handle* sehandle, mode_t mode, uid_t uid,
         secontext.reset(tmp_secontext);
     }
     LOG(DEBUG) << "Setting up mode " << std::oct << mode << std::dec << " uid " << uid << " gid "
-               << gid << " context " << secontext.get() << " on path: " << path;
+               << gid << " context " << (secontext ? secontext.get() : "null")
+               << " on path: " << path;
     if (secontext) {
         if (setfscreatecon(secontext.get()) != 0) {
             PLOG(ERROR) << "Unable to read setfscreatecon for: " << path;
