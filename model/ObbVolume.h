@@ -28,18 +28,17 @@ namespace vold {
  * OBB container.
  */
 class ObbVolume : public VolumeBase {
-public:
-    ObbVolume(int id, const std::string& sourcePath, const std::string& sourceKey,
-            gid_t ownerGid);
+  public:
+    ObbVolume(int id, const std::string& sourcePath, const std::string& sourceKey, gid_t ownerGid);
     virtual ~ObbVolume();
 
-protected:
+  protected:
     status_t doCreate() override;
     status_t doDestroy() override;
     status_t doMount() override;
     status_t doUnmount() override;
 
-private:
+  private:
     std::string mSourcePath;
     std::string mSourceKey;
     gid_t mOwnerGid;

@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-#include "KeyBuffer.h"
 #include "MetadataCrypt.h"
+#include "KeyBuffer.h"
 
+#include <algorithm>
 #include <string>
 #include <thread>
 #include <vector>
-#include <algorithm>
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -39,9 +39,9 @@
 #include "EncryptInplace.h"
 #include "KeyStorage.h"
 #include "KeyUtil.h"
-#include "secontext.h"
 #include "Utils.h"
 #include "VoldUtil.h"
+#include "secontext.h"
 
 #define DM_CRYPT_BUF_SIZE 4096
 #define TABLE_LOAD_RETRIES 10
@@ -99,9 +99,9 @@ static KeyBuffer default_key_params(const std::string& real_blkdev, const KeyBuf
     return res;
 }
 
-static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t *nr_sec) {
-    android::base::unique_fd dev_fd(TEMP_FAILURE_RETRY(open(
-        real_blkdev.c_str(), O_RDONLY | O_CLOEXEC, 0)));
+static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_sec) {
+    android::base::unique_fd dev_fd(
+        TEMP_FAILURE_RETRY(open(real_blkdev.c_str(), O_RDONLY | O_CLOEXEC, 0)));
     if (dev_fd == -1) {
         PLOG(ERROR) << "Unable to open " << real_blkdev << " to measure size";
         return false;
@@ -117,15 +117,14 @@ static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t *nr_s
     return true;
 }
 
-static struct dm_ioctl* dm_ioctl_init(char *buffer, size_t buffer_size,
-                                      const std::string& dm_name) {
+static struct dm_ioctl* dm_ioctl_init(char* buffer, size_t buffer_size, const std::string& dm_name) {
     if (buffer_size < sizeof(dm_ioctl)) {
         LOG(ERROR) << "dm_ioctl buffer too small";
         return nullptr;
     }
 
     memset(buffer, 0, buffer_size);
-    struct dm_ioctl* io = (struct dm_ioctl*) buffer;
+    struct dm_ioctl* io = (struct dm_ioctl*)buffer;
     io->data_size = buffer_size;
     io->data_start = sizeof(struct dm_ioctl);
     io->version[0] = 4;
@@ -139,8 +138,8 @@ static struct dm_ioctl* dm_ioctl_init(char *buffer, size_t buffer_size,
 static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
                                   const std::string& target_type, const KeyBuffer& crypt_params,
                                   std::string* crypto_blkdev) {
-    android::base::unique_fd dm_fd(TEMP_FAILURE_RETRY(open(
-        "/dev/device-mapper", O_RDWR | O_CLOEXEC, 0)));
+    android::base::unique_fd dm_fd(
+        TEMP_FAILURE_RETRY(open("/dev/device-mapper", O_RDWR | O_CLOEXEC, 0)));
     if (dm_fd == -1) {
         PLOG(ERROR) << "Cannot open device-mapper";
         return false;
@@ -158,13 +157,13 @@ static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
         PLOG(ERROR) << "Cannot retrieve dm-crypt device status " << dm_name;
         return false;
     }
-    *crypto_blkdev = std::string() + "/dev/block/dm-" + std::to_string(
-        (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00));
+    *crypto_blkdev = std::string() + "/dev/block/dm-" +
+                     std::to_string((io->dev & 0xff) | ((io->dev >> 12) & 0xfff00));
 
     io = dm_ioctl_init(buffer, sizeof(buffer), dm_name);
     size_t paramix = io->data_start + sizeof(struct dm_target_spec);
     size_t nullix = paramix + crypt_params.size();
-    size_t endix = (nullix + 1 + 7) & 8; // Add room for \0 and align to 8 byte boundary
+    size_t endix = (nullix + 1 + 7) & 8;  // Add room for \0 and align to 8 byte boundary
 
     if (endix > sizeof(buffer)) {
         LOG(ERROR) << "crypt_params too big for DM_CRYPT_BUF_SIZE";
@@ -172,21 +171,21 @@ static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
     }
 
     io->target_count = 1;
-    auto tgt = (struct dm_target_spec *) (buffer + io->data_start);
+    auto tgt = (struct dm_target_spec*)(buffer + io->data_start);
     tgt->status = 0;
     tgt->sector_start = 0;
     tgt->length = nr_sec;
     target_type.copy(tgt->target_type, sizeof(tgt->target_type));
     memcpy(buffer + paramix, crypt_params.data(),
-            std::min(crypt_params.size(), sizeof(buffer) - paramix));
+           std::min(crypt_params.size(), sizeof(buffer) - paramix));
     buffer[nullix] = '\0';
     tgt->next = endix;
 
-    for (int i = 0; ; i++) {
+    for (int i = 0;; i++) {
         if (ioctl(dm_fd.get(), DM_TABLE_LOAD, io) == 0) {
             break;
         }
-        if (i+1 >= TABLE_LOAD_RETRIES) {
+        if (i + 1 >= TABLE_LOAD_RETRIES) {
             PLOG(ERROR) << "DM_TABLE_LOAD ioctl failed";
             return false;
         }

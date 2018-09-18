@@ -18,15 +18,15 @@
 #include <string>
 #include <vector>
 
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/fiemap.h>
+#include <linux/fs.h>
+#include <mntent.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
-#include <linux/fs.h>
-#include <linux/fiemap.h>
-#include <mntent.h>
+#include <sys/types.h>
 
 #include <android-base/logging.h>
 #include <android-base/unique_fd.h>
@@ -42,23 +42,23 @@ struct Options {
 
 constexpr uint32_t max_extents = 32;
 
-bool read_command_line(int argc, const char * const argv[], Options &options);
-void usage(const char *progname);
-bool secdiscard_path(const std::string &path);
-bool check_fiemap(const struct fiemap &fiemap, const std::string &path);
+bool read_command_line(int argc, const char* const argv[], Options& options);
+void usage(const char* progname);
+bool secdiscard_path(const std::string& path);
+bool check_fiemap(const struct fiemap& fiemap, const std::string& path);
 bool overwrite_with_zeros(int fd, off64_t start, off64_t length);
 
-}
+}  // namespace
 
-int main(int argc, const char * const argv[]) {
-    android::base::InitLogging(const_cast<char **>(argv));
+int main(int argc, const char* const argv[]) {
+    android::base::InitLogging(const_cast<char**>(argv));
     Options options;
     if (!read_command_line(argc, argv, options)) {
         usage(argv[0]);
         return -1;
     }
 
-    for (auto const &target: options.targets) {
+    for (auto const& target : options.targets) {
 // F2FS-specific ioctl
 // It requires the below kernel commit merged in v4.16-rc1.
 //   1ad71a27124c ("f2fs: add an ioctl to disable GC for specific file")
@@ -70,13 +70,12 @@ int main(int argc, const char * const argv[]) {
 //   ce767d9a55bc ("f2fs: updates on v4.16-rc1")
 #ifndef F2FS_IOC_SET_PIN_FILE
 #ifndef F2FS_IOCTL_MAGIC
-#define F2FS_IOCTL_MAGIC		0xf5
+#define F2FS_IOCTL_MAGIC 0xf5
 #endif
-#define F2FS_IOC_SET_PIN_FILE	_IOW(F2FS_IOCTL_MAGIC, 13, __u32)
-#define F2FS_IOC_GET_PIN_FILE	_IOR(F2FS_IOCTL_MAGIC, 14, __u32)
+#define F2FS_IOC_SET_PIN_FILE _IOW(F2FS_IOCTL_MAGIC, 13, __u32)
+#define F2FS_IOC_GET_PIN_FILE _IOR(F2FS_IOCTL_MAGIC, 14, __u32)
 #endif
-        android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(
-            target.c_str(), O_WRONLY, 0)));
+        android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(target.c_str(), O_WRONLY, 0)));
         if (fd == -1) {
             LOG(ERROR) << "Secure discard open failed for: " << target;
             return 0;
@@ -102,29 +101,29 @@ int main(int argc, const char * const argv[]) {
 
 namespace {
 
-bool read_command_line(int argc, const char * const argv[], Options &options) {
+bool read_command_line(int argc, const char* const argv[], Options& options) {
     for (int i = 1; i < argc; i++) {
         if (!strcmp("--no-unlink", argv[i])) {
             options.unlink = false;
         } else if (!strcmp("--", argv[i])) {
-            for (int j = i+1; j < argc; j++) {
-                if (argv[j][0] != '/') return false; // Must be absolute path
+            for (int j = i + 1; j < argc; j++) {
+                if (argv[j][0] != '/') return false;  // Must be absolute path
                 options.targets.emplace_back(argv[j]);
             }
             return options.targets.size() > 0;
         } else {
-            return false; // Unknown option
+            return false;  // Unknown option
         }
     }
-    return false; // "--" not found
+    return false;  // "--" not found
 }
 
-void usage(const char *progname) {
+void usage(const char* progname) {
     fprintf(stderr, "Usage: %s [--no-unlink] -- <absolute path> ...\n", progname);
 }
 
 // BLKSECDISCARD all content in "path", if it's small enough.
-bool secdiscard_path(const std::string &path) {
+bool secdiscard_path(const std::string& path) {
     auto fiemap = android::vold::PathFiemap(path, max_extents);
     if (!fiemap || !check_fiemap(*fiemap, path)) {
         return false;
@@ -133,8 +132,8 @@ bool secdiscard_path(const std::string &path) {
     if (block_device.empty()) {
         return false;
     }
-    android::base::unique_fd fs_fd(TEMP_FAILURE_RETRY(open(
-        block_device.c_str(), O_RDWR | O_LARGEFILE | O_CLOEXEC, 0)));
+    android::base::unique_fd fs_fd(
+        TEMP_FAILURE_RETRY(open(block_device.c_str(), O_RDWR | O_LARGEFILE | O_CLOEXEC, 0)));
     if (fs_fd == -1) {
         PLOG(ERROR) << "Failed to open device " << block_device;
         return false;
@@ -153,10 +152,10 @@ bool secdiscard_path(const std::string &path) {
 }
 
 // Ensure that the FIEMAP covers the file and is OK to discard
-bool check_fiemap(const struct fiemap &fiemap, const std::string &path) {
+bool check_fiemap(const struct fiemap& fiemap, const std::string& path) {
     auto mapped = fiemap.fm_mapped_extents;
     if (!(fiemap.fm_extents[mapped - 1].fe_flags & FIEMAP_EXTENT_LAST)) {
-        LOG(ERROR) << "Extent " << mapped -1 << " was not the last in " << path;
+        LOG(ERROR) << "Extent " << mapped - 1 << " was not the last in " << path;
         return false;
     }
     for (uint32_t i = 0; i < mapped; i++) {
@@ -188,4 +187,4 @@ bool overwrite_with_zeros(int fd, off64_t start, off64_t length) {
     return true;
 }
 
-}
+}  // namespace

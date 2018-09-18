@@ -21,8 +21,7 @@
 namespace android {
 namespace vold {
 
-class UtilsTest : public testing::Test {
-};
+class UtilsTest : public testing::Test {};
 
 TEST_F(UtilsTest, FindValueTest) {
     std::string tmp;
@@ -40,5 +39,5 @@ TEST_F(UtilsTest, FindValueTest) {
     ASSERT_EQ("BAZ", tmp);
 }
 
-}
-}
+}  // namespace vold
+}  // namespace android

@@ -36,14 +36,14 @@ namespace vold {
  * keys are tightly tied to this device.
  */
 class PrivateVolume : public VolumeBase {
-public:
+  public:
     PrivateVolume(dev_t device, const std::string& keyRaw);
     virtual ~PrivateVolume();
     const std::string& getFsType() { return mFsType; };
     const std::string& getRawDevPath() { return mRawDevPath; };
     const std::string& getRawDmDevPath() { return mDmDevPath; };
 
-protected:
+  protected:
     status_t doCreate() override;
     status_t doDestroy() override;
     status_t doMount() override;
@@ -52,7 +52,7 @@ protected:
 
     status_t readMetadata();
 
-private:
+  private:
     /* Kernel device of raw, encrypted partition */
     dev_t mRawDevice;
     /* Path to raw, encrypted block device */
