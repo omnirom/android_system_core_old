@@ -26,10 +26,10 @@ namespace android {
 namespace vold {
 
 class VoldNativeService : public BinderService<VoldNativeService>, public os::BnVold {
-public:
+  public:
     static status_t start();
     static char const* getServiceName() { return "vold"; }
-    virtual status_t dump(int fd, const Vector<String16> &args) override;
+    virtual status_t dump(int fd, const Vector<String16>& args) override;
 
     binder::Status setListener(const android::sp<android::os::IVoldListener>& listener);
 
@@ -43,9 +43,9 @@ public:
     binder::Status onUserStopped(int32_t userId);
 
     binder::Status addAppIds(const std::vector<std::string>& packageNames,
-            const std::vector<int32_t>& appIds);
+                             const std::vector<int32_t>& appIds);
     binder::Status addSandboxIds(const std::vector<int32_t>& appIds,
-            const std::vector<std::string>& sandboxIds);
+                                 const std::vector<std::string>& sandboxIds);
 
     binder::Status onSecureKeyguardStateChanged(bool isShowing);
 
@@ -56,38 +56,35 @@ public:
     binder::Status unmount(const std::string& volId);
     binder::Status format(const std::string& volId, const std::string& fsType);
     binder::Status benchmark(const std::string& volId,
-            const android::sp<android::os::IVoldTaskListener>& listener);
+                             const android::sp<android::os::IVoldTaskListener>& listener);
     binder::Status checkEncryption(const std::string& volId);
 
     binder::Status moveStorage(const std::string& fromVolId, const std::string& toVolId,
-            const android::sp<android::os::IVoldTaskListener>& listener);
+                               const android::sp<android::os::IVoldTaskListener>& listener);
 
     binder::Status remountUid(int32_t uid, int32_t remountMode);
 
     binder::Status mkdirs(const std::string& path);
 
     binder::Status createObb(const std::string& sourcePath, const std::string& sourceKey,
-            int32_t ownerGid, std::string* _aidl_return);
+                             int32_t ownerGid, std::string* _aidl_return);
     binder::Status destroyObb(const std::string& volId);
 
     binder::Status fstrim(int32_t fstrimFlags,
-            const android::sp<android::os::IVoldTaskListener>& listener);
-    binder::Status runIdleMaint(
-            const android::sp<android::os::IVoldTaskListener>& listener);
-    binder::Status abortIdleMaint(
-            const android::sp<android::os::IVoldTaskListener>& listener);
+                          const android::sp<android::os::IVoldTaskListener>& listener);
+    binder::Status runIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
+    binder::Status abortIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
 
     binder::Status mountAppFuse(int32_t uid, int32_t pid, int32_t mountId,
-            android::base::unique_fd* _aidl_return);
+                                android::base::unique_fd* _aidl_return);
     binder::Status unmountAppFuse(int32_t uid, int32_t pid, int32_t mountId);
 
     binder::Status fdeCheckPassword(const std::string& password);
     binder::Status fdeRestart();
     binder::Status fdeComplete(int32_t* _aidl_return);
-    binder::Status fdeEnable(int32_t passwordType,
-            const std::string& password, int32_t encryptionFlags);
-    binder::Status fdeChangePassword(int32_t passwordType,
-            const std::string& password);
+    binder::Status fdeEnable(int32_t passwordType, const std::string& password,
+                             int32_t encryptionFlags);
+    binder::Status fdeChangePassword(int32_t passwordType, const std::string& password);
     binder::Status fdeVerifyPassword(const std::string& password);
     binder::Status fdeGetField(const std::string& key, std::string* _aidl_return);
     binder::Status fdeSetField(const std::string& key, const std::string& value);
@@ -106,21 +103,21 @@ public:
     binder::Status createUserKey(int32_t userId, int32_t userSerial, bool ephemeral);
     binder::Status destroyUserKey(int32_t userId);
 
-    binder::Status addUserKeyAuth(int32_t userId, int32_t userSerial,
-            const std::string& token, const std::string& secret);
+    binder::Status addUserKeyAuth(int32_t userId, int32_t userSerial, const std::string& token,
+                                  const std::string& secret);
     binder::Status fixateNewestUserKeyAuth(int32_t userId);
 
-    binder::Status unlockUserKey(int32_t userId, int32_t userSerial,
-            const std::string& token, const std::string& secret);
+    binder::Status unlockUserKey(int32_t userId, int32_t userSerial, const std::string& token,
+                                 const std::string& secret);
     binder::Status lockUserKey(int32_t userId);
 
-    binder::Status prepareUserStorage(const std::unique_ptr<std::string>& uuid,
-            int32_t userId, int32_t userSerial, int32_t flags);
-    binder::Status destroyUserStorage(const std::unique_ptr<std::string>& uuid,
-            int32_t userId, int32_t flags);
+    binder::Status prepareUserStorage(const std::unique_ptr<std::string>& uuid, int32_t userId,
+                                      int32_t userSerial, int32_t flags);
+    binder::Status destroyUserStorage(const std::unique_ptr<std::string>& uuid, int32_t userId,
+                                      int32_t flags);
 
     binder::Status mountExternalStorageForApp(const std::string& packageName, int32_t appId,
-            const std::string& sandboxId, int32_t userId);
+                                              const std::string& sandboxId, int32_t userId);
 };
 
 }  // namespace vold

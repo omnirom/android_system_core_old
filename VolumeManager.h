@@ -17,8 +17,8 @@
 #ifndef ANDROID_VOLD_VOLUME_MANAGER_H
 #define ANDROID_VOLD_VOLUME_MANAGER_H
 
-#include <pthread.h>
 #include <fnmatch.h>
+#include <pthread.h>
 #include <stdlib.h>
 
 #include <list>
@@ -29,9 +29,9 @@
 
 #include <android-base/unique_fd.h>
 #include <cutils/multiuser.h>
+#include <sysutils/NetlinkEvent.h>
 #include <utils/List.h>
 #include <utils/Timers.h>
-#include <sysutils/NetlinkEvent.h>
 
 #include "android/os/IVoldListener.h"
 
@@ -41,12 +41,12 @@
 #define DEBUG_APPFUSE 0
 
 class VolumeManager {
-private:
-    static VolumeManager *sInstance;
+  private:
+    static VolumeManager* sInstance;
 
-    bool                   mDebug;
+    bool mDebug;
 
-public:
+  public:
     virtual ~VolumeManager();
 
     // TODO: pipe all requests through VM to avoid exposing this lock
@@ -59,13 +59,12 @@ public:
     int start();
     int stop();
 
-    void handleBlockEvent(NetlinkEvent *evt);
+    void handleBlockEvent(NetlinkEvent* evt);
 
     class DiskSource {
-    public:
-        DiskSource(const std::string& sysPattern, const std::string& nickname, int flags) :
-                mSysPattern(sysPattern), mNickname(nickname), mFlags(flags) {
-        }
+      public:
+        DiskSource(const std::string& sysPattern, const std::string& nickname, int flags)
+            : mSysPattern(sysPattern), mNickname(nickname), mFlags(flags) {}
 
         bool matches(const std::string& sysPath) {
             return !fnmatch(mSysPattern.c_str(), sysPath.c_str(), 0);
@@ -74,7 +73,7 @@ public:
         const std::string& getNickname() { return mNickname; }
         int getFlags() { return mFlags; }
 
-    private:
+      private:
         std::string mSysPattern;
         std::string mNickname;
         int mFlags;
@@ -96,9 +95,9 @@ public:
 
     int addAppIds(const std::vector<std::string>& packageNames, const std::vector<int32_t>& appIds);
     int addSandboxIds(const std::vector<int32_t>& appIds,
-            const std::vector<std::string>& sandboxIds);
+                      const std::vector<std::string>& sandboxIds);
     int mountExternalStorageForApp(const std::string& packageName, appid_t appId,
-            const std::string& sandboxId, userid_t userId);
+                                   const std::string& sandboxId, userid_t userId);
 
     int onSecureKeyguardStateChanged(bool isShowing);
 
@@ -116,7 +115,7 @@ public:
     int updateVirtualDisk();
     int setDebug(bool enable);
 
-    static VolumeManager *Instance();
+    static VolumeManager* Instance();
 
     /*
      * Ensure that all directories along given path exist, creating parent
@@ -128,30 +127,30 @@ public:
     int mkdirs(const std::string& path);
 
     int createObb(const std::string& path, const std::string& key, int32_t ownerGid,
-            std::string* outVolId);
+                  std::string* outVolId);
     int destroyObb(const std::string& volId);
 
     int mountAppFuse(uid_t uid, pid_t pid, int mountId, android::base::unique_fd* device_fd);
     int unmountAppFuse(uid_t uid, pid_t pid, int mountId);
 
-private:
+  private:
     VolumeManager();
     void readInitialState();
 
     int linkPrimary(userid_t userId, const std::vector<std::string>& packageNames);
 
     std::string prepareSandboxSource(uid_t uid, const std::string& sandboxId,
-            const std::string& sandboxRootDir);
+                                     const std::string& sandboxRootDir);
     std::string prepareSandboxTarget(const std::string& packageName, uid_t uid,
-            const std::string& volumeLabel, const std::string& mntTargetRootDir, bool isUserDependent);
+                                     const std::string& volumeLabel,
+                                     const std::string& mntTargetRootDir, bool isUserDependent);
     std::string preparePkgDataSource(const std::string& packageName, uid_t uid,
-            const std::string& dataRootDir);
+                                     const std::string& dataRootDir);
     std::string preparePkgDataTarget(const std::string& packageName, uid_t uid,
-            const std::string& pkgSandboxDir);
-    int mountSandboxesForPrimaryVol(userid_t userId,
-            const std::vector<std::string>& packageNames);
+                                     const std::string& pkgSandboxDir);
+    int mountSandboxesForPrimaryVol(userid_t userId, const std::vector<std::string>& packageNames);
     std::string prepareSubDirs(const std::string& pathPrefix, const std::string& subDirs,
-            mode_t mode, uid_t uid, gid_t gid);
+                               mode_t mode, uid_t uid, gid_t gid);
 
     void handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk);
     void handleDiskChanged(dev_t device);

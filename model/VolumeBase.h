@@ -17,8 +17,8 @@
 #ifndef ANDROID_VOLD_VOLUME_BASE_H
 #define ANDROID_VOLD_VOLUME_BASE_H
 
-#include "android/os/IVoldListener.h"
 #include "Utils.h"
+#include "android/os/IVoldListener.h"
 
 #include <cutils/multiuser.h>
 #include <utils/Errors.h>
@@ -45,7 +45,7 @@ namespace vold {
  * volumes and removes any bind mounts before finally unmounting itself.
  */
 class VolumeBase {
-public:
+  public:
     virtual ~VolumeBase();
 
     enum class Type {
@@ -103,7 +103,7 @@ public:
     status_t unmount();
     status_t format(const std::string& fsType);
 
-protected:
+  protected:
     explicit VolumeBase(Type type);
 
     virtual status_t doCreate();
@@ -119,7 +119,7 @@ protected:
 
     android::sp<android::os::IVoldListener> getListener();
 
-private:
+  private:
     /* ID that uniquely references volume while alive */
     std::string mId;
     /* ID that uniquely references parent disk while alive */

@@ -47,14 +47,14 @@ interface IVold {
     void checkEncryption(@utf8InCpp String volId);
 
     void moveStorage(@utf8InCpp String fromVolId, @utf8InCpp String toVolId,
-            IVoldTaskListener listener);
+                     IVoldTaskListener listener);
 
     void remountUid(int uid, int remountMode);
 
     void mkdirs(@utf8InCpp String path);
 
-    @utf8InCpp String createObb(@utf8InCpp String sourcePath,
-            @utf8InCpp String sourceKey, int ownerGid);
+    @utf8InCpp String createObb(@utf8InCpp String sourcePath, @utf8InCpp String sourceKey,
+                                int ownerGid);
     void destroyObb(@utf8InCpp String volId);
 
     void fstrim(int fstrimFlags, IVoldTaskListener listener);
@@ -87,17 +87,20 @@ interface IVold {
     void createUserKey(int userId, int userSerial, boolean ephemeral);
     void destroyUserKey(int userId);
 
-    void addUserKeyAuth(int userId, int userSerial, @utf8InCpp String token, @utf8InCpp String secret);
+    void addUserKeyAuth(int userId, int userSerial, @utf8InCpp String token,
+                        @utf8InCpp String secret);
     void fixateNewestUserKeyAuth(int userId);
 
-    void unlockUserKey(int userId, int userSerial, @utf8InCpp String token, @utf8InCpp String secret);
+    void unlockUserKey(int userId, int userSerial, @utf8InCpp String token,
+                       @utf8InCpp String secret);
     void lockUserKey(int userId);
 
-    void prepareUserStorage(@nullable @utf8InCpp String uuid, int userId, int userSerial, int storageFlags);
+    void prepareUserStorage(@nullable @utf8InCpp String uuid, int userId, int userSerial,
+                            int storageFlags);
     void destroyUserStorage(@nullable @utf8InCpp String uuid, int userId, int storageFlags);
 
-    void mountExternalStorageForApp(in @utf8InCpp String packageName,
-            int appId, in @utf8InCpp String sandboxId, int userId);
+    void mountExternalStorageForApp(in @utf8InCpp String packageName, int appId,
+                                    in @utf8InCpp String sandboxId, int userId);
 
     const int ENCRYPTION_FLAG_NO_UI = 4;
 
