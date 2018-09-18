@@ -17,8 +17,8 @@
 #ifndef ANDROID_VOLD_VOLUME_MANAGER_H
 #define ANDROID_VOLD_VOLUME_MANAGER_H
 
-#include <pthread.h>
 #include <fnmatch.h>
+#include <pthread.h>
 #include <stdlib.h>
 
 #include <list>
@@ -29,9 +29,9 @@
 
 #include <android-base/unique_fd.h>
 #include <cutils/multiuser.h>
+#include <sysutils/NetlinkEvent.h>
 #include <utils/List.h>
 #include <utils/Timers.h>
-#include <sysutils/NetlinkEvent.h>
 
 #include "android/os/IVoldListener.h"
 
@@ -41,12 +41,12 @@
 #define DEBUG_APPFUSE 0
 
 class VolumeManager {
-private:
-    static VolumeManager *sInstance;
+  private:
+    static VolumeManager* sInstance;
 
-    bool                   mDebug;
+    bool mDebug;
 
-public:
+  public:
     virtual ~VolumeManager();
 
     // TODO: pipe all requests through VM to avoid exposing this lock
@@ -59,13 +59,12 @@ public:
     int start();
     int stop();
 
-    void handleBlockEvent(NetlinkEvent *evt);
+    void handleBlockEvent(NetlinkEvent* evt);
 
     class DiskSource {
-    public:
-        DiskSource(const std::string& sysPattern, const std::string& nickname, int flags) :
-                mSysPattern(sysPattern), mNickname(nickname), mFlags(flags) {
-        }
+      public:
+        DiskSource(const std::string& sysPattern, const std::string& nickname, int flags)
+            : mSysPattern(sysPattern), mNickname(nickname), mFlags(flags) {}
 
         bool matches(const std::string& sysPath) {
             return !fnmatch(mSysPattern.c_str(), sysPath.c_str(), 0);
@@ -74,7 +73,7 @@ public:
         const std::string& getNickname() { return mNickname; }
         int getFlags() { return mFlags; }
 
-    private:
+      private:
         std::string mSysPattern;
         std::string mNickname;
         int mFlags;
@@ -110,7 +109,7 @@ public:
     int updateVirtualDisk();
     int setDebug(bool enable);
 
-    static VolumeManager *Instance();
+    static VolumeManager* Instance();
 
     /*
      * Ensure that all directories along given path exist, creating parent
@@ -122,13 +121,13 @@ public:
     int mkdirs(const std::string& path);
 
     int createObb(const std::string& path, const std::string& key, int32_t ownerGid,
-            std::string* outVolId);
+                  std::string* outVolId);
     int destroyObb(const std::string& volId);
 
     int mountAppFuse(uid_t uid, pid_t pid, int mountId, android::base::unique_fd* device_fd);
     int unmountAppFuse(uid_t uid, pid_t pid, int mountId);
 
-private:
+  private:
     VolumeManager();
     void readInitialState();
 
