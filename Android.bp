@@ -140,7 +140,7 @@ cc_library_static {
         },
     },
     shared_libs: [
-        "android.hardware.health.filesystem@1.0",
+        "android.hardware.health.storage@1.0",
     ],
 }
 
@@ -173,7 +173,7 @@ cc_binary {
     ],
 
     shared_libs: [
-        "android.hardware.health.filesystem@1.0",
+        "android.hardware.health.storage@1.0",
         "libhidltransport",
     ],
 }

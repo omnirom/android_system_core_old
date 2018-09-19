@@ -27,7 +27,7 @@
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
-#include <android/hardware/health/filesystem/1.0/IFileSystem.h>
+#include <android/hardware/health/storage/1.0/IStorage.h>
 #include <fs_mgr.h>
 #include <hardware_legacy/power.h>
 #include <private/android_filesystem_config.h>
@@ -47,9 +47,9 @@ using android::base::Timer;
 using android::base::WriteStringToFile;
 using android::hardware::Return;
 using android::hardware::Void;
-using android::hardware::health::filesystem::V1_0::IFileSystem;
-using android::hardware::health::filesystem::V1_0::IGarbageCollectCallback;
-using android::hardware::health::filesystem::V1_0::Result;
+using android::hardware::health::storage::V1_0::IStorage;
+using android::hardware::health::storage::V1_0::IGarbageCollectCallback;
+using android::hardware::health::storage::V1_0::Result;
 
 namespace android {
 namespace vold {
@@ -346,7 +346,7 @@ class GcCallback : public IGarbageCollectCallback {
     Result mResult{Result::UNKNOWN_ERROR};
 };
 
-static void runDevGcOnHal(sp<IFileSystem> service) {
+static void runDevGcOnHal(sp<IStorage> service) {
     LOG(DEBUG) << "Start Dev GC on HAL";
     sp<GcCallback> cb = new GcCallback();
     auto ret = service->garbageCollect(DEVGC_TIMEOUT_SEC, cb);
@@ -358,7 +358,7 @@ static void runDevGcOnHal(sp<IFileSystem> service) {
 }
 
 static void runDevGc(void) {
-    auto service = IFileSystem::getService();
+    auto service = IStorage::getService();
     if (service != nullptr) {
         runDevGcOnHal(service);
     } else {
