@@ -34,4 +34,3 @@ KeyBuffer operator+(KeyBuffer&& lhs, const char* rhs) {
 
 }  // namespace vold
 }  // namespace android
-

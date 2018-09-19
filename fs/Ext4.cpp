@@ -14,23 +14,20 @@
  * limitations under the License.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <vector>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include <string>
+#include <vector>
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 
 #include <linux/kdev_t.h>
@@ -59,9 +56,8 @@ static const char* kMkfsPath = "/system/bin/mke2fs";
 static const char* kFsckPath = "/system/bin/e2fsck";
 
 bool IsSupported() {
-    return access(kMkfsPath, X_OK) == 0
-            && access(kFsckPath, X_OK) == 0
-            && IsFilesystemSupported("ext4");
+    return access(kMkfsPath, X_OK) == 0 && access(kFsckPath, X_OK) == 0 &&
+           IsFilesystemSupported("ext4");
 }
 
 status_t Check(const std::string& source, const std::string& target) {
@@ -74,7 +70,7 @@ status_t Check(const std::string& source, const std::string& target) {
     int status;
     int ret;
     long tmpmnt_flags = MS_NOATIME | MS_NOEXEC | MS_NOSUID;
-    char *tmpmnt_opts = (char*) "nomblk_io_submit,errors=remount-ro";
+    char* tmpmnt_opts = (char*)"nomblk_io_submit,errors=remount-ro";
 
     /*
      * First try to mount and unmount the filesystem.  We do this because
@@ -127,8 +123,8 @@ status_t Check(const std::string& source, const std::string& target) {
     return 0;
 }
 
-status_t Mount(const std::string& source, const std::string& target, bool ro,
-        bool remount, bool executable) {
+status_t Mount(const std::string& source, const std::string& target, bool ro, bool remount,
+               bool executable) {
     int rc;
     unsigned long flags;
 
@@ -162,8 +158,7 @@ status_t Resize(const std::string& source, unsigned long numSectors) {
     return ForkExecvp(cmd);
 }
 
-status_t Format(const std::string& source, unsigned long numSectors,
-        const std::string& target) {
+status_t Format(const std::string& source, unsigned long numSectors, const std::string& target) {
     std::vector<std::string> cmd;
     cmd.push_back(kMkfsPath);
 

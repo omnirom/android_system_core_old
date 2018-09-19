@@ -23,6 +23,6 @@
 #define SCRYPT_PROP "ro.crypto.scrypt_params"
 #define SCRYPT_DEFAULTS "15:3:1"
 
-bool parse_scrypt_parameters(const char* paramstr, int *Nf, int *rf, int *pf);
+bool parse_scrypt_parameters(const char* paramstr, int* Nf, int* rf, int* pf);
 
 #endif

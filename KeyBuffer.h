@@ -33,17 +33,15 @@ namespace vold {
 #define OPTNONE __attribute__((optimize("O0")))
 #endif  // not __clang__
 inline OPTNONE void* memset_s(void* s, int c, size_t n) {
-    if (!s)
-        return s;
+    if (!s) return s;
     return memset(s, c, n);
 }
 #undef OPTNONE
 
 // Allocator that delegates useful work to standard one but zeroes data before deallocating.
 class ZeroingAllocator : public std::allocator<char> {
-    public:
-    void deallocate(pointer p, size_type n)
-    {
+  public:
+    void deallocate(pointer p, size_type n) {
         memset_s(p, 0, n);
         std::allocator<char>::deallocate(p, n);
     }
@@ -60,4 +58,3 @@ KeyBuffer operator+(KeyBuffer&& lhs, const char* rhs);
 }  // namespace android
 
 #endif
-

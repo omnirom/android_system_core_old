@@ -29,7 +29,8 @@
 #include <dirent.h>
 #include <sys/wait.h>
 
-#define CONSTRAIN(amount, low, high) ((amount) < (low) ? (low) : ((amount) > (high) ? (high) : (amount)))
+#define CONSTRAIN(amount, low, high) \
+    ((amount) < (low) ? (low) : ((amount) > (high) ? (high) : (amount)))
 
 static const char* kPropBlockingExec = "persist.sys.blocking_exec";
 
@@ -48,7 +49,7 @@ static const char* kRmPath = "/system/bin/rm";
 static const char* kWakeLock = "MoveTask";
 
 static void notifyProgress(int progress,
-        const android::sp<android::os::IVoldTaskListener>& listener) {
+                           const android::sp<android::os::IVoldTaskListener>& listener) {
     if (listener) {
         android::os::PersistableBundle extras;
         listener->onStatus(progress, extras);
@@ -56,7 +57,7 @@ static void notifyProgress(int progress,
 }
 
 static status_t pushBackContents(const std::string& path, std::vector<std::string>& cmd,
-        bool addWildcard) {
+                                 bool addWildcard) {
     DIR* dir = opendir(path.c_str());
     if (dir == NULL) {
         return -1;
@@ -79,7 +80,7 @@ static status_t pushBackContents(const std::string& path, std::vector<std::strin
 }
 
 static status_t execRm(const std::string& path, int startProgress, int stepProgress,
-        const android::sp<android::os::IVoldTaskListener>& listener) {
+                       const android::sp<android::os::IVoldTaskListener>& listener) {
     notifyProgress(startProgress, listener);
 
     uint64_t expectedBytes = GetTreeBytes(path);
@@ -114,14 +115,17 @@ static status_t execRm(const std::string& path, int startProgress, int stepProgr
 
         sleep(1);
         uint64_t deltaFreeBytes = GetFreeBytes(path) - startFreeBytes;
-        notifyProgress(startProgress + CONSTRAIN((int)
-                ((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress), listener);
+        notifyProgress(
+            startProgress +
+                CONSTRAIN((int)((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress),
+            listener);
     }
     return -1;
 }
 
 static status_t execCp(const std::string& fromPath, const std::string& toPath, int startProgress,
-        int stepProgress, const android::sp<android::os::IVoldTaskListener>& listener) {
+                       int stepProgress,
+                       const android::sp<android::os::IVoldTaskListener>& listener) {
     notifyProgress(startProgress, listener);
 
     uint64_t expectedBytes = GetTreeBytes(fromPath);
@@ -129,7 +133,7 @@ static status_t execCp(const std::string& fromPath, const std::string& toPath, i
 
     if (expectedBytes > startFreeBytes) {
         LOG(ERROR) << "Data size " << expectedBytes << " is too large to fit in free space "
-                << startFreeBytes;
+                   << startFreeBytes;
         return -1;
     }
 
@@ -165,8 +169,10 @@ static status_t execCp(const std::string& fromPath, const std::string& toPath, i
 
         sleep(1);
         uint64_t deltaFreeBytes = startFreeBytes - GetFreeBytes(toPath);
-        notifyProgress(startProgress + CONSTRAIN((int)
-                ((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress), listener);
+        notifyProgress(
+            startProgress +
+                CONSTRAIN((int)((deltaFreeBytes * stepProgress) / expectedBytes), 0, stepProgress),
+            listener);
     }
     return -1;
 }
@@ -186,8 +192,8 @@ static void bringOnline(const std::shared_ptr<VolumeBase>& vol) {
 }
 
 static status_t moveStorageInternal(const std::shared_ptr<VolumeBase>& from,
-        const std::shared_ptr<VolumeBase>& to,
-        const android::sp<android::os::IVoldTaskListener>& listener) {
+                                    const std::shared_ptr<VolumeBase>& to,
+                                    const android::sp<android::os::IVoldTaskListener>& listener) {
     std::string fromPath;
     std::string toPath;
 
@@ -239,17 +245,19 @@ copy_fail:
     // useful anyway.
     execRm(toPath, 80, 1, listener);
 fail:
+    // clang-format off
     {
         std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock());
         bringOnline(from);
         bringOnline(to);
     }
+    // clang-format on
     notifyProgress(kMoveFailedInternalError, listener);
     return -1;
 }
 
 void MoveStorage(const std::shared_ptr<VolumeBase>& from, const std::shared_ptr<VolumeBase>& to,
-        const android::sp<android::os::IVoldTaskListener>& listener) {
+                 const android::sp<android::os::IVoldTaskListener>& listener) {
     acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
 
     android::os::PersistableBundle extras;

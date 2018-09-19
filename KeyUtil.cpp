@@ -88,12 +88,7 @@ static bool fillKey(const KeyBuffer& key, ext4_encryption_key* ext4_key) {
     return true;
 }
 
-static char const* const NAME_PREFIXES[] = {
-    "ext4",
-    "f2fs",
-    "fscrypt",
-    nullptr
-};
+static char const* const NAME_PREFIXES[] = {"ext4", "f2fs", "fscrypt", nullptr};
 
 static std::string keyname(const std::string& prefix, const std::string& raw_ref) {
     std::ostringstream o;
@@ -119,7 +114,7 @@ static bool e4cryptKeyring(key_serial_t* device_keyring) {
 bool installKey(const KeyBuffer& key, std::string* raw_ref) {
     // Place ext4_encryption_key into automatically zeroing buffer.
     KeyBuffer ext4KeyBuffer(sizeof(ext4_encryption_key));
-    ext4_encryption_key &ext4_key = *reinterpret_cast<ext4_encryption_key*>(ext4KeyBuffer.data());
+    ext4_encryption_key& ext4_key = *reinterpret_cast<ext4_encryption_key*>(ext4KeyBuffer.data());
 
     if (!fillKey(key, &ext4_key)) return false;
     *raw_ref = generateKeyRef(ext4_key.raw, ext4_key.size);
@@ -170,8 +165,8 @@ bool retrieveAndInstallKey(bool create_if_absent, const KeyAuthentication& key_a
         if (!retrieveKey(key_path, key_authentication, &key)) return false;
     } else {
         if (!create_if_absent) {
-           LOG(ERROR) << "No key found in " << key_path;
-           return false;
+            LOG(ERROR) << "No key found in " << key_path;
+            return false;
         }
         LOG(INFO) << "Creating new key in " << key_path;
         if (!randomKey(&key)) return false;
@@ -185,20 +180,19 @@ bool retrieveAndInstallKey(bool create_if_absent, const KeyAuthentication& key_a
     return true;
 }
 
-bool retrieveKey(bool create_if_absent, const std::string& key_path,
-                 const std::string& tmp_path, KeyBuffer* key) {
+bool retrieveKey(bool create_if_absent, const std::string& key_path, const std::string& tmp_path,
+                 KeyBuffer* key) {
     if (pathExists(key_path)) {
         LOG(DEBUG) << "Key exists, using: " << key_path;
         if (!retrieveKey(key_path, kEmptyAuthentication, key)) return false;
     } else {
         if (!create_if_absent) {
-           LOG(ERROR) << "No key found in " << key_path;
-           return false;
+            LOG(ERROR) << "No key found in " << key_path;
+            return false;
         }
         LOG(INFO) << "Creating new key in " << key_path;
         if (!randomKey(key)) return false;
-        if (!storeKeyAtomically(key_path, tmp_path,
-                kEmptyAuthentication, *key)) return false;
+        if (!storeKeyAtomically(key_path, tmp_path, kEmptyAuthentication, *key)) return false;
     }
     return true;
 }

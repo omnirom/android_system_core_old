@@ -17,17 +17,17 @@
 #ifndef ANDROID_VOLD_FILEDEVICEUTILS_H
 #define ANDROID_VOLD_FILEDEVICEUTILS_H
 
-#include <string>
 #include <linux/fiemap.h>
+#include <string>
 
 namespace android {
 namespace vold {
 
 // Given a file path, look for the corresponding block device in /proc/mount
-std::string BlockDeviceForPath(const std::string &path);
+std::string BlockDeviceForPath(const std::string& path);
 
 // Read the file's FIEMAP
-std::unique_ptr<struct fiemap> PathFiemap(const std::string &path, uint32_t extent_count);
+std::unique_ptr<struct fiemap> PathFiemap(const std::string& path, uint32_t extent_count);
 
 }  // namespace vold
 }  // namespace android

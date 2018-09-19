@@ -17,19 +17,20 @@
 #ifndef _LOOP_H
 #define _LOOP_H
 
-#include <string>
-#include <unistd.h>
 #include <linux/loop.h>
+#include <unistd.h>
+#include <string>
 
 class Loop {
-public:
+  public:
     static const int LOOP_MAX = 4096;
-public:
+
+  public:
     static int create(const std::string& file, std::string& out_device);
-    static int destroyByDevice(const char *loopDevice);
+    static int destroyByDevice(const char* loopDevice);
     static int destroyAll();
-    static int createImageFile(const char *file, unsigned long numSectors);
-    static int resizeImageFile(const char *file, unsigned long numSectors);
+    static int createImageFile(const char* file, unsigned long numSectors);
+    static int resizeImageFile(const char* file, unsigned long numSectors);
 };
 
 #endif
