@@ -13,10 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <Utils.h>
 #include "secontext.h"
+#include <Utils.h>
 
-security_context_t secontextFsck()
-{
+security_context_t secontextFsck() {
     return android::vold::sFsckContext;
 }

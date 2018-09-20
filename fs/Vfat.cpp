@@ -14,24 +14,21 @@
  * limitations under the License.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/mman.h>
-#include <sys/mount.h>
-#include <sys/wait.h>
 #include <linux/fs.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/mount.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include <linux/kdev_t.h>
 
@@ -41,8 +38,8 @@
 
 #include <logwrap/logwrap.h>
 
-#include "Vfat.h"
 #include "Utils.h"
+#include "Vfat.h"
 #include "VoldUtil.h"
 
 using android::base::StringPrintf;
@@ -55,9 +52,8 @@ static const char* kMkfsPath = "/system/bin/newfs_msdos";
 static const char* kFsckPath = "/system/bin/fsck_msdos";
 
 bool IsSupported() {
-    return access(kMkfsPath, X_OK) == 0
-            && access(kFsckPath, X_OK) == 0
-            && IsFilesystemSupported("vfat");
+    return access(kMkfsPath, X_OK) == 0 && access(kFsckPath, X_OK) == 0 &&
+           IsFilesystemSupported("vfat");
 }
 
 status_t Check(const std::string& source) {
@@ -79,43 +75,42 @@ status_t Check(const std::string& source) {
             return -1;
         }
 
-        switch(rc) {
-        case 0:
-            LOG(INFO) << "Filesystem check completed OK";
-            return 0;
+        switch (rc) {
+            case 0:
+                LOG(INFO) << "Filesystem check completed OK";
+                return 0;
 
-        case 2:
-            LOG(ERROR) << "Filesystem check failed (not a FAT filesystem)";
-            errno = ENODATA;
-            return -1;
+            case 2:
+                LOG(ERROR) << "Filesystem check failed (not a FAT filesystem)";
+                errno = ENODATA;
+                return -1;
 
-        case 4:
-            if (pass++ <= 3) {
-                LOG(WARNING) << "Filesystem modified - rechecking (pass " << pass << ")";
-                continue;
-            }
-            LOG(ERROR) << "Failing check after too many rechecks";
-            errno = EIO;
-            return -1;
+            case 4:
+                if (pass++ <= 3) {
+                    LOG(WARNING) << "Filesystem modified - rechecking (pass " << pass << ")";
+                    continue;
+                }
+                LOG(ERROR) << "Failing check after too many rechecks";
+                errno = EIO;
+                return -1;
 
-        case 8:
-            LOG(ERROR) << "Filesystem check failed (no filesystem)";
-            errno = ENODATA;
-            return -1;
+            case 8:
+                LOG(ERROR) << "Filesystem check failed (no filesystem)";
+                errno = ENODATA;
+                return -1;
 
-        default:
-            LOG(ERROR) << "Filesystem check failed (unknown exit code " << rc << ")";
-            errno = EIO;
-            return -1;
+            default:
+                LOG(ERROR) << "Filesystem check failed (unknown exit code " << rc << ")";
+                errno = EIO;
+                return -1;
         }
     } while (0);
 
     return 0;
 }
 
-status_t Mount(const std::string& source, const std::string& target, bool ro,
-        bool remount, bool executable, int ownerUid, int ownerGid, int permMask,
-        bool createLost) {
+status_t Mount(const std::string& source, const std::string& target, bool ro, bool remount,
+               bool executable, int ownerUid, int ownerGid, int permMask, bool createLost) {
     int rc;
     unsigned long flags;
 
@@ -128,9 +123,9 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
     flags |= (ro ? MS_RDONLY : 0);
     flags |= (remount ? MS_REMOUNT : 0);
 
-    auto mountData = android::base::StringPrintf(
-            "utf8,uid=%d,gid=%d,fmask=%o,dmask=%o,shortname=mixed",
-            ownerUid, ownerGid, permMask, permMask);
+    auto mountData =
+        android::base::StringPrintf("utf8,uid=%d,gid=%d,fmask=%o,dmask=%o,shortname=mixed",
+                                    ownerUid, ownerGid, permMask, permMask);
 
     rc = mount(c_source, c_target, "vfat", flags, mountData.c_str());
 

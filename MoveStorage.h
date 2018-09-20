@@ -24,7 +24,7 @@ namespace android {
 namespace vold {
 
 void MoveStorage(const std::shared_ptr<VolumeBase>& from, const std::shared_ptr<VolumeBase>& to,
-        const android::sp<android::os::IVoldTaskListener>& listener);
+                 const android::sp<android::os::IVoldTaskListener>& listener);
 
 }  // namespace vold
 }  // namespace android

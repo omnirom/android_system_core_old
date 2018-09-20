@@ -24,8 +24,10 @@
 namespace android {
 namespace vold {
 
+// clang-format off
 void Benchmark(const std::string& path,
-        const android::sp<android::os::IVoldTaskListener>& listener);
+               const android::sp<android::os::IVoldTaskListener>& listener);
+// clang-format on
 
 }  // namespace vold
 }  // namespace android

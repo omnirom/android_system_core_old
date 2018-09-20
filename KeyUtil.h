@@ -20,8 +20,8 @@
 #include "KeyBuffer.h"
 #include "KeyStorage.h"
 
-#include <string>
 #include <memory>
+#include <string>
 
 namespace android {
 namespace vold {
@@ -32,8 +32,8 @@ bool evictKey(const std::string& raw_ref);
 bool retrieveAndInstallKey(bool create_if_absent, const KeyAuthentication& key_authentication,
                            const std::string& key_path, const std::string& tmp_path,
                            std::string* key_ref);
-bool retrieveKey(bool create_if_absent, const std::string& key_path,
-                 const std::string& tmp_path, KeyBuffer* key);
+bool retrieveKey(bool create_if_absent, const std::string& key_path, const std::string& tmp_path,
+                 KeyBuffer* key);
 
 }  // namespace vold
 }  // namespace android

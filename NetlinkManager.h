@@ -17,32 +17,32 @@
 #ifndef _NETLINKMANAGER_H
 #define _NETLINKMANAGER_H
 
-#include <sysutils/SocketListener.h>
 #include <sysutils/NetlinkListener.h>
+#include <sysutils/SocketListener.h>
 
 class NetlinkHandler;
 
 class NetlinkManager {
-private:
-    static NetlinkManager *sInstance;
+  private:
+    static NetlinkManager* sInstance;
 
-private:
-    SocketListener       *mBroadcaster;
-    NetlinkHandler       *mHandler;
-    int                  mSock;
+  private:
+    SocketListener* mBroadcaster;
+    NetlinkHandler* mHandler;
+    int mSock;
 
-public:
+  public:
     virtual ~NetlinkManager();
 
     int start();
     int stop();
 
-    void setBroadcaster(SocketListener *sl) { mBroadcaster = sl; }
-    SocketListener *getBroadcaster() { return mBroadcaster; }
+    void setBroadcaster(SocketListener* sl) { mBroadcaster = sl; }
+    SocketListener* getBroadcaster() { return mBroadcaster; }
 
-    static NetlinkManager *Instance();
+    static NetlinkManager* Instance();
 
-private:
+  private:
     NetlinkManager();
 };
 #endif

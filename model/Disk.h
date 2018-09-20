@@ -36,7 +36,7 @@ class VolumeBase;
  * how to repartition itself.
  */
 class Disk {
-public:
+  public:
     Disk(const std::string& eventPath, dev_t device, const std::string& nickname, int flags);
     virtual ~Disk();
 
@@ -79,7 +79,7 @@ public:
     status_t partitionPrivate();
     status_t partitionMixed(int8_t ratio);
 
-private:
+  private:
     /* ID that uniquely references this disk */
     std::string mId;
     /* Original event path */

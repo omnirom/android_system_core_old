@@ -14,27 +14,27 @@
  * limitations under the License.
  */
 
-#include "fs/Ext4.h"
-#include "fs/F2fs.h"
 #include "PrivateVolume.h"
 #include "EmulatedVolume.h"
 #include "Utils.h"
 #include "VolumeManager.h"
 #include "cryptfs.h"
+#include "fs/Ext4.h"
+#include "fs/F2fs.h"
 
-#include <android-base/stringprintf.h>
 #include <android-base/logging.h>
+#include <android-base/stringprintf.h>
 #include <cutils/fs.h>
 #include <private/android_filesystem_config.h>
 
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/mount.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/sysmacros.h>
-#include <sys/wait.h>
 #include <sys/param.h>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 using android::base::StringPrintf;
 
@@ -43,14 +43,13 @@ namespace vold {
 
 static const unsigned int kMajorBlockMmc = 179;
 
-PrivateVolume::PrivateVolume(dev_t device, const std::string& keyRaw) :
-        VolumeBase(Type::kPrivate), mRawDevice(device), mKeyRaw(keyRaw) {
+PrivateVolume::PrivateVolume(dev_t device, const std::string& keyRaw)
+    : VolumeBase(Type::kPrivate), mRawDevice(device), mKeyRaw(keyRaw) {
     setId(StringPrintf("private:%u,%u", major(device), minor(device)));
     mRawDevPath = StringPrintf("/dev/block/vold/%s", getId().c_str());
 }
 
-PrivateVolume::~PrivateVolume() {
-}
+PrivateVolume::~PrivateVolume() {}
 
 status_t PrivateVolume::readMetadata() {
     status_t res = ReadMetadata(mDmDevPath, &mFsType, &mFsUuid, &mFsLabel);
@@ -66,9 +65,9 @@ status_t PrivateVolume::doCreate() {
         return -EIO;
     }
     if (mKeyRaw.size() != cryptfs_get_keysize()) {
-      PLOG(ERROR) << getId() << " Raw keysize " << mKeyRaw.size() <<
-          " does not match crypt keysize " << cryptfs_get_keysize();
-      return -EIO;
+        PLOG(ERROR) << getId() << " Raw keysize " << mKeyRaw.size()
+                    << " does not match crypt keysize " << cryptfs_get_keysize();
+        return -EIO;
     }
 
     // Recover from stale vold by tearing down any old mappings
@@ -76,10 +75,9 @@ status_t PrivateVolume::doCreate() {
 
     // TODO: figure out better SELinux labels for private volumes
 
-    unsigned char* key = (unsigned char*) mKeyRaw.data();
+    unsigned char* key = (unsigned char*)mKeyRaw.data();
     char crypto_blkdev[MAXPATHLEN];
-    int res = cryptfs_setup_ext_volume(getId().c_str(), mRawDevPath.c_str(),
-            key, crypto_blkdev);
+    int res = cryptfs_setup_ext_volume(getId().c_str(), mRawDevPath.c_str(), key, crypto_blkdev);
     mDmDevPath = crypto_blkdev;
     if (res != 0) {
         PLOG(ERROR) << getId() << " failed to setup cryptfs";
@@ -147,12 +145,12 @@ status_t PrivateVolume::doMount() {
 
     // Verify that common directories are ready to roll
     if (PrepareDir(mPath + "/app", 0771, AID_SYSTEM, AID_SYSTEM) ||
-            PrepareDir(mPath + "/user", 0711, AID_SYSTEM, AID_SYSTEM) ||
-            PrepareDir(mPath + "/user_de", 0711, AID_SYSTEM, AID_SYSTEM) ||
-            PrepareDir(mPath + "/media", 0770, AID_MEDIA_RW, AID_MEDIA_RW) ||
-            PrepareDir(mPath + "/media/0", 0770, AID_MEDIA_RW, AID_MEDIA_RW) ||
-            PrepareDir(mPath + "/local", 0751, AID_ROOT, AID_ROOT) ||
-            PrepareDir(mPath + "/local/tmp", 0771, AID_SHELL, AID_SHELL)) {
+        PrepareDir(mPath + "/user", 0711, AID_SYSTEM, AID_SYSTEM) ||
+        PrepareDir(mPath + "/user_de", 0711, AID_SYSTEM, AID_SYSTEM) ||
+        PrepareDir(mPath + "/media", 0770, AID_MEDIA_RW, AID_MEDIA_RW) ||
+        PrepareDir(mPath + "/media/0", 0770, AID_MEDIA_RW, AID_MEDIA_RW) ||
+        PrepareDir(mPath + "/local", 0751, AID_ROOT, AID_ROOT) ||
+        PrepareDir(mPath + "/local/tmp", 0771, AID_SHELL, AID_SHELL)) {
         PLOG(ERROR) << getId() << " failed to prepare";
         return -EIO;
     }
@@ -160,8 +158,7 @@ status_t PrivateVolume::doMount() {
     // Create a new emulated volume stacked above us, it will automatically
     // be destroyed during unmount
     std::string mediaPath(mPath + "/media");
-    auto vol = std::shared_ptr<VolumeBase>(
-            new EmulatedVolume(mediaPath, mRawDevice, mFsUuid));
+    auto vol = std::shared_ptr<VolumeBase>(new EmulatedVolume(mediaPath, mRawDevice, mFsUuid));
     addVolume(vol);
     vol->create();
 

@@ -22,8 +22,8 @@
 #include <android-base/stringprintf.h>
 #include <ext4_utils/ext4_crypt.h>
 
-#include <vector>
 #include <string>
+#include <vector>
 
 #include <sys/mount.h>
 
@@ -37,9 +37,8 @@ static const char* kMkfsPath = "/system/bin/make_f2fs";
 static const char* kFsckPath = "/system/bin/fsck.f2fs";
 
 bool IsSupported() {
-    return access(kMkfsPath, X_OK) == 0
-            && access(kFsckPath, X_OK) == 0
-            && IsFilesystemSupported("f2fs");
+    return access(kMkfsPath, X_OK) == 0 && access(kFsckPath, X_OK) == 0 &&
+           IsFilesystemSupported("f2fs");
 }
 
 status_t Check(const std::string& source) {

@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-#include <stdio.h>
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
-#include <sys/socket.h>
 #include <sys/select.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -28,14 +28,13 @@
 
 #include <android-base/logging.h>
 
-#include "NetlinkManager.h"
 #include "NetlinkHandler.h"
+#include "NetlinkManager.h"
 
-NetlinkManager *NetlinkManager::sInstance = NULL;
+NetlinkManager* NetlinkManager::sInstance = NULL;
 
-NetlinkManager *NetlinkManager::Instance() {
-    if (!sInstance)
-        sInstance = new NetlinkManager();
+NetlinkManager* NetlinkManager::Instance() {
+    if (!sInstance) sInstance = new NetlinkManager();
     return sInstance;
 }
 
@@ -43,8 +42,7 @@ NetlinkManager::NetlinkManager() {
     mBroadcaster = NULL;
 }
 
-NetlinkManager::~NetlinkManager() {
-}
+NetlinkManager::~NetlinkManager() {}
 
 int NetlinkManager::start() {
     struct sockaddr_nl nladdr;
@@ -56,8 +54,7 @@ int NetlinkManager::start() {
     nladdr.nl_pid = getpid();
     nladdr.nl_groups = 0xffffffff;
 
-    if ((mSock = socket(PF_NETLINK, SOCK_DGRAM | SOCK_CLOEXEC,
-            NETLINK_KOBJECT_UEVENT)) < 0) {
+    if ((mSock = socket(PF_NETLINK, SOCK_DGRAM | SOCK_CLOEXEC, NETLINK_KOBJECT_UEVENT)) < 0) {
         PLOG(ERROR) << "Unable to create uevent socket";
         return -1;
     }
@@ -76,7 +73,7 @@ int NetlinkManager::start() {
         goto out;
     }
 
-    if (bind(mSock, (struct sockaddr *) &nladdr, sizeof(nladdr)) < 0) {
+    if (bind(mSock, (struct sockaddr*)&nladdr, sizeof(nladdr)) < 0) {
         PLOG(ERROR) << "Unable to bind uevent socket";
         goto out;
     }
