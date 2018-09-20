@@ -67,6 +67,7 @@
 #include "model/ObbVolume.h"
 
 using android::base::GetBoolProperty;
+using android::base::StartsWith;
 using android::base::StringAppendF;
 using android::base::StringPrintf;
 using android::base::unique_fd;
@@ -105,7 +106,7 @@ VolumeManager::~VolumeManager() {}
 
 int VolumeManager::updateVirtualDisk() {
     ATRACE_NAME("VolumeManager::updateVirtualDisk");
-    if (android::base::GetBoolProperty(kPropVirtualDisk, false)) {
+    if (GetBoolProperty(kPropVirtualDisk, false)) {
         if (access(kPathVirtualDisk, F_OK) != 0) {
             Loop::createImageFile(kPathVirtualDisk, kSizeVirtualDisk / 512);
         }
@@ -690,7 +691,7 @@ std::string VolumeManager::prepareSubDirs(const std::string& pathPrefix, const s
 std::string VolumeManager::prepareSandboxSource(uid_t uid, const std::string& sandboxId,
                                                 const std::string& sandboxRootDir) {
     std::string sandboxSourceDir(sandboxRootDir);
-    if (android::base::StartsWith(sandboxId, "shared:")) {
+    if (StartsWith(sandboxId, "shared:")) {
         StringAppendF(&sandboxSourceDir, "/shared/%s", sandboxId.substr(7).c_str());
     } else {
         StringAppendF(&sandboxSourceDir, "/%s", sandboxId.c_str());
@@ -1159,10 +1160,12 @@ int VolumeManager::unmountAll() {
     mntent* mentry;
     while ((mentry = getmntent(fp)) != NULL) {
         auto test = std::string(mentry->mnt_dir);
-        if ((android::base::StartsWith(test, "/mnt/") &&
-             !android::base::StartsWith(test, "/mnt/vendor") &&
-             !android::base::StartsWith(test, "/mnt/product")) ||
-            android::base::StartsWith(test, "/storage/")) {
+        if ((StartsWith(test, "/mnt/") &&
+#ifdef __ANDROID_DEBUGGABLE__
+             !StartsWith(test, "/mnt/scratch") &&
+#endif
+             !StartsWith(test, "/mnt/vendor") && !StartsWith(test, "/mnt/product")) ||
+            StartsWith(test, "/storage/")) {
             toUnmount.push_front(test);
         }
     }
@@ -1178,7 +1181,7 @@ int VolumeManager::unmountAll() {
 
 int VolumeManager::mkdirs(const std::string& path) {
     // Only offer to create directories for paths managed by vold
-    if (android::base::StartsWith(path, "/storage/")) {
+    if (StartsWith(path, "/storage/")) {
         // fs_mkdirs() does symlink checking and relative path enforcement
         return fs_mkdirs(path.c_str(), 0700);
     } else {
@@ -1200,7 +1203,7 @@ static android::status_t getMountPath(uid_t uid, const std::string& name, std::s
             return -EINVAL;
         }
     }
-    *path = android::base::StringPrintf("/mnt/appfuse/%d_%s", uid, name.c_str());
+    *path = StringPrintf("/mnt/appfuse/%d_%s", uid, name.c_str());
     return android::OK;
 }
 
@@ -1208,7 +1211,7 @@ static android::status_t mountInNamespace(uid_t uid, int device_fd, const std::s
     // Remove existing mount.
     android::vold::ForceUnmount(path);
 
-    const auto opts = android::base::StringPrintf(
+    const auto opts = StringPrintf(
         "fd=%i,"
         "rootmode=40000,"
         "default_permissions,"
@@ -1243,7 +1246,7 @@ static android::status_t runCommandInNamespace(const std::string& command, uid_t
     }
 
     // Obtains process file descriptor.
-    const std::string pid_str = android::base::StringPrintf("%d", pid);
+    const std::string pid_str = StringPrintf("%d", pid);
     const unique_fd pid_fd(openat(dir.get(), pid_str.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
     if (pid_fd.get() == -1) {
         PLOG(ERROR) << "Failed to open /proc/" << pid;
@@ -1352,8 +1355,7 @@ int VolumeManager::destroyObb(const std::string& volId) {
     return android::OK;
 }
 
-int VolumeManager::mountAppFuse(uid_t uid, pid_t pid, int mountId,
-                                android::base::unique_fd* device_fd) {
+int VolumeManager::mountAppFuse(uid_t uid, pid_t pid, int mountId, unique_fd* device_fd) {
     std::string name = std::to_string(mountId);
 
     // Check mount point name.
