@@ -20,7 +20,7 @@
 #include <fstab/fstab.h>
 #include <sys/cdefs.h>
 
-extern struct fstab *fstab_default;
+extern struct fstab* fstab_default;
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
 

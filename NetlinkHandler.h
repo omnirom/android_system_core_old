@@ -19,16 +19,15 @@
 
 #include <sysutils/NetlinkListener.h>
 
-class NetlinkHandler: public NetlinkListener {
-
-public:
+class NetlinkHandler : public NetlinkListener {
+  public:
     explicit NetlinkHandler(int listenerSocket);
     virtual ~NetlinkHandler();
 
     int start(void);
     int stop(void);
 
-protected:
-    virtual void onEvent(NetlinkEvent *evt);
+  protected:
+    virtual void onEvent(NetlinkEvent* evt);
 };
 #endif

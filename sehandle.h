@@ -19,6 +19,6 @@
 
 #include <selinux/android.h>
 
-extern struct selabel_handle *sehandle;
+extern struct selabel_handle* sehandle;
 
 #endif

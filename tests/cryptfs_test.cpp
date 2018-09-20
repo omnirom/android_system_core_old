@@ -21,12 +21,10 @@
 namespace android {
 
 class CryptfsTest : public testing::Test {
-protected:
-    virtual void SetUp() {
-    }
+  protected:
+    virtual void SetUp() {}
 
-    virtual void TearDown() {
-    }
+    virtual void TearDown() {}
 };
 
 TEST_F(CryptfsTest, MatchMultiEntryTest) {
@@ -51,4 +49,4 @@ TEST_F(CryptfsTest, MatchMultiEntryTest) {
     ASSERT_EQ(0, match_multi_entry("foo_2", "bar", 0));
 }
 
-}
+}  // namespace android

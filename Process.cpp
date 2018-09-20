@@ -14,28 +14,28 @@
  * limitations under the License.
  */
 
-#include <stdio.h>
-#include <unistd.h>
+#include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
-#include <string.h>
 #include <fcntl.h>
 #include <fts.h>
-#include <dirent.h>
-#include <ctype.h>
-#include <pwd.h>
-#include <stdlib.h>
 #include <poll.h>
-#include <sys/stat.h>
+#include <pwd.h>
 #include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <fstream>
 #include <unordered_set>
 
 #include <android-base/file.h>
-#include <android-base/parseint.h>
-#include <android-base/strings.h>
-#include <android-base/stringprintf.h>
 #include <android-base/logging.h>
+#include <android-base/parseint.h>
+#include <android-base/stringprintf.h>
+#include <android-base/strings.h>
 
 #include "Process.h"
 

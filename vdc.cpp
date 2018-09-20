@@ -14,15 +14,14 @@
  * limitations under the License.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <signal.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <stdlib.h>
 #include <poll.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include <sys/select.h>
 #include <sys/time.h>
@@ -38,7 +37,7 @@
 
 #include <private/android_filesystem_config.h>
 
-static void usage(char *progname);
+static void usage(char* progname);
 
 static android::sp<android::IBinder> getServiceAggressive() {
     android::sp<android::IBinder> res;
@@ -50,7 +49,7 @@ static android::sp<android::IBinder> getServiceAggressive() {
             LOG(VERBOSE) << "Waited " << (i * 10) << "ms for vold";
             break;
         }
-        usleep(10000); // 10ms
+        usleep(10000);  // 10ms
     }
     return res;
 }
@@ -112,6 +111,6 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-static void usage(char *progname) {
+static void usage(char* progname) {
     LOG(INFO) << "Usage: " << progname << " [--wait] <system> <subcommand> [args...]";
 }

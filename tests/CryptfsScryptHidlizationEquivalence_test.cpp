@@ -18,13 +18,13 @@
 #define LOG_TAG "scrypt_test"
 #include <log/log.h>
 
+#include <gtest/gtest.h>
 #include <hardware/keymaster0.h>
 #include <hardware/keymaster1.h>
 #include <cstring>
-#include <gtest/gtest.h>
 
-#include "../cryptfs.h"
 #include "../Keymaster.h"
+#include "../cryptfs.h"
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
 #include "cryptfs_hw.h"
@@ -50,9 +50,8 @@
 #define RSA_EXPONENT 0x10001
 #define KEYMASTER_CRYPTFS_RATE_LIMIT 1  // Maximum one try per second
 
-static int keymaster_init(keymaster0_device_t **keymaster0_dev,
-                          keymaster1_device_t **keymaster1_dev)
-{
+static int keymaster_init(keymaster0_device_t** keymaster0_dev,
+                          keymaster1_device_t** keymaster1_dev) {
     int rc;
 
     const hw_module_t* mod;
@@ -76,8 +75,8 @@ static int keymaster_init(keymaster0_device_t **keymaster0_dev,
     }
 
     if (rc) {
-        ALOGE("could not open keymaster device in %s (%s)",
-              KEYSTORE_HARDWARE_MODULE_ID, strerror(-rc));
+        ALOGE("could not open keymaster device in %s (%s)", KEYSTORE_HARDWARE_MODULE_ID,
+              strerror(-rc));
         goto err;
     }
 
@@ -90,10 +89,9 @@ err:
 }
 
 /* Should we use keymaster? */
-static int keymaster_check_compatibility_old()
-{
-    keymaster0_device_t *keymaster0_dev = 0;
-    keymaster1_device_t *keymaster1_dev = 0;
+static int keymaster_check_compatibility_old() {
+    keymaster0_device_t* keymaster0_dev = 0;
+    keymaster1_device_t* keymaster1_dev = 0;
     int rc = 0;
 
     if (keymaster_init(&keymaster0_dev, &keymaster1_dev)) {
@@ -114,8 +112,7 @@ static int keymaster_check_compatibility_old()
 
     // TODO(swillden): Check to see if there's any reason to require v0.3.  I think v0.1 and v0.2
     // should work.
-    if (keymaster0_dev->common.module->module_api_version
-            < KEYMASTER_MODULE_API_VERSION_0_3) {
+    if (keymaster0_dev->common.module->module_api_version < KEYMASTER_MODULE_API_VERSION_0_3) {
         rc = 0;
         goto out;
     }
@@ -136,11 +133,10 @@ out:
 }
 
 /* Create a new keymaster key and store it in this footer */
-static int keymaster_create_key_old(struct crypt_mnt_ftr *ftr)
-{
+static int keymaster_create_key_old(struct crypt_mnt_ftr* ftr) {
     uint8_t* key = 0;
-    keymaster0_device_t *keymaster0_dev = 0;
-    keymaster1_device_t *keymaster1_dev = 0;
+    keymaster0_device_t* keymaster0_dev = 0;
+    keymaster1_device_t* keymaster1_dev = 0;
 
     if (ftr->keymaster_blob_size) {
         SLOGI("Already have key");
@@ -177,11 +173,10 @@ static int keymaster_create_key_old(struct crypt_mnt_ftr *ftr)
             /* Rate-limit key usage attempts, to rate-limit brute force */
             keymaster_param_int(KM_TAG_MIN_SECONDS_BETWEEN_OPS, KEYMASTER_CRYPTFS_RATE_LIMIT),
         };
-        keymaster_key_param_set_t param_set = { params, sizeof(params)/sizeof(*params) };
+        keymaster_key_param_set_t param_set = {params, sizeof(params) / sizeof(*params)};
         keymaster_key_blob_t key_blob;
-        keymaster_error_t error = keymaster1_dev->generate_key(keymaster1_dev, &param_set,
-                                                               &key_blob,
-                                                               NULL /* characteristics */);
+        keymaster_error_t error = keymaster1_dev->generate_key(
+            keymaster1_dev, &param_set, &key_blob, NULL /* characteristics */);
         if (error != KM_ERROR_OK) {
             SLOGE("Failed to generate keymaster1 key, error %d", error);
             rc = -1;
@@ -190,15 +185,13 @@ static int keymaster_create_key_old(struct crypt_mnt_ftr *ftr)
 
         key = (uint8_t*)key_blob.key_material;
         key_size = key_blob.key_material_size;
-    }
-    else if (keymaster0_dev) {
+    } else if (keymaster0_dev) {
         keymaster_rsa_keygen_params_t params;
         memset(&params, '\0', sizeof(params));
         params.public_exponent = RSA_EXPONENT;
         params.modulus_size = RSA_KEY_SIZE;
 
-        if (keymaster0_dev->generate_keypair(keymaster0_dev, TYPE_RSA, &params,
-                                             &key, &key_size)) {
+        if (keymaster0_dev->generate_keypair(keymaster0_dev, TYPE_RSA, &params, &key, &key_size)) {
             SLOGE("Failed to generate keypair");
             rc = -1;
             goto out;
@@ -219,24 +212,19 @@ static int keymaster_create_key_old(struct crypt_mnt_ftr *ftr)
     ftr->keymaster_blob_size = key_size;
 
 out:
-    if (keymaster0_dev)
-        keymaster0_close(keymaster0_dev);
-    if (keymaster1_dev)
-        keymaster1_close(keymaster1_dev);
+    if (keymaster0_dev) keymaster0_close(keymaster0_dev);
+    if (keymaster1_dev) keymaster1_close(keymaster1_dev);
     free(key);
     return rc;
 }
 
 /* This signs the given object using the keymaster key. */
-static int keymaster_sign_object_old(struct crypt_mnt_ftr *ftr,
-                                 const unsigned char *object,
-                                 const size_t object_size,
-                                 unsigned char **signature,
-                                 size_t *signature_size)
-{
+static int keymaster_sign_object_old(struct crypt_mnt_ftr* ftr, const unsigned char* object,
+                                     const size_t object_size, unsigned char** signature,
+                                     size_t* signature_size) {
     int rc = 0;
-    keymaster0_device_t *keymaster0_dev = 0;
-    keymaster1_device_t *keymaster1_dev = 0;
+    keymaster0_device_t* keymaster0_dev = 0;
+    keymaster1_device_t* keymaster1_dev = 0;
 
     unsigned char to_sign[RSA_KEY_SIZE_BYTES];
     size_t to_sign_size = sizeof(to_sign);
@@ -284,32 +272,25 @@ static int keymaster_sign_object_old(struct crypt_mnt_ftr *ftr,
         params.digest_type = DIGEST_NONE;
         params.padding_type = PADDING_NONE;
 
-        rc = keymaster0_dev->sign_data(keymaster0_dev,
-                                      &params,
-                                      ftr->keymaster_blob,
-                                      ftr->keymaster_blob_size,
-                                      to_sign,
-                                      to_sign_size,
-                                      signature,
-                                      signature_size);
+        rc = keymaster0_dev->sign_data(keymaster0_dev, &params, ftr->keymaster_blob,
+                                       ftr->keymaster_blob_size, to_sign, to_sign_size, signature,
+                                       signature_size);
         goto out;
     } else if (keymaster1_dev) {
-        keymaster_key_blob_t key = { ftr->keymaster_blob, ftr->keymaster_blob_size };
+        keymaster_key_blob_t key = {ftr->keymaster_blob, ftr->keymaster_blob_size};
         keymaster_key_param_t params[] = {
             keymaster_param_enum(KM_TAG_PADDING, KM_PAD_NONE),
             keymaster_param_enum(KM_TAG_DIGEST, KM_DIGEST_NONE),
         };
-        keymaster_key_param_set_t param_set = { params, sizeof(params)/sizeof(*params) };
+        keymaster_key_param_set_t param_set = {params, sizeof(params) / sizeof(*params)};
         keymaster_operation_handle_t op_handle;
-        keymaster_error_t error = keymaster1_dev->begin(keymaster1_dev, KM_PURPOSE_SIGN, &key,
-                                                        &param_set, NULL /* out_params */,
-                                                        &op_handle);
+        keymaster_error_t error = keymaster1_dev->begin(
+            keymaster1_dev, KM_PURPOSE_SIGN, &key, &param_set, NULL /* out_params */, &op_handle);
         if (error == KM_ERROR_KEY_RATE_LIMIT_EXCEEDED) {
             // Key usage has been rate-limited.  Wait a bit and try again.
             sleep(KEYMASTER_CRYPTFS_RATE_LIMIT);
-            error = keymaster1_dev->begin(keymaster1_dev, KM_PURPOSE_SIGN, &key,
-                                          &param_set, NULL /* out_params */,
-                                          &op_handle);
+            error = keymaster1_dev->begin(keymaster1_dev, KM_PURPOSE_SIGN, &key, &param_set,
+                                          NULL /* out_params */, &op_handle);
         }
         if (error != KM_ERROR_OK) {
             SLOGE("Error starting keymaster signature transaction: %d", error);
@@ -317,11 +298,10 @@ static int keymaster_sign_object_old(struct crypt_mnt_ftr *ftr,
             goto out;
         }
 
-        keymaster_blob_t input = { to_sign, to_sign_size };
+        keymaster_blob_t input = {to_sign, to_sign_size};
         size_t input_consumed;
-        error = keymaster1_dev->update(keymaster1_dev, op_handle, NULL /* in_params */,
-                                       &input, &input_consumed, NULL /* out_params */,
-                                       NULL /* output */);
+        error = keymaster1_dev->update(keymaster1_dev, op_handle, NULL /* in_params */, &input,
+                                       &input_consumed, NULL /* out_params */, NULL /* output */);
         if (error != KM_ERROR_OK) {
             SLOGE("Error sending data to keymaster signature transaction: %d", error);
             rc = -1;
@@ -337,8 +317,7 @@ static int keymaster_sign_object_old(struct crypt_mnt_ftr *ftr,
 
         keymaster_blob_t tmp_sig;
         error = keymaster1_dev->finish(keymaster1_dev, op_handle, NULL /* in_params */,
-                                       NULL /* verify signature */, NULL /* out_params */,
-                                       &tmp_sig);
+                                       NULL /* verify signature */, NULL /* out_params */, &tmp_sig);
         if (error != KM_ERROR_OK) {
             SLOGE("Error finishing keymaster signature transaction: %d", error);
             rc = -1;
@@ -353,19 +332,15 @@ static int keymaster_sign_object_old(struct crypt_mnt_ftr *ftr,
         goto out;
     }
 
-    out:
-        if (keymaster1_dev)
-            keymaster1_close(keymaster1_dev);
-        if (keymaster0_dev)
-            keymaster0_close(keymaster0_dev);
+out:
+    if (keymaster1_dev) keymaster1_close(keymaster1_dev);
+    if (keymaster0_dev) keymaster0_close(keymaster0_dev);
 
-        return rc;
+    return rc;
 }
 
-
 /* Should we use keymaster? */
-static int keymaster_check_compatibility_new()
-{
+static int keymaster_check_compatibility_new() {
     return keymaster_compatibility_cryptfs_scrypt();
 }
 
@@ -394,12 +369,9 @@ static int keymaster_create_key_new(struct crypt_mnt_ftr *ftr)
 #endif
 
 /* This signs the given object using the keymaster key. */
-static int keymaster_sign_object_new(struct crypt_mnt_ftr *ftr,
-                                 const unsigned char *object,
-                                 const size_t object_size,
-                                 unsigned char **signature,
-                                 size_t *signature_size)
-{
+static int keymaster_sign_object_new(struct crypt_mnt_ftr* ftr, const unsigned char* object,
+                                     const size_t object_size, unsigned char** signature,
+                                     size_t* signature_size) {
     unsigned char to_sign[RSA_KEY_SIZE_BYTES];
     size_t to_sign_size = sizeof(to_sign);
     memset(to_sign, 0, RSA_KEY_SIZE_BYTES);
@@ -443,12 +415,10 @@ static int keymaster_sign_object_new(struct crypt_mnt_ftr *ftr,
 namespace android {
 
 class CryptFsTest : public testing::Test {
-protected:
-    virtual void SetUp() {
-    }
+  protected:
+    virtual void SetUp() {}
 
-    virtual void TearDown() {
-    }
+    virtual void TearDown() {}
 };
 
 TEST_F(CryptFsTest, ScryptHidlizationEquivalenceTest) {
@@ -458,8 +428,8 @@ TEST_F(CryptFsTest, ScryptHidlizationEquivalenceTest) {
 
     ASSERT_EQ(0, keymaster_create_key_old(&ftr));
 
-    uint8_t *sig1 = nullptr;
-    uint8_t *sig2 = nullptr;
+    uint8_t* sig1 = nullptr;
+    uint8_t* sig2 = nullptr;
     size_t sig_size1 = 123456789;
     size_t sig_size2 = 123456789;
     uint8_t object[] = "the object";
@@ -477,4 +447,4 @@ TEST_F(CryptFsTest, ScryptHidlizationEquivalenceTest) {
     free(sig2);
 }
 
-}
+}  // namespace android
