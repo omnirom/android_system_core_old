@@ -19,20 +19,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-bool parse_scrypt_parameters(const char* paramstr, int *Nf, int *rf, int *pf) {
+bool parse_scrypt_parameters(const char* paramstr, int* Nf, int* rf, int* pf) {
     int params[3] = {};
-    char *token;
-    char *saveptr;
+    char* token;
+    char* saveptr;
     int i;
 
     /*
      * The token we're looking for should be three integers separated by
      * colons (e.g., "12:8:1"). Scan the property to make sure it matches.
      */
-    for (i = 0, token = strtok_r(const_cast<char *>(paramstr), ":", &saveptr);
-            token != nullptr && i < 3;
-            i++, token = strtok_r(nullptr, ":", &saveptr)) {
-        char *endptr;
+    for (i = 0, token = strtok_r(const_cast<char*>(paramstr), ":", &saveptr);
+         token != nullptr && i < 3; i++, token = strtok_r(nullptr, ":", &saveptr)) {
+        char* endptr;
         params[i] = strtol(token, &endptr, 10);
 
         /*
@@ -45,6 +44,8 @@ bool parse_scrypt_parameters(const char* paramstr, int *Nf, int *rf, int *pf) {
     if (token != nullptr) {
         return false;
     }
-    *Nf = params[0]; *rf = params[1]; *pf = params[2];
+    *Nf = params[0];
+    *rf = params[1];
+    *pf = params[2];
     return true;
 }

@@ -568,7 +568,10 @@ bool destroyKey(const std::string& dir) {
         success &= deleteKey(dir);
     }
     auto secdiscard_cmd = std::vector<std::string>{
-        kSecdiscardPath, "--", dir + "/" + kFn_encrypted_key, dir + "/" + kFn_secdiscardable,
+        kSecdiscardPath,
+        "--",
+        dir + "/" + kFn_encrypted_key,
+        dir + "/" + kFn_secdiscardable,
     };
     if (uses_km) {
         secdiscard_cmd.emplace_back(dir + "/" + kFn_keymaster_key_blob);

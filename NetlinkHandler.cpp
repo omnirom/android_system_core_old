@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
 
 #include <android-base/logging.h>
@@ -25,12 +25,9 @@
 #include "NetlinkHandler.h"
 #include "VolumeManager.h"
 
-NetlinkHandler::NetlinkHandler(int listenerSocket) :
-                NetlinkListener(listenerSocket) {
-}
+NetlinkHandler::NetlinkHandler(int listenerSocket) : NetlinkListener(listenerSocket) {}
 
-NetlinkHandler::~NetlinkHandler() {
-}
+NetlinkHandler::~NetlinkHandler() {}
 
 int NetlinkHandler::start() {
     return this->startListener();
@@ -40,9 +37,9 @@ int NetlinkHandler::stop() {
     return this->stopListener();
 }
 
-void NetlinkHandler::onEvent(NetlinkEvent *evt) {
-    VolumeManager *vm = VolumeManager::Instance();
-    const char *subsys = evt->getSubsystem();
+void NetlinkHandler::onEvent(NetlinkEvent* evt) {
+    VolumeManager* vm = VolumeManager::Instance();
+    const char* subsys = evt->getSubsystem();
 
     if (!subsys) {
         LOG(WARNING) << "No subsystem found in netlink event";

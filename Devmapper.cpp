@@ -16,23 +16,22 @@
 
 #define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
 
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <errno.h>
 #include <string.h>
-#include <stdlib.h>
+#include <unistd.h>
 
-#include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 #include <linux/kdev_t.h>
 
 #include <android-base/logging.h>
-#include <android-base/strings.h>
 #include <android-base/stringprintf.h>
+#include <android-base/strings.h>
 #include <utils/Trace.h>
 
 #include "Devmapper.h"
@@ -43,8 +42,7 @@ using android::base::StringPrintf;
 
 static const char* kVoldPrefix = "vold:";
 
-void Devmapper::ioctlInit(struct dm_ioctl *io, size_t dataSize,
-                          const char *name, unsigned flags) {
+void Devmapper::ioctlInit(struct dm_ioctl* io, size_t dataSize, const char* name, unsigned flags) {
     memset(io, 0, dataSize);
     io->data_size = dataSize;
     io->data_start = sizeof(struct dm_ioctl);
@@ -54,17 +52,16 @@ void Devmapper::ioctlInit(struct dm_ioctl *io, size_t dataSize,
     io->flags = flags;
     if (name) {
         size_t ret = strlcpy(io->name, name, sizeof(io->name));
-        if (ret >= sizeof(io->name))
-            abort();
+        if (ret >= sizeof(io->name)) abort();
     }
 }
 
-int Devmapper::create(const char *name_raw, const char *loopFile, const char *key,
-                      unsigned long numSectors, char *ubuffer, size_t len) {
+int Devmapper::create(const char* name_raw, const char* loopFile, const char* key,
+                      unsigned long numSectors, char* ubuffer, size_t len) {
     auto name_string = StringPrintf("%s%s", kVoldPrefix, name_raw);
     const char* name = name_string.c_str();
 
-    char *buffer = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
+    char* buffer = (char*)malloc(DEVMAPPER_BUFFER_SIZE);
     if (!buffer) {
         PLOG(ERROR) << "Failed malloc";
         return -1;
@@ -77,8 +74,8 @@ int Devmapper::create(const char *name_raw, const char *loopFile, const char *ke
         return -1;
     }
 
-    struct dm_ioctl *io = (struct dm_ioctl *) buffer;
- 
+    struct dm_ioctl* io = (struct dm_ioctl*)buffer;
+
     // Create the DM device
     ioctlInit(io, DEVMAPPER_BUFFER_SIZE, name, 0);
 
@@ -92,11 +89,11 @@ int Devmapper::create(const char *name_raw, const char *loopFile, const char *ke
     // Set the legacy geometry
     ioctlInit(io, DEVMAPPER_BUFFER_SIZE, name, 0);
 
-    char *geoParams = buffer + sizeof(struct dm_ioctl);
+    char* geoParams = buffer + sizeof(struct dm_ioctl);
     // bps=512 spc=8 res=32 nft=2 sec=8190 mid=0xf0 spt=63 hds=64 hid=0 bspf=8 rdcl=2 infs=1 bkbs=2
     strlcpy(geoParams, "0 64 63 0", DEVMAPPER_BUFFER_SIZE - sizeof(struct dm_ioctl));
     geoParams += strlen(geoParams) + 1;
-    geoParams = (char *) _align(geoParams, 8);
+    geoParams = (char*)_align(geoParams, 8);
     if (ioctl(fd, DM_DEV_SET_GEOMETRY, io)) {
         PLOG(ERROR) << "Failed DM_DEV_SET_GEOMETRY";
         free(buffer);
@@ -117,8 +114,8 @@ int Devmapper::create(const char *name_raw, const char *loopFile, const char *ke
     snprintf(ubuffer, len, "/dev/block/dm-%u", minor);
 
     // Load the table
-    struct dm_target_spec *tgt;
-    tgt = (struct dm_target_spec *) &buffer[sizeof(struct dm_ioctl)];
+    struct dm_target_spec* tgt;
+    tgt = (struct dm_target_spec*)&buffer[sizeof(struct dm_ioctl)];
 
     ioctlInit(io, DEVMAPPER_BUFFER_SIZE, name, DM_STATUS_TABLE_FLAG);
     io->target_count = 1;
@@ -129,12 +126,12 @@ int Devmapper::create(const char *name_raw, const char *loopFile, const char *ke
 
     strlcpy(tgt->target_type, "crypt", sizeof(tgt->target_type));
 
-    char *cryptParams = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);
+    char* cryptParams = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);
     snprintf(cryptParams,
-            DEVMAPPER_BUFFER_SIZE - (sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec)),
-            "twofish %s 0 %s 0", key, loopFile);
+             DEVMAPPER_BUFFER_SIZE - (sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec)),
+             "twofish %s 0 %s 0", key, loopFile);
     cryptParams += strlen(cryptParams) + 1;
-    cryptParams = (char *) _align(cryptParams, 8);
+    cryptParams = (char*)_align(cryptParams, 8);
     tgt->next = cryptParams - buffer;
 
     if (ioctl(fd, DM_TABLE_LOAD, io)) {
@@ -160,11 +157,11 @@ int Devmapper::create(const char *name_raw, const char *loopFile, const char *ke
     return 0;
 }
 
-int Devmapper::destroy(const char *name_raw) {
+int Devmapper::destroy(const char* name_raw) {
     auto name_string = StringPrintf("%s%s", kVoldPrefix, name_raw);
     const char* name = name_string.c_str();
 
-    char *buffer = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
+    char* buffer = (char*)malloc(DEVMAPPER_BUFFER_SIZE);
     if (!buffer) {
         PLOG(ERROR) << "Failed malloc";
         return -1;
@@ -177,8 +174,8 @@ int Devmapper::destroy(const char *name_raw) {
         return -1;
     }
 
-    struct dm_ioctl *io = (struct dm_ioctl *) buffer;
- 
+    struct dm_ioctl* io = (struct dm_ioctl*)buffer;
+
     // Create the DM device
     ioctlInit(io, DEVMAPPER_BUFFER_SIZE, name, 0);
 
@@ -198,14 +195,14 @@ int Devmapper::destroy(const char *name_raw) {
 
 int Devmapper::destroyAll() {
     ATRACE_NAME("Devmapper::destroyAll");
-    char *buffer = (char *) malloc(1024 * 64);
+    char* buffer = (char*)malloc(1024 * 64);
     if (!buffer) {
         PLOG(ERROR) << "Failed malloc";
         return -1;
     }
     memset(buffer, 0, (1024 * 64));
 
-    char *buffer2 = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
+    char* buffer2 = (char*)malloc(DEVMAPPER_BUFFER_SIZE);
     if (!buffer2) {
         PLOG(ERROR) << "Failed malloc";
         free(buffer);
@@ -220,7 +217,7 @@ int Devmapper::destroyAll() {
         return -1;
     }
 
-    struct dm_ioctl *io = (struct dm_ioctl *) buffer;
+    struct dm_ioctl* io = (struct dm_ioctl*)buffer;
     ioctlInit(io, (1024 * 64), NULL, 0);
 
     if (ioctl(fd, DM_LIST_DEVICES, io)) {
@@ -231,7 +228,7 @@ int Devmapper::destroyAll() {
         return -1;
     }
 
-    struct dm_name_list *n = (struct dm_name_list *) (((char *) buffer) + io->data_start);
+    struct dm_name_list* n = (struct dm_name_list*)(((char*)buffer) + io->data_start);
     if (!n->dev) {
         free(buffer);
         free(buffer2);
@@ -241,13 +238,13 @@ int Devmapper::destroyAll() {
 
     unsigned nxt = 0;
     do {
-        n = (struct dm_name_list *) (((char *) n) + nxt);
+        n = (struct dm_name_list*)(((char*)n) + nxt);
         auto name = std::string(n->name);
         if (android::base::StartsWith(name, kVoldPrefix)) {
             LOG(DEBUG) << "Tearing down stale dm device named " << name;
 
             memset(buffer2, 0, DEVMAPPER_BUFFER_SIZE);
-            struct dm_ioctl *io2 = (struct dm_ioctl *) buffer2;
+            struct dm_ioctl* io2 = (struct dm_ioctl*)buffer2;
             ioctlInit(io2, DEVMAPPER_BUFFER_SIZE, n->name, 0);
             if (ioctl(fd, DM_DEV_REMOVE, io2)) {
                 if (errno != ENXIO) {
@@ -266,9 +263,8 @@ int Devmapper::destroyAll() {
     return 0;
 }
 
-void *Devmapper::_align(void *ptr, unsigned int a)
-{
-        unsigned long agn = --a;
+void* Devmapper::_align(void* ptr, unsigned int a) {
+    unsigned long agn = --a;
 
-        return (void *) (((unsigned long) ptr + agn) & ~agn);
+    return (void*)(((unsigned long)ptr + agn) & ~agn);
 }
