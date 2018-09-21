@@ -137,12 +137,12 @@ static status_t benchmarkInternal(const std::string& rootPath,
     // Only drop when we haven't aborted
     if (res == OK) {
         android::base::Timer timer;
-        LOG(VERBOSE) << "Before drop_caches";
+        LOG(DEBUG) << "Before drop_caches";
         if (!WriteStringToFile("3", "/proc/sys/vm/drop_caches")) {
             PLOG(ERROR) << "Failed to drop_caches";
             res = -1;
         }
-        LOG(VERBOSE) << "After drop_caches";
+        LOG(DEBUG) << "After drop_caches";
         sync();
         if (res == OK) extras->putLong(String16("drop"), timer.duration().count());
     }

@@ -53,17 +53,17 @@ using android::base::StringPrintf;
 
 int main(int argc, char** argv) {
     atrace_set_tracing_enabled(false);
-    setenv("ANDROID_LOG_TAGS", "*:v", 1);
+    setenv("ANDROID_LOG_TAGS", "*:d", 1);
     android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
 
     LOG(INFO) << "Vold 3.0 (the awakening) firing up";
 
     ATRACE_BEGIN("main");
 
-    LOG(VERBOSE) << "Detected support for:"
-                 << (android::vold::IsFilesystemSupported("ext4") ? " ext4" : "")
-                 << (android::vold::IsFilesystemSupported("f2fs") ? " f2fs" : "")
-                 << (android::vold::IsFilesystemSupported("vfat") ? " vfat" : "");
+    LOG(DEBUG) << "Detected support for:"
+               << (android::vold::IsFilesystemSupported("ext4") ? " ext4" : "")
+               << (android::vold::IsFilesystemSupported("f2fs") ? " f2fs" : "")
+               << (android::vold::IsFilesystemSupported("vfat") ? " vfat" : "");
 
     VolumeManager* vm;
     NetlinkManager* nm;
