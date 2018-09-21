@@ -26,8 +26,8 @@
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/sysmacros.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -79,11 +79,10 @@ static const unsigned int kMajorBlockMmc = 179;
 static const unsigned int kMajorBlockExperimentalMin = 240;
 static const unsigned int kMajorBlockExperimentalMax = 254;
 
-VolumeManager *VolumeManager::sInstance = NULL;
+VolumeManager* VolumeManager::sInstance = NULL;
 
-VolumeManager *VolumeManager::Instance() {
-    if (!sInstance)
-        sInstance = new VolumeManager();
+VolumeManager* VolumeManager::Instance() {
+    if (!sInstance) sInstance = new VolumeManager();
     return sInstance;
 }
 
@@ -95,8 +94,7 @@ VolumeManager::VolumeManager() {
     mSecureKeyguardShowing = true;
 }
 
-VolumeManager::~VolumeManager() {
-}
+VolumeManager::~VolumeManager() {}
 
 int VolumeManager::updateVirtualDisk() {
     ATRACE_NAME("VolumeManager::updateVirtualDisk");
@@ -117,8 +115,9 @@ int VolumeManager::updateVirtualDisk() {
                 return -1;
             }
 
-            auto disk = new android::vold::Disk("virtual", buf.st_rdev, "virtual",
-                    android::vold::Disk::Flags::kAdoptable | android::vold::Disk::Flags::kSd);
+            auto disk = new android::vold::Disk(
+                "virtual", buf.st_rdev, "virtual",
+                android::vold::Disk::Flags::kAdoptable | android::vold::Disk::Flags::kSd);
             mVirtualDisk = std::shared_ptr<android::vold::Disk>(disk);
             handleDiskAdded(mVirtualDisk);
         }
@@ -157,7 +156,7 @@ int VolumeManager::start() {
     // storage; the framework will decide if it should be mounted.
     CHECK(mInternalEmulated == nullptr);
     mInternalEmulated = std::shared_ptr<android::vold::VolumeBase>(
-            new android::vold::EmulatedVolume("/data/media"));
+        new android::vold::EmulatedVolume("/data/media"));
     mInternalEmulated->create();
 
     // Consider creating a virtual disk
@@ -173,17 +172,17 @@ int VolumeManager::stop() {
     return 0;
 }
 
-void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
+void VolumeManager::handleBlockEvent(NetlinkEvent* evt) {
     std::lock_guard<std::mutex> lock(mLock);
 
     if (mDebug) {
         LOG(VERBOSE) << "----------------";
-        LOG(VERBOSE) << "handleBlockEvent with action " << (int) evt->getAction();
+        LOG(VERBOSE) << "handleBlockEvent with action " << (int)evt->getAction();
         evt->dump();
     }
 
-    std::string eventPath(evt->findParam("DEVPATH")?evt->findParam("DEVPATH"):"");
-    std::string devType(evt->findParam("DEVTYPE")?evt->findParam("DEVTYPE"):"");
+    std::string eventPath(evt->findParam("DEVPATH") ? evt->findParam("DEVPATH") : "");
+    std::string devType(evt->findParam("DEVTYPE") ? evt->findParam("DEVTYPE") : "");
 
     if (devType != "disk") return;
 
@@ -192,43 +191,42 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
     dev_t device = makedev(major, minor);
 
     switch (evt->getAction()) {
-    case NetlinkEvent::Action::kAdd: {
-        for (const auto& source : mDiskSources) {
-            if (source->matches(eventPath)) {
-                // For now, assume that MMC and virtio-blk (the latter is
-                // emulator-specific; see Disk.cpp for details) devices are SD,
-                // and that everything else is USB
-                int flags = source->getFlags();
-                if (major == kMajorBlockMmc
-                    || (android::vold::IsRunningInEmulator()
-                    && major >= (int) kMajorBlockExperimentalMin
-                    && major <= (int) kMajorBlockExperimentalMax)) {
-                    flags |= android::vold::Disk::Flags::kSd;
-                } else {
-                    flags |= android::vold::Disk::Flags::kUsb;
-                }
+        case NetlinkEvent::Action::kAdd: {
+            for (const auto& source : mDiskSources) {
+                if (source->matches(eventPath)) {
+                    // For now, assume that MMC and virtio-blk (the latter is
+                    // emulator-specific; see Disk.cpp for details) devices are SD,
+                    // and that everything else is USB
+                    int flags = source->getFlags();
+                    if (major == kMajorBlockMmc || (android::vold::IsRunningInEmulator() &&
+                                                    major >= (int)kMajorBlockExperimentalMin &&
+                                                    major <= (int)kMajorBlockExperimentalMax)) {
+                        flags |= android::vold::Disk::Flags::kSd;
+                    } else {
+                        flags |= android::vold::Disk::Flags::kUsb;
+                    }
 
-                auto disk = new android::vold::Disk(eventPath, device,
-                        source->getNickname(), flags);
-                handleDiskAdded(std::shared_ptr<android::vold::Disk>(disk));
-                break;
+                    auto disk =
+                        new android::vold::Disk(eventPath, device, source->getNickname(), flags);
+                    handleDiskAdded(std::shared_ptr<android::vold::Disk>(disk));
+                    break;
+                }
             }
+            break;
         }
-        break;
-    }
-    case NetlinkEvent::Action::kChange: {
-        LOG(DEBUG) << "Disk at " << major << ":" << minor << " changed";
-        handleDiskChanged(device);
-        break;
-    }
-    case NetlinkEvent::Action::kRemove: {
-        handleDiskRemoved(device);
-        break;
-    }
-    default: {
-        LOG(WARNING) << "Unexpected block event action " << (int) evt->getAction();
-        break;
-    }
+        case NetlinkEvent::Action::kChange: {
+            LOG(DEBUG) << "Disk at " << major << ":" << minor << " changed";
+            handleDiskChanged(device);
+            break;
+        }
+        case NetlinkEvent::Action::kRemove: {
+            handleDiskRemoved(device);
+            break;
+        }
+        default: {
+            LOG(WARNING) << "Unexpected block event action " << (int)evt->getAction();
+            break;
+        }
     }
 }
 
@@ -237,7 +235,7 @@ void VolumeManager::handleDiskAdded(const std::shared_ptr<android::vold::Disk>& 
     // until the user unlocks the device to actually touch it
     if (mSecureKeyguardShowing) {
         LOG(INFO) << "Found disk at " << disk->getEventPath()
-                << " but delaying scan due to secure keyguard";
+                  << " but delaying scan due to secure keyguard";
         mPendingDisks.push_back(disk);
     } else {
         disk->create();
@@ -312,8 +310,7 @@ std::shared_ptr<android::vold::VolumeBase> VolumeManager::findVolume(const std::
     return nullptr;
 }
 
-void VolumeManager::listVolumes(android::vold::VolumeBase::Type type,
-        std::list<std::string>& list) {
+void VolumeManager::listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list) {
     list.clear();
     for (const auto& disk : mDisks) {
         disk->listVolumes(type, list);
@@ -497,7 +494,7 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
         }
 
         // We purposefully leave the namespace open across the fork
-        nsFd = openat(pidFd, "ns/mnt", O_RDONLY); // not O_CLOEXEC
+        nsFd = openat(pidFd, "ns/mnt", O_RDONLY);  // not O_CLOEXEC
         if (nsFd < 0) {
             PLOG(WARNING) << "Failed to open namespace for " << de->d_name;
             goto next;
@@ -522,26 +519,22 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
                 // Sane default of no storage visible
                 _exit(0);
             }
-            if (TEMP_FAILURE_RETRY(mount(storageSource.c_str(), "/storage",
-                    NULL, MS_BIND | MS_REC, NULL)) == -1) {
-                PLOG(ERROR) << "Failed to mount " << storageSource << " for "
-                        << de->d_name;
+            if (TEMP_FAILURE_RETRY(
+                    mount(storageSource.c_str(), "/storage", NULL, MS_BIND | MS_REC, NULL)) == -1) {
+                PLOG(ERROR) << "Failed to mount " << storageSource << " for " << de->d_name;
                 _exit(1);
             }
-            if (TEMP_FAILURE_RETRY(mount(NULL, "/storage", NULL,
-                    MS_REC | MS_SLAVE, NULL)) == -1) {
-                PLOG(ERROR) << "Failed to set MS_SLAVE to /storage for "
-                        << de->d_name;
+            if (TEMP_FAILURE_RETRY(mount(NULL, "/storage", NULL, MS_REC | MS_SLAVE, NULL)) == -1) {
+                PLOG(ERROR) << "Failed to set MS_SLAVE to /storage for " << de->d_name;
                 _exit(1);
             }
 
             // Mount user-specific symlink helper into place
             userid_t user_id = multiuser_get_user_id(uid);
             std::string userSource(StringPrintf("/mnt/user/%d", user_id));
-            if (TEMP_FAILURE_RETRY(mount(userSource.c_str(), "/storage/self",
-                    NULL, MS_BIND, NULL)) == -1) {
-                PLOG(ERROR) << "Failed to mount " << userSource << " for "
-                        << de->d_name;
+            if (TEMP_FAILURE_RETRY(
+                    mount(userSource.c_str(), "/storage/self", NULL, MS_BIND, NULL)) == -1) {
+                PLOG(ERROR) << "Failed to mount " << userSource << " for " << de->d_name;
                 _exit(1);
             }
 
@@ -555,7 +548,7 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
             TEMP_FAILURE_RETRY(waitpid(child, nullptr, 0));
         }
 
-next:
+    next:
         close(nsFd);
         close(pidFd);
     }
@@ -583,7 +576,7 @@ int VolumeManager::reset() {
 // Can be called twice (sequentially) during shutdown. should be safe for that.
 int VolumeManager::shutdown() {
     if (mInternalEmulated == nullptr) {
-        return 0; // already shutdown
+        return 0;  // already shutdown
     }
     android::vold::sSleepOnUnmount = false;
     mInternalEmulated->destroy();
@@ -673,20 +666,18 @@ static android::status_t mountInNamespace(uid_t uid, int device_fd, const std::s
     android::vold::ForceUnmount(path);
 
     const auto opts = android::base::StringPrintf(
-            "fd=%i,"
-            "rootmode=40000,"
-            "default_permissions,"
-            "allow_other,"
-            "user_id=%d,group_id=%d,"
-            "context=\"u:object_r:app_fuse_file:s0\","
-            "fscontext=u:object_r:app_fusefs:s0",
-            device_fd,
-            uid,
-            uid);
+        "fd=%i,"
+        "rootmode=40000,"
+        "default_permissions,"
+        "allow_other,"
+        "user_id=%d,group_id=%d,"
+        "context=\"u:object_r:app_fuse_file:s0\","
+        "fscontext=u:object_r:app_fusefs:s0",
+        device_fd, uid, uid);
 
-    const int result = TEMP_FAILURE_RETRY(mount(
-            "/dev/fuse", path.c_str(), "fuse",
-            MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME, opts.c_str()));
+    const int result =
+        TEMP_FAILURE_RETRY(mount("/dev/fuse", path.c_str(), "fuse",
+                                 MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME, opts.c_str()));
     if (result != 0) {
         PLOG(ERROR) << "Failed to mount " << path;
         return -errno;
@@ -695,11 +686,8 @@ static android::status_t mountInNamespace(uid_t uid, int device_fd, const std::s
     return android::OK;
 }
 
-static android::status_t runCommandInNamespace(const std::string& command,
-                                               uid_t uid,
-                                               pid_t pid,
-                                               const std::string& path,
-                                               int device_fd) {
+static android::status_t runCommandInNamespace(const std::string& command, uid_t uid, pid_t pid,
+                                               const std::string& path, int device_fd) {
     if (DEBUG_APPFUSE) {
         LOG(DEBUG) << "Run app fuse command " << command << " for the path " << path
                    << " in namespace " << uid;
@@ -713,8 +701,7 @@ static android::status_t runCommandInNamespace(const std::string& command,
 
     // Obtains process file descriptor.
     const std::string pid_str = android::base::StringPrintf("%d", pid);
-    const unique_fd pid_fd(
-            openat(dir.get(), pid_str.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    const unique_fd pid_fd(openat(dir.get(), pid_str.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
     if (pid_fd.get() == -1) {
         PLOG(ERROR) << "Failed to open /proc/" << pid;
         return -errno;
@@ -730,7 +717,7 @@ static android::status_t runCommandInNamespace(const std::string& command,
         }
         if (sb.st_uid != AID_SYSTEM) {
             LOG(ERROR) << "Only system can mount appfuse. UID expected=" << AID_SYSTEM
-                    << ", actual=" << sb.st_uid;
+                       << ", actual=" << sb.st_uid;
             return -EPERM;
         }
     }
@@ -739,8 +726,8 @@ static android::status_t runCommandInNamespace(const std::string& command,
     {
         std::string rootName;
         std::string pidName;
-        if (!android::vold::Readlinkat(dir.get(), "1/ns/mnt", &rootName)
-                || !android::vold::Readlinkat(pid_fd.get(), "ns/mnt", &pidName)) {
+        if (!android::vold::Readlinkat(dir.get(), "1/ns/mnt", &rootName) ||
+            !android::vold::Readlinkat(pid_fd.get(), "ns/mnt", &pidName)) {
             PLOG(ERROR) << "Failed to read namespaces";
             return -EPERM;
         }
@@ -751,7 +738,7 @@ static android::status_t runCommandInNamespace(const std::string& command,
     }
 
     // We purposefully leave the namespace open across the fork
-    unique_fd ns_fd(openat(pid_fd.get(), "ns/mnt", O_RDONLY)); // not O_CLOEXEC
+    unique_fd ns_fd(openat(pid_fd.get(), "ns/mnt", O_RDONLY));  // not O_CLOEXEC
     if (ns_fd.get() < 0) {
         PLOG(ERROR) << "Failed to open namespace for /proc/" << pid << "/ns/mnt";
         return -errno;
@@ -769,8 +756,8 @@ static android::status_t runCommandInNamespace(const std::string& command,
         } else if (command == "unmount") {
             // If it's just after all FD opened on mount point are closed, umount2 can fail with
             // EBUSY. To avoid the case, specify MNT_DETACH.
-            if (umount2(path.c_str(), UMOUNT_NOFOLLOW | MNT_DETACH) != 0 &&
-                    errno != EINVAL && errno != ENOENT) {
+            if (umount2(path.c_str(), UMOUNT_NOFOLLOW | MNT_DETACH) != 0 && errno != EINVAL &&
+                errno != ENOENT) {
                 PLOG(ERROR) << "Failed to unmount directory.";
                 _exit(-errno);
             }
@@ -797,11 +784,11 @@ static android::status_t runCommandInNamespace(const std::string& command,
 }
 
 int VolumeManager::createObb(const std::string& sourcePath, const std::string& sourceKey,
-        int32_t ownerGid, std::string* outVolId) {
+                             int32_t ownerGid, std::string* outVolId) {
     int id = mNextObbId++;
 
     auto vol = std::shared_ptr<android::vold::VolumeBase>(
-            new android::vold::ObbVolume(id, sourcePath, sourceKey, ownerGid));
+        new android::vold::ObbVolume(id, sourcePath, sourceKey, ownerGid));
     vol->create();
 
     mObbVolumes.push_back(vol);
@@ -823,7 +810,7 @@ int VolumeManager::destroyObb(const std::string& volId) {
 }
 
 int VolumeManager::mountAppFuse(uid_t uid, pid_t pid, int mountId,
-        android::base::unique_fd* device_fd) {
+                                android::base::unique_fd* device_fd) {
     std::string name = std::to_string(mountId);
 
     // Check mount point name.
@@ -841,7 +828,7 @@ int VolumeManager::mountAppFuse(uid_t uid, pid_t pid, int mountId,
     }
 
     // Open device FD.
-    device_fd->reset(open("/dev/fuse", O_RDWR)); // not O_CLOEXEC
+    device_fd->reset(open("/dev/fuse", O_RDWR));  // not O_CLOEXEC
     if (device_fd->get() == -1) {
         PLOG(ERROR) << "Failed to open /dev/fuse";
         return -1;
