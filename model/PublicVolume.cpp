@@ -246,28 +246,53 @@ status_t PublicVolume::doUnmount() {
 }
 
 status_t PublicVolume::doFormat(const std::string& fsType) {
-    if ((fsType == "vfat" || fsType == "auto") && vfat::IsSupported()) {
-        if (WipeBlockDevice(mDevPath) != OK) {
-            LOG(WARNING) << getId() << " failed to wipe";
+    bool useVfat = vfat::IsSupported();
+    bool useExfat = exfat::IsSupported();
+    status_t res = OK;
+
+    // Resolve the target filesystem type
+    if (fsType == "auto" && useVfat && useExfat) {
+        uint64_t size = 0;
+
+        res = GetBlockDevSize(mDevPath, &size);
+        if (res != OK) {
+            LOG(ERROR) << "Couldn't get device size " << mDevPath;
+            return res;
         }
-        if (vfat::Format(mDevPath, 0)) {
-            LOG(ERROR) << getId() << " failed to format";
-            return -errno;
+
+        // If both vfat & exfat are supported use exfat for SDXC (>~32GiB) cards
+        if (size > 32896LL * 1024 * 1024) {
+            useVfat = false;
+        } else {
+            useExfat = false;
         }
-    } else if ((fsType == "exfat" || fsType == "auto") && exfat::IsSupported()) {
-        if (WipeBlockDevice(mDevPath) != OK) {
-            LOG(WARNING) << getId() << " failed to wipe";
-        }
-        if (exfat::Format(mDevPath)) {
-            LOG(ERROR) << getId() << " failed to format";
-            return -errno;
-        }
-    } else {
+    } else if (fsType == "vfat") {
+        useExfat = false;
+    } else if (fsType == "exfat") {
+        useVfat = false;
+    }
+
+    if (!useVfat && !useExfat) {
         LOG(ERROR) << "Unsupported filesystem " << fsType;
         return -EINVAL;
     }
 
-    return OK;
+    if (WipeBlockDevice(mDevPath) != OK) {
+        LOG(WARNING) << getId() << " failed to wipe";
+    }
+
+    if (useVfat) {
+        res = vfat::Format(mDevPath, 0);
+    } else if (useExfat) {
+        res = exfat::Format(mDevPath);
+    }
+
+    if (res != OK) {
+        LOG(ERROR) << getId() << " failed to format";
+        res = -errno;
+    }
+
+    return res;
 }
 
 }  // namespace vold
