@@ -105,7 +105,7 @@ status_t EmulatedVolume::doMount() {
 
     nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
     while (before == GetDevice(mFuseWrite)) {
-        LOG(VERBOSE) << "Waiting for FUSE to spin up...";
+        LOG(DEBUG) << "Waiting for FUSE to spin up...";
         usleep(50000);  // 50ms
 
         nsecs_t now = systemTime(SYSTEM_TIME_BOOTTIME);
