@@ -31,6 +31,7 @@
 #include "android/os/IVold.h"
 
 #include <android-base/logging.h>
+#include <android-base/parseint.h>
 #include <android-base/stringprintf.h>
 #include <binder/IServiceManager.h>
 #include <binder/Status.h>
@@ -104,6 +105,31 @@ int main(int argc, char** argv) {
         checkStatus(vold->mountFstab(args[2]));
     } else if (args[0] == "cryptfs" && args[1] == "encryptFstab" && args.size() == 3) {
         checkStatus(vold->encryptFstab(args[2]));
+    } else if (args[0] == "checkpoint" && args[1] == "startCheckpoint" && args.size() == 3) {
+        int retry;
+        bool success = false;
+        if (!android::base::ParseInt(args[2], &retry)) exit(EINVAL);
+        checkStatus(vold->startCheckpoint(retry, &success));
+        return success ? 1 : 0;
+    } else if (args[0] == "checkpoint" && args[1] == "needsCheckpoint" && args.size() == 2) {
+        bool enabled = false;
+        checkStatus(vold->needsCheckpoint(&enabled));
+        return enabled ? 1 : 0;
+    } else if (args[0] == "checkpoint" && args[1] == "commitChanges" && args.size() == 2) {
+        bool success = false;
+        checkStatus(vold->commitChanges(&success));
+        return success ? 1 : 0;
+    } else if (args[0] == "checkpoint" && args[1] == "prepareDriveForCheckpoint" &&
+               args.size() == 3) {
+        bool success = false;
+        checkStatus(vold->prepareDriveForCheckpoint(args[2], &success));
+        return success ? 1 : 0;
+    } else if (args[0] == "checkpoint" && args[1] == "markBootAttempt" && args.size() == 2) {
+        bool success = false;
+        checkStatus(vold->markBootAttempt(&success));
+        return success ? 1 : 0;
+    } else if (args[0] == "checkpoint" && args[1] == "abortChanges" && args.size() == 2) {
+        checkStatus(vold->abortChanges());
     } else {
         LOG(ERROR) << "Raw commands are no longer supported";
         exit(EINVAL);
