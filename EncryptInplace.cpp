@@ -145,7 +145,7 @@ static int flush_outstanding_data(struct encryptGroupsData* data) {
         return 0;
     }
 
-    LOG(VERBOSE) << "Copying " << data->count << " blocks at offset " << data->offset;
+    LOG(DEBUG) << "Copying " << data->count << " blocks at offset " << data->offset;
 
     if (pread64(data->realfd, data->buffer, info.block_size * data->count, data->offset) <= 0) {
         LOG(ERROR) << "Error reading real_blkdev " << data->real_blkdev << " for inplace encrypt";
