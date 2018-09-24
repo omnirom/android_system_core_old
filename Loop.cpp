@@ -146,7 +146,7 @@ int Loop::destroyAll() {
                 PLOG(WARNING) << "Failed to LOOP_CLR_FD " << path;
             }
         } else {
-            LOG(VERBOSE) << "Found unmanaged loop device at " << path << " named " << id;
+            LOG(DEBUG) << "Found unmanaged loop device at " << path << " named " << id;
         }
     }
 

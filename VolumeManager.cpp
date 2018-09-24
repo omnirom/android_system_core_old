@@ -176,8 +176,8 @@ void VolumeManager::handleBlockEvent(NetlinkEvent* evt) {
     std::lock_guard<std::mutex> lock(mLock);
 
     if (mDebug) {
-        LOG(VERBOSE) << "----------------";
-        LOG(VERBOSE) << "handleBlockEvent with action " << (int)evt->getAction();
+        LOG(DEBUG) << "----------------";
+        LOG(DEBUG) << "handleBlockEvent with action " << (int)evt->getAction();
         evt->dump();
     }
 
