@@ -265,9 +265,9 @@ status_t ForkExecvp(const std::vector<std::string>& args, security_context_t con
     for (size_t i = 0; i < argc; i++) {
         argv[i] = (char*)args[i].c_str();
         if (i == 0) {
-            LOG(VERBOSE) << args[i];
+            LOG(DEBUG) << args[i];
         } else {
-            LOG(VERBOSE) << "    " << args[i];
+            LOG(DEBUG) << "    " << args[i];
         }
     }
 
@@ -300,9 +300,9 @@ status_t ForkExecvp(const std::vector<std::string>& args, std::vector<std::strin
     for (size_t i = 0; i < args.size(); i++) {
         cmd += args[i] + " ";
         if (i == 0) {
-            LOG(VERBOSE) << args[i];
+            LOG(DEBUG) << args[i];
         } else {
-            LOG(VERBOSE) << "    " << args[i];
+            LOG(DEBUG) << "    " << args[i];
         }
     }
     output.clear();
@@ -327,7 +327,7 @@ status_t ForkExecvp(const std::vector<std::string>& args, std::vector<std::strin
     }
     char line[1024];
     while (fgets(line, sizeof(line), fp) != nullptr) {
-        LOG(VERBOSE) << line;
+        LOG(DEBUG) << line;
         output.push_back(std::string(line));
     }
     if (pclose(fp) != 0) {
@@ -344,9 +344,9 @@ pid_t ForkExecvpAsync(const std::vector<std::string>& args) {
     for (size_t i = 0; i < argc; i++) {
         argv[i] = (char*)args[i].c_str();
         if (i == 0) {
-            LOG(VERBOSE) << args[i];
+            LOG(DEBUG) << args[i];
         } else {
-            LOG(VERBOSE) << "    " << args[i];
+            LOG(DEBUG) << "    " << args[i];
         }
     }
 
@@ -686,7 +686,7 @@ dev_t GetDevice(const std::string& path) {
 }
 
 status_t RestoreconRecursive(const std::string& path) {
-    LOG(VERBOSE) << "Starting restorecon of " << path;
+    LOG(DEBUG) << "Starting restorecon of " << path;
 
     static constexpr const char* kRestoreconString = "selinux.restorecon_recursive";
 
@@ -695,7 +695,7 @@ status_t RestoreconRecursive(const std::string& path) {
 
     android::base::WaitForProperty(kRestoreconString, path);
 
-    LOG(VERBOSE) << "Finished restorecon of " << path;
+    LOG(DEBUG) << "Finished restorecon of " << path;
     return OK;
 }
 

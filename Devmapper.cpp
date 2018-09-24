@@ -252,7 +252,7 @@ int Devmapper::destroyAll() {
                 }
             }
         } else {
-            LOG(VERBOSE) << "Found unmanaged dm device named " << name;
+            LOG(DEBUG) << "Found unmanaged dm device named " << name;
         }
         nxt = n->next;
     } while (nxt);
