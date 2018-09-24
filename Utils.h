@@ -76,6 +76,12 @@ status_t ForkExecvp(const std::vector<std::string>& args, std::vector<std::strin
 
 pid_t ForkExecvpAsync(const std::vector<std::string>& args);
 
+/* Gets block device size in bytes */
+status_t GetBlockDevSize(int fd, uint64_t* size);
+status_t GetBlockDevSize(const std::string& path, uint64_t* size);
+/* Gets block device size in 512 byte sectors */
+status_t GetBlockDev512Sectors(const std::string& path, uint64_t* nr_sec);
+
 status_t ReadRandomBytes(size_t bytes, std::string& out);
 status_t ReadRandomBytes(size_t bytes, char* buffer);
 status_t GenerateRandomUuid(std::string& out);

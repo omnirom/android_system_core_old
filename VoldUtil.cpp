@@ -18,9 +18,3 @@
 #include <sys/ioctl.h>
 
 struct fstab* fstab_default;
-
-void get_blkdev_size(int fd, unsigned long* nr_sec) {
-    if ((ioctl(fd, BLKGETSIZE, nr_sec)) == -1) {
-        *nr_sec = 0;
-    }
-}

@@ -393,10 +393,10 @@ const char* cryptfs_get_crypto_name() {
     return get_crypto_type().get_crypto_name();
 }
 
-static unsigned int get_fs_size(char* dev) {
+static uint64_t get_fs_size(char* dev) {
     int fd, block_size;
     struct ext4_super_block sb;
-    off64_t len;
+    uint64_t len;
 
     if ((fd = open(dev, O_RDONLY | O_CLOEXEC)) < 0) {
         SLOGE("Cannot open device to get filesystem size ");
@@ -421,17 +421,16 @@ static unsigned int get_fs_size(char* dev) {
     }
     block_size = 1024 << sb.s_log_block_size;
     /* compute length in bytes */
-    len = (((off64_t)sb.s_blocks_count_hi << 32) + sb.s_blocks_count_lo) * block_size;
+    len = (((uint64_t)sb.s_blocks_count_hi << 32) + sb.s_blocks_count_lo) * block_size;
 
     /* return length in sectors */
-    return (unsigned int)(len / 512);
+    return len / 512;
 }
 
 static int get_crypt_ftr_info(char** metadata_fname, off64_t* off) {
     static int cached_data = 0;
-    static off64_t cached_off = 0;
+    static uint64_t cached_off = 0;
     static char cached_metadata_fname[PROPERTY_VALUE_MAX] = "";
-    int fd;
     char key_loc[PROPERTY_VALUE_MAX];
     char real_blkdev[PROPERTY_VALUE_MAX];
     int rc = -1;
@@ -440,25 +439,17 @@ static int get_crypt_ftr_info(char** metadata_fname, off64_t* off) {
         fs_mgr_get_crypt_info(fstab_default, key_loc, real_blkdev, sizeof(key_loc));
 
         if (!strcmp(key_loc, KEY_IN_FOOTER)) {
-            if ((fd = open(real_blkdev, O_RDWR | O_CLOEXEC)) < 0) {
-                SLOGE("Cannot open real block device %s\n", real_blkdev);
-                return -1;
-            }
-
-            unsigned long nr_sec = 0;
-            get_blkdev_size(fd, &nr_sec);
-            if (nr_sec != 0) {
+            if (android::vold::GetBlockDevSize(real_blkdev, &cached_off) == android::OK) {
                 /* If it's an encrypted Android partition, the last 16 Kbytes contain the
                  * encryption info footer and key, and plenty of bytes to spare for future
                  * growth.
                  */
                 strlcpy(cached_metadata_fname, real_blkdev, sizeof(cached_metadata_fname));
-                cached_off = ((off64_t)nr_sec * 512) - CRYPT_FOOTER_OFFSET;
+                cached_off -= CRYPT_FOOTER_OFFSET;
                 cached_data = 1;
             } else {
                 SLOGE("Cannot get size of block device %s\n", real_blkdev);
             }
-            close(fd);
         } else {
             strlcpy(cached_metadata_fname, key_loc, sizeof(cached_metadata_fname));
             cached_off = 0;
@@ -1816,17 +1807,8 @@ errout:
  */
 int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const unsigned char* key,
                              char* out_crypto_blkdev) {
-    int fd = open(real_blkdev, O_RDONLY | O_CLOEXEC);
-    if (fd == -1) {
-        SLOGE("Failed to open %s: %s", real_blkdev, strerror(errno));
-        return -1;
-    }
-
-    unsigned long nr_sec = 0;
-    get_blkdev_size(fd, &nr_sec);
-    close(fd);
-
-    if (nr_sec == 0) {
+    uint64_t nr_sec = 0;
+    if (android::vold::GetBlockDev512Sectors(real_blkdev, &nr_sec) != android::OK) {
         SLOGE("Failed to get size of %s: %s", real_blkdev, strerror(errno));
         return -1;
     }
@@ -2090,7 +2072,6 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     off64_t previously_encrypted_upto = 0;
     bool rebootEncryption = false;
     bool onlyCreateHeader = false;
-    int fd = -1;
 
     if (get_crypt_ftr_and_key(&crypt_ftr) == 0) {
         if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS) {
@@ -2134,22 +2115,15 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     fs_mgr_get_crypt_info(fstab_default, 0, real_blkdev, sizeof(real_blkdev));
 
     /* Get the size of the real block device */
-    fd = open(real_blkdev, O_RDONLY | O_CLOEXEC);
-    if (fd == -1) {
-        SLOGE("Cannot open block device %s\n", real_blkdev);
-        goto error_unencrypted;
-    }
-    unsigned long nr_sec;
-    get_blkdev_size(fd, &nr_sec);
-    if (nr_sec == 0) {
+    uint64_t nr_sec;
+    if (android::vold::GetBlockDev512Sectors(real_blkdev, &nr_sec) != android::OK) {
         SLOGE("Cannot get size of block device %s\n", real_blkdev);
         goto error_unencrypted;
     }
-    close(fd);
 
     /* If doing inplace encryption, make sure the orig fs doesn't include the crypto footer */
     if (!strcmp(key_loc, KEY_IN_FOOTER)) {
-        unsigned int fs_size_sec, max_fs_size_sec;
+        uint64_t fs_size_sec, max_fs_size_sec;
         fs_size_sec = get_fs_size(real_blkdev);
         if (fs_size_sec == 0) fs_size_sec = get_f2fs_filesystem_size_sec(real_blkdev);
 
