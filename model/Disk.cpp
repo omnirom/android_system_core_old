@@ -243,12 +243,8 @@ status_t Disk::readMetadata() {
     mSize = -1;
     mLabel.clear();
 
-    int fd = open(mDevPath.c_str(), O_RDONLY | O_CLOEXEC);
-    if (fd != -1) {
-        if (ioctl(fd, BLKGETSIZE64, &mSize)) {
-            mSize = -1;
-        }
-        close(fd);
+    if (GetBlockDevSize(mDevPath, &mSize) != OK) {
+        mSize = -1;
     }
 
     unsigned int majorId = major(mDevice);

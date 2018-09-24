@@ -24,6 +24,4 @@ extern struct fstab* fstab_default;
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
 
-void get_blkdev_size(int fd, unsigned long* nr_sec);
-
 #endif
