@@ -24,6 +24,7 @@
 #include "Process.h"
 #include "VolumeManager.h"
 
+#include "Checkpoint.h"
 #include "Ext4Crypt.h"
 #include "MetadataCrypt.h"
 #include "cryptfs.h"
@@ -762,6 +763,56 @@ binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::
 
     ACQUIRE_CRYPT_LOCK;
     return translateBool(e4crypt_destroy_user_storage(uuid_, userId, flags));
+}
+
+binder::Status VoldNativeService::startCheckpoint(int32_t retry, bool* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    *_aidl_return = cp_startCheckpoint(retry);
+    return ok();
+}
+
+binder::Status VoldNativeService::needsCheckpoint(bool* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    *_aidl_return = cp_needsCheckpoint();
+    return ok();
+}
+
+binder::Status VoldNativeService::commitChanges(bool* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    *_aidl_return = cp_commitChanges();
+    return ok();
+}
+
+binder::Status VoldNativeService::prepareDriveForCheckpoint(const std::string& mountPoint,
+                                                            bool* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PATH(mountPoint);
+    ACQUIRE_LOCK;
+
+    *_aidl_return = cp_prepareDriveForCheckpoint(mountPoint);
+    return ok();
+}
+
+binder::Status VoldNativeService::markBootAttempt(bool* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    *_aidl_return = cp_markBootAttempt();
+    return ok();
+}
+
+binder::Status VoldNativeService::abortChanges() {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    cp_abortChanges();
+    return ok();
 }
 
 }  // namespace vold

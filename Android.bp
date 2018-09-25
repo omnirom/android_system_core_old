@@ -95,6 +95,7 @@ cc_library_static {
     srcs: [
         "Benchmark.cpp",
         "CheckEncryption.cpp",
+        "Checkpoint.cpp",
         "Devmapper.cpp",
         "EncryptInplace.cpp",
         "Ext4Crypt.cpp",
