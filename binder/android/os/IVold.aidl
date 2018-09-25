@@ -96,6 +96,13 @@ interface IVold {
                             int storageFlags);
     void destroyUserStorage(@nullable @utf8InCpp String uuid, int userId, int storageFlags);
 
+    boolean startCheckpoint(int retry);
+    boolean needsCheckpoint();
+    void abortChanges();
+    boolean commitChanges();
+    boolean prepareDriveForCheckpoint(@utf8InCpp String mountPoint);
+    boolean markBootAttempt();
+
     const int ENCRYPTION_FLAG_NO_UI = 4;
 
     const int ENCRYPTION_STATE_NONE = 1;

@@ -110,6 +110,16 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
                                       int32_t userSerial, int32_t flags);
     binder::Status destroyUserStorage(const std::unique_ptr<std::string>& uuid, int32_t userId,
                                       int32_t flags);
+
+    binder::Status mountExternalStorageForApp(const std::string& packageName, int32_t appId,
+                                              const std::string& sandboxId, int32_t userId);
+
+    binder::Status startCheckpoint(int32_t retry, bool* _aidl_return);
+    binder::Status needsCheckpoint(bool* _aidl_return);
+    binder::Status commitChanges(bool* _aidl_return);
+    binder::Status prepareDriveForCheckpoint(const std::string& mountPoint, bool* _aidl_return);
+    binder::Status markBootAttempt(bool* __aidl_return);
+    binder::Status abortChanges();
 };
 
 }  // namespace vold
