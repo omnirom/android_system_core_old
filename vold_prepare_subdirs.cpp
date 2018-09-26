@@ -133,6 +133,10 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM, vendor_de_path + "/fpdata")) {
                 return false;
             }
+            auto facedata_path = vendor_de_path + "/facedata";
+            if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM, facedata_path)) {
+                return false;
+            }
         }
         if (flags & android::os::IVold::STORAGE_FLAG_CE) {
             auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
