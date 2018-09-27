@@ -671,30 +671,7 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
 }
 
 static int unmount_tree(const std::string& prefix) {
-    FILE* fp = setmntent("/proc/mounts", "r");
-    if (fp == NULL) {
-        PLOG(ERROR) << "Failed to open /proc/mounts";
-        return -errno;
-    }
-
-    // Some volumes can be stacked on each other, so force unmount in
-    // reverse order to give us the best chance of success.
-    std::list<std::string> toUnmount;
-    mntent* mentry;
-    while ((mentry = getmntent(fp)) != NULL) {
-        auto test = std::string(mentry->mnt_dir) + "/";
-        if (android::base::StartsWith(test, prefix)) {
-            toUnmount.push_front(test);
-        }
-    }
-    endmntent(fp);
-
-    for (const auto& path : toUnmount) {
-        if (umount2(path.c_str(), MNT_DETACH)) {
-            PLOG(ERROR) << "Failed to unmount " << path;
-        }
-    }
-    return 0;
+    return android::vold::UnmountTree(prefix);
 }
 
 int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
