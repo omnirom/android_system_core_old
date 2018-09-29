@@ -410,10 +410,6 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
     return 0;
 }
 
-static int unmount_tree(const std::string& prefix) {
-    return android::vold::UnmountTree(prefix);
-}
-
 int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
     LOG(DEBUG) << "Remounting " << uid << " as mode " << mode;
 
@@ -483,7 +479,7 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
                 _exit(1);
             }
 
-            unmount_tree("/storage/");
+            android::vold::UnmountTree("/storage/");
 
             std::string storageSource;
             if (mode == "default") {
