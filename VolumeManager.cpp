@@ -967,10 +967,6 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
     return 0;
 }
 
-static int unmount_tree(const std::string& prefix) {
-    return android::vold::UnmountTree(prefix);
-}
-
 int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
     // If the isolated storage is enabled, return -1 since in the isolated storage world, there
     // are no longer any runtime storage permissions, so this shouldn't be called anymore.
@@ -1045,7 +1041,7 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
                 _exit(1);
             }
 
-            unmount_tree("/storage/");
+            android::vold::UnmountTree("/storage/");
 
             std::string storageSource;
             if (mode == "default") {
