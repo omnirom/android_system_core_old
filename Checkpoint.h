@@ -34,6 +34,8 @@ bool cp_needsCheckpoint();
 
 bool cp_prepareDriveForCheckpoint(const std::string& mountPoint);
 
+bool cp_restoreCheckpoint(const std::string& mountPoint);
+
 bool cp_markBootAttempt();
 
 }  // namespace vold

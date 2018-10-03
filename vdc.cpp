@@ -124,6 +124,10 @@ int main(int argc, char** argv) {
         bool success = false;
         checkStatus(vold->prepareDriveForCheckpoint(args[2], &success));
         return success ? 1 : 0;
+    } else if (args[0] == "checkpoint" && args[1] == "restoreCheckpoint" && args.size() == 3) {
+        bool success = false;
+        checkStatus(vold->restoreCheckpoint(args[2], &success));
+        return success ? 1 : 0;
     } else if (args[0] == "checkpoint" && args[1] == "markBootAttempt" && args.size() == 2) {
         bool success = false;
         checkStatus(vold->markBootAttempt(&success));
