@@ -933,6 +933,16 @@ binder::Status VoldNativeService::prepareDriveForCheckpoint(const std::string& m
     return ok();
 }
 
+binder::Status VoldNativeService::restoreCheckpoint(const std::string& mountPoint,
+                                                    bool* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PATH(mountPoint);
+    ACQUIRE_LOCK;
+
+    *_aidl_return = cp_restoreCheckpoint(mountPoint);
+    return ok();
+}
+
 binder::Status VoldNativeService::markBootAttempt(bool* _aidl_return) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;

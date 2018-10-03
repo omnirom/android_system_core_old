@@ -107,6 +107,7 @@ interface IVold {
     void abortChanges();
     boolean commitChanges();
     boolean prepareDriveForCheckpoint(@utf8InCpp String mountPoint);
+    boolean restoreCheckpoint(@utf8InCpp String device);
     boolean markBootAttempt();
 
     const int ENCRYPTION_FLAG_NO_UI = 4;
