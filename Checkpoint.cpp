@@ -19,6 +19,7 @@
 
 #include <fstream>
 #include <list>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -68,19 +69,19 @@ bool cp_commitChanges() {
     // To do this, we walk the list of mounted file systems.
     // But we also need to get the matching fstab entries to see
     // the original flags
-    struct fstab* fstab = fs_mgr_read_fstab_default();
-    if (!fstab) return false;
+    auto fstab_default = std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)>{
+        fs_mgr_read_fstab_default(), fs_mgr_free_fstab};
+    if (!fstab_default) return false;
 
-    struct fstab* mounts = fs_mgr_read_fstab("/proc/mounts");
-    if (mounts == NULL) {
-        fs_mgr_free_fstab(fstab);
-        return false;
-    }
+    auto mounts = std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)>{
+        fs_mgr_read_fstab("/proc/mounts"), fs_mgr_free_fstab};
+    if (!mounts) return false;
 
     // Walk mounted file systems
     for (int i = 0; i < mounts->num_entries; ++i) {
         const fstab_rec* mount_rec = &mounts->recs[i];
-        const fstab_rec* fstab_rec = fs_mgr_get_entry_for_mount_point(fstab, mount_rec->mount_point);
+        const fstab_rec* fstab_rec =
+            fs_mgr_get_entry_for_mount_point(fstab_default.get(), mount_rec->mount_point);
         if (!fstab_rec) continue;
 
         if (fs_mgr_is_checkpoint_fs(fstab_rec)) {
@@ -92,8 +93,6 @@ bool cp_commitChanges() {
             setBowState(mount_rec->blk_device, "2");
         }
     }
-    fs_mgr_free_fstab(mounts);
-    fs_mgr_free_fstab(fstab);
     return android::base::RemoveFileIfExists(kMetadataCPFile);
 }
 
@@ -120,18 +119,18 @@ bool cp_needsCheckpoint(void) {
 }
 
 bool cp_prepareDriveForCheckpoint(const std::string&) {
-    struct fstab* fstab = fs_mgr_read_fstab_default();
-    if (!fstab) return false;
+    auto fstab_default = std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)>{
+        fs_mgr_read_fstab_default(), fs_mgr_free_fstab};
+    if (!fstab_default) return false;
 
-    struct fstab* mounts = fs_mgr_read_fstab("/proc/mounts");
-    if (mounts == NULL) {
-        fs_mgr_free_fstab(fstab);
-        return false;
-    }
+    auto mounts = std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)>{
+        fs_mgr_read_fstab("/proc/mounts"), fs_mgr_free_fstab};
+    if (!mounts) return false;
 
     for (int i = 0; i < mounts->num_entries; ++i) {
         const fstab_rec* mount_rec = &mounts->recs[i];
-        const fstab_rec* fstab_rec = fs_mgr_get_entry_for_mount_point(fstab, mount_rec->mount_point);
+        const fstab_rec* fstab_rec =
+            fs_mgr_get_entry_for_mount_point(fstab_default.get(), mount_rec->mount_point);
         if (!fstab_rec) continue;
 
         if (fs_mgr_is_checkpoint_blk(fstab_rec)) {
@@ -152,8 +151,6 @@ bool cp_prepareDriveForCheckpoint(const std::string&) {
             setBowState(mount_rec->blk_device, "1");
         }
     }
-    fs_mgr_free_fstab(mounts);
-    fs_mgr_free_fstab(fstab);
     return true;
 }
 
