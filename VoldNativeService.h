@@ -116,8 +116,10 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status destroyUserStorage(const std::unique_ptr<std::string>& uuid, int32_t userId,
                                       int32_t flags);
 
-    binder::Status mountExternalStorageForApp(const std::string& packageName, int32_t appId,
-                                              const std::string& sandboxId, int32_t userId);
+    binder::Status prepareSandboxForApp(const std::string& packageName, int32_t appId,
+                                        const std::string& sandboxId, int32_t userId);
+    binder::Status destroySandboxForApp(const std::string& packageName, int32_t appId,
+                                        const std::string& sandboxId, int32_t userId);
 
     binder::Status startCheckpoint(int32_t retry, bool* _aidl_return);
     binder::Status needsCheckpoint(bool* _aidl_return);

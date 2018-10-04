@@ -96,8 +96,10 @@ class VolumeManager {
     int addAppIds(const std::vector<std::string>& packageNames, const std::vector<int32_t>& appIds);
     int addSandboxIds(const std::vector<int32_t>& appIds,
                       const std::vector<std::string>& sandboxIds);
-    int mountExternalStorageForApp(const std::string& packageName, appid_t appId,
-                                   const std::string& sandboxId, userid_t userId);
+    int prepareSandboxForApp(const std::string& packageName, appid_t appId,
+                             const std::string& sandboxId, userid_t userId);
+    int destroySandboxForApp(const std::string& packageName, appid_t appId,
+                             const std::string& sandboxId, userid_t userId);
 
     int onVolumeMounted(android::vold::VolumeBase* vol);
     int onVolumeUnmounted(android::vold::VolumeBase* vol);
@@ -162,6 +164,8 @@ class VolumeManager {
                                const std::string& volumeRoot, const std::string& sandboxDirRoot);
     int mountPkgSpecificDir(const std::string& mntSourceRoot, const std::string& mntTargetRoot,
                             const std::string& packageName, const char* dirName);
+    int destroySandboxForAppOnVol(const std::string& packageName, const std::string& sandboxId,
+                                  userid_t userId, const std::string& volLabel);
 
     void handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk);
     void handleDiskChanged(dev_t device);

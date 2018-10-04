@@ -886,17 +886,28 @@ binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::
     return translateBool(e4crypt_destroy_user_storage(uuid_, userId, flags));
 }
 
-binder::Status VoldNativeService::mountExternalStorageForApp(const std::string& packageName,
-                                                             int32_t appId,
-                                                             const std::string& sandboxId,
-                                                             int32_t userId) {
+binder::Status VoldNativeService::prepareSandboxForApp(const std::string& packageName,
+                                                       int32_t appId, const std::string& sandboxId,
+                                                       int32_t userId) {
     ENFORCE_UID(AID_SYSTEM);
     CHECK_ARGUMENT_PACKAGE_NAME(packageName);
     CHECK_ARGUMENT_SANDBOX_ID(sandboxId);
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->mountExternalStorageForApp(packageName, appId,
-                                                                           sandboxId, userId));
+    return translate(
+        VolumeManager::Instance()->prepareSandboxForApp(packageName, appId, sandboxId, userId));
+}
+
+binder::Status VoldNativeService::destroySandboxForApp(const std::string& packageName,
+                                                       int32_t appId, const std::string& sandboxId,
+                                                       int32_t userId) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PACKAGE_NAME(packageName);
+    CHECK_ARGUMENT_SANDBOX_ID(sandboxId);
+    ACQUIRE_LOCK;
+
+    return translate(
+        VolumeManager::Instance()->destroySandboxForApp(packageName, appId, sandboxId, userId));
 }
 
 binder::Status VoldNativeService::startCheckpoint(int32_t retry, bool* _aidl_return) {
