@@ -121,6 +121,7 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
 
     binder::Status startCheckpoint(int32_t retry, bool* _aidl_return);
     binder::Status needsCheckpoint(bool* _aidl_return);
+    binder::Status needsRollback(bool* _aidl_return);
     binder::Status commitChanges(bool* _aidl_return);
     binder::Status prepareDriveForCheckpoint(const std::string& mountPoint, bool* _aidl_return);
     binder::Status restoreCheckpoint(const std::string& mountPoint, bool* _aidl_return);
