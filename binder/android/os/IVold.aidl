@@ -98,6 +98,7 @@ interface IVold {
 
     boolean startCheckpoint(int retry);
     boolean needsCheckpoint();
+    boolean needsRollback();
     void abortChanges();
     boolean commitChanges();
     boolean prepareDriveForCheckpoint(@utf8InCpp String mountPoint);
