@@ -39,6 +39,7 @@ cc_defaults {
     shared_libs: [
         "android.hardware.keymaster@3.0",
         "android.hardware.keymaster@4.0",
+        "android.hardware.boot@1.0",
         "libbase",
         "libbinder",
         "libcrypto",

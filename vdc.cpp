@@ -115,6 +115,10 @@ int main(int argc, char** argv) {
         bool enabled = false;
         checkStatus(vold->needsCheckpoint(&enabled));
         return enabled ? 1 : 0;
+    } else if (args[0] == "checkpoint" && args[1] == "needsRollback" && args.size() == 2) {
+        bool enabled = false;
+        checkStatus(vold->needsRollback(&enabled));
+        return enabled ? 1 : 0;
     } else if (args[0] == "checkpoint" && args[1] == "commitChanges" && args.size() == 2) {
         bool success = false;
         checkStatus(vold->commitChanges(&success));

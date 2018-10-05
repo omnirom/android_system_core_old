@@ -773,6 +773,14 @@ binder::Status VoldNativeService::startCheckpoint(int32_t retry, bool* _aidl_ret
     return ok();
 }
 
+binder::Status VoldNativeService::needsRollback(bool* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    *_aidl_return = cp_needsRollback();
+    return ok();
+}
+
 binder::Status VoldNativeService::needsCheckpoint(bool* _aidl_return) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
