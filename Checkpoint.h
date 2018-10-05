@@ -28,7 +28,7 @@ bool cp_commitChanges();
 
 void cp_abortChanges();
 
-bool cp_needRollback(const std::string& id);
+bool cp_needsRollback();
 
 bool cp_needsCheckpoint();
 
