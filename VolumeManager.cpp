@@ -805,16 +805,19 @@ int VolumeManager::onUserStopped(userid_t userId) {
     LOG(VERBOSE) << "onUserStopped: " << userId;
     mStartedUsers.erase(userId);
 
-    std::string mntTargetDir = StringPrintf("/mnt/user/%d", userId);
-    if (android::vold::UnmountTree(mntTargetDir) != 0) {
-        PLOG(ERROR) << "unmountTree on " << mntTargetDir << " failed";
-        return -errno;
+    if (GetBoolProperty(kIsolatedStorage, false)) {
+        mUserPackages.erase(userId);
+        std::string mntTargetDir = StringPrintf("/mnt/user/%d", userId);
+        if (android::vold::UnmountTree(mntTargetDir) != 0) {
+            PLOG(ERROR) << "unmountTree on " << mntTargetDir << " failed";
+            return -errno;
+        }
+        if (android::vold::DeleteDirContentsAndDir(mntTargetDir) < 0) {
+            PLOG(ERROR) << "DeleteDirContentsAndDir failed on " << mntTargetDir;
+            return -errno;
+        }
+        LOG(VERBOSE) << "Success: DeleteDirContentsAndDir on " << mntTargetDir;
     }
-    if (android::vold::DeleteDirContentsAndDir(mntTargetDir) < 0) {
-        PLOG(ERROR) << "DeleteDirContentsAndDir failed on " << mntTargetDir;
-        return -errno;
-    }
-    LOG(VERBOSE) << "Success: DeleteDirContentsAndDir on " << mntTargetDir;
     return 0;
 }
 
