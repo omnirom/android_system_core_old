@@ -317,10 +317,6 @@ constexpr CryptoType default_crypto_type = CryptoType()
 
 constexpr CryptoType supported_crypto_types[] = {
     default_crypto_type,
-    CryptoType()
-        .set_property_name("Speck128/128-XTS")
-        .set_crypto_name("speck128-xts-plain64")
-        .set_keysize(32),
     // Add new CryptoTypes here.  Order is not important.
 };
 
