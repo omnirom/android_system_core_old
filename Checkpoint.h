@@ -32,7 +32,7 @@ bool cp_needsRollback();
 
 bool cp_needsCheckpoint();
 
-bool cp_prepareDriveForCheckpoint(const std::string& mountPoint);
+bool cp_prepareCheckpoint();
 
 bool cp_restoreCheckpoint(const std::string& mountPoint);
 
