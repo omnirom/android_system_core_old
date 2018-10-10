@@ -837,8 +837,8 @@ int VolumeManager::addSandboxIds(const std::vector<int32_t>& appIds,
     return 0;
 }
 
-int VolumeManager::mountExternalStorageForApp(const std::string& packageName, appid_t appId,
-                                              const std::string& sandboxId, userid_t userId) {
+int VolumeManager::prepareSandboxForApp(const std::string& packageName, appid_t appId,
+                                        const std::string& sandboxId, userid_t userId) {
     if (!GetBoolProperty(kIsolatedStorage, false)) {
         return 0;
     } else if (mStartedUsers.find(userId) == mStartedUsers.end()) {
@@ -846,7 +846,7 @@ int VolumeManager::mountExternalStorageForApp(const std::string& packageName, ap
         // be created when the user starts.
         return 0;
     }
-    LOG(VERBOSE) << "mountExternalStorageForApp: " << packageName << ", appId=" << appId
+    LOG(VERBOSE) << "prepareSandboxForApp: " << packageName << ", appId=" << appId
                  << ", sandboxId=" << sandboxId << ", userId=" << userId;
     mUserPackages[userId].push_back(packageName);
     mAppIds[packageName] = appId;
@@ -861,6 +861,71 @@ int VolumeManager::mountExternalStorageForApp(const std::string& packageName, ap
         }
     }
     return prepareSandboxes(userId, {packageName}, visibleVolLabels);
+}
+
+int VolumeManager::destroySandboxForApp(const std::string& packageName, appid_t appId,
+                                        const std::string& sandboxId, userid_t userId) {
+    if (!GetBoolProperty(kIsolatedStorage, false)) {
+        return 0;
+    }
+    LOG(VERBOSE) << "destroySandboxForApp: " << packageName << ", appId=" << appId
+                 << ", sandboxId=" << sandboxId << ", userId=" << userId;
+    auto& userPackages = mUserPackages[userId];
+    std::remove(userPackages.begin(), userPackages.end(), packageName);
+    // If the package is not uninstalled in any other users, remove appId and sandboxId
+    // corresponding to it from the internal state.
+    bool installedInAnyUser = false;
+    for (auto& it : mUserPackages) {
+        auto& packages = it.second;
+        if (std::find(packages.begin(), packages.end(), packageName) != packages.end()) {
+            installedInAnyUser = true;
+            break;
+        }
+    }
+    if (!installedInAnyUser) {
+        mAppIds.erase(packageName);
+        mSandboxIds.erase(appId);
+    }
+
+    std::vector<std::string> visibleVolLabels;
+    for (auto& volId : mVisibleVolumeIds) {
+        auto vol = findVolume(volId);
+        userid_t mountUserId = vol->getMountUserId();
+        if (mountUserId == userId || vol->isEmulated()) {
+            if (destroySandboxForAppOnVol(packageName, sandboxId, userId, vol->getLabel()) < 0) {
+                return -errno;
+            }
+        }
+    }
+    return 0;
+}
+
+int VolumeManager::destroySandboxForAppOnVol(const std::string& packageName,
+                                             const std::string& sandboxId, userid_t userId,
+                                             const std::string& volLabel) {
+    LOG(VERBOSE) << "destroySandboxOnVol: " << packageName << ", userId=" << userId
+                 << ", volLabel=" << volLabel;
+    std::string pkgSandboxTarget =
+        StringPrintf("/mnt/user/%d/package/%s", userId, packageName.c_str());
+    if (android::vold::UnmountTree(pkgSandboxTarget)) {
+        PLOG(ERROR) << "UnmountTree failed on " << pkgSandboxTarget;
+    }
+
+    std::string sandboxDir = StringPrintf("/mnt/runtime/write/%s", volLabel.c_str());
+    if (volLabel == mPrimary->getLabel() && mPrimary->isEmulated()) {
+        StringAppendF(&sandboxDir, "/%d", userId);
+    }
+    if (StartsWith(sandboxId, "shared:")) {
+        StringAppendF(&sandboxDir, "/Android/sandbox/shared/%s", sandboxId.substr(7).c_str());
+    } else {
+        StringAppendF(&sandboxDir, "/Android/sandbox/%s", sandboxId.c_str());
+    }
+
+    if (android::vold::DeleteDirContentsAndDir(sandboxDir) < 0) {
+        PLOG(ERROR) << "DeleteDirContentsAndDir failed on " << sandboxDir;
+        return -errno;
+    }
+    return 0;
 }
 
 int VolumeManager::onSecureKeyguardStateChanged(bool isShowing) {

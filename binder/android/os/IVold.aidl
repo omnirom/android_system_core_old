@@ -99,8 +99,10 @@ interface IVold {
                             int storageFlags);
     void destroyUserStorage(@nullable @utf8InCpp String uuid, int userId, int storageFlags);
 
-    void mountExternalStorageForApp(in @utf8InCpp String packageName, int appId,
-                                    in @utf8InCpp String sandboxId, int userId);
+    void prepareSandboxForApp(in @utf8InCpp String packageName, int appId,
+                              in @utf8InCpp String sandboxId, int userId);
+    void destroySandboxForApp(in @utf8InCpp String packageName, int appId,
+                              in @utf8InCpp String sandboxId, int userId);
 
     boolean startCheckpoint(int retry);
     boolean needsCheckpoint();
