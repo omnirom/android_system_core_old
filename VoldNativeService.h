@@ -121,13 +121,13 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status destroySandboxForApp(const std::string& packageName, int32_t appId,
                                         const std::string& sandboxId, int32_t userId);
 
-    binder::Status startCheckpoint(int32_t retry, bool* _aidl_return);
+    binder::Status startCheckpoint(int32_t retry);
     binder::Status needsCheckpoint(bool* _aidl_return);
     binder::Status needsRollback(bool* _aidl_return);
-    binder::Status commitChanges(bool* _aidl_return);
-    binder::Status prepareCheckpoint(bool* _aidl_return);
-    binder::Status restoreCheckpoint(const std::string& mountPoint, bool* _aidl_return);
-    binder::Status markBootAttempt(bool* __aidl_return);
+    binder::Status commitChanges();
+    binder::Status prepareCheckpoint();
+    binder::Status restoreCheckpoint(const std::string& mountPoint);
+    binder::Status markBootAttempt();
     binder::Status abortChanges();
 };
 

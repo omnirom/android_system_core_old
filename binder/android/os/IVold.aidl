@@ -104,14 +104,14 @@ interface IVold {
     void destroySandboxForApp(in @utf8InCpp String packageName, int appId,
                               in @utf8InCpp String sandboxId, int userId);
 
-    boolean startCheckpoint(int retry);
+    void startCheckpoint(int retry);
     boolean needsCheckpoint();
     boolean needsRollback();
     void abortChanges();
-    boolean commitChanges();
-    boolean prepareCheckpoint();
-    boolean restoreCheckpoint(@utf8InCpp String device);
-    boolean markBootAttempt();
+    void commitChanges();
+    void prepareCheckpoint();
+    void restoreCheckpoint(@utf8InCpp String device);
+    void markBootAttempt();
 
     const int ENCRYPTION_FLAG_NO_UI = 4;
 
