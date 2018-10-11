@@ -17,26 +17,27 @@
 #ifndef _CHECKPOINT_H
 #define _CHECKPOINT_H
 
+#include <binder/Status.h>
 #include <string>
 
 namespace android {
 namespace vold {
 
-bool cp_startCheckpoint(int retry);
+android::binder::Status cp_startCheckpoint(int retry);
 
-bool cp_commitChanges();
+android::binder::Status cp_commitChanges();
 
-void cp_abortChanges();
+android::binder::Status cp_abortChanges();
 
 bool cp_needsRollback();
 
 bool cp_needsCheckpoint();
 
-bool cp_prepareCheckpoint();
+android::binder::Status cp_prepareCheckpoint();
 
-bool cp_restoreCheckpoint(const std::string& mountPoint);
+android::binder::Status cp_restoreCheckpoint(const std::string& mountPoint);
 
-bool cp_markBootAttempt();
+android::binder::Status cp_markBootAttempt();
 
 }  // namespace vold
 }  // namespace android
