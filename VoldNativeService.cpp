@@ -797,13 +797,11 @@ binder::Status VoldNativeService::commitChanges(bool* _aidl_return) {
     return ok();
 }
 
-binder::Status VoldNativeService::prepareDriveForCheckpoint(const std::string& mountPoint,
-                                                            bool* _aidl_return) {
+binder::Status VoldNativeService::prepareCheckpoint(bool* _aidl_return) {
     ENFORCE_UID(AID_SYSTEM);
-    CHECK_ARGUMENT_PATH(mountPoint);
     ACQUIRE_LOCK;
 
-    *_aidl_return = cp_prepareDriveForCheckpoint(mountPoint);
+    *_aidl_return = cp_prepareCheckpoint();
     return ok();
 }
 
