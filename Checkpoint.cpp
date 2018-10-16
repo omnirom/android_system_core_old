@@ -36,6 +36,7 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 
+using android::binder::Status;
 using android::hardware::hidl_string;
 using android::hardware::boot::V1_0::BoolResult;
 using android::hardware::boot::V1_0::IBootControl;
@@ -64,8 +65,8 @@ bool setBowState(std::string const& block_device, std::string const& state) {
 
 }  // namespace
 
-bool cp_startCheckpoint(int retry) {
-    if (retry < -1) return false;
+Status cp_startCheckpoint(int retry) {
+    if (retry < -1) return Status::fromExceptionCode(EINVAL, "Retry count must be more than -1");
     std::string content = std::to_string(retry + 1);
     if (retry == -1) {
         sp<IBootControl> module = IBootControl::getService();
@@ -75,21 +76,24 @@ bool cp_startCheckpoint(int retry) {
             if (module->getSuffix(module->getCurrentSlot(), cb).isOk()) content += " " + suffix;
         }
     }
-    return android::base::WriteStringToFile(content, kMetadataCPFile);
+    if (!android::base::WriteStringToFile(content, kMetadataCPFile))
+        return Status::fromExceptionCode(errno, "Failed to write checkpoint file");
+    return Status::ok();
 }
 
-bool cp_commitChanges() {
+Status cp_commitChanges() {
     // Must take action for list of mounted checkpointed things here
     // To do this, we walk the list of mounted file systems.
     // But we also need to get the matching fstab entries to see
     // the original flags
+    std::string err_str;
     auto fstab_default = std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)>{
         fs_mgr_read_fstab_default(), fs_mgr_free_fstab};
-    if (!fstab_default) return false;
+    if (!fstab_default) return Status::fromExceptionCode(EINVAL, "Failed to get fstab");
 
     auto mounts = std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)>{
         fs_mgr_read_fstab("/proc/mounts"), fs_mgr_free_fstab};
-    if (!mounts) return false;
+    if (!mounts) return Status::fromExceptionCode(EINVAL, "Failed to get /proc/mounts");
 
     // Walk mounted file systems
     for (int i = 0; i < mounts->num_entries; ++i) {
@@ -107,11 +111,14 @@ bool cp_commitChanges() {
             setBowState(mount_rec->blk_device, "2");
         }
     }
-    return android::base::RemoveFileIfExists(kMetadataCPFile);
+    if (android::base::RemoveFileIfExists(kMetadataCPFile, &err_str))
+        return Status::fromExceptionCode(errno, err_str.c_str());
+    return Status::ok();
 }
 
-void cp_abortChanges() {
+Status cp_abortChanges() {
     android_reboot(ANDROID_RB_RESTART2, 0, nullptr);
+    return Status::ok();
 }
 
 bool cp_needsRollback() {
@@ -148,14 +155,14 @@ bool cp_needsCheckpoint() {
     return false;
 }
 
-bool cp_prepareCheckpoint() {
+Status cp_prepareCheckpoint() {
     auto fstab_default = std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)>{
         fs_mgr_read_fstab_default(), fs_mgr_free_fstab};
-    if (!fstab_default) return false;
+    if (!fstab_default) return Status::fromExceptionCode(EINVAL, "Failed to get fstab");
 
     auto mounts = std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)>{
         fs_mgr_read_fstab("/proc/mounts"), fs_mgr_free_fstab};
-    if (!mounts) return false;
+    if (!mounts) return Status::fromExceptionCode(EINVAL, "Failed to get /proc/mounts");
 
     for (int i = 0; i < mounts->num_entries; ++i) {
         const fstab_rec* mount_rec = &mounts->recs[i];
@@ -181,7 +188,7 @@ bool cp_prepareCheckpoint() {
             setBowState(mount_rec->blk_device, "1");
         }
     }
-    return true;
+    return Status::ok();
 }
 
 namespace {
@@ -261,19 +268,19 @@ void crc32(const void* data, size_t n_bytes, uint32_t* crc) {
 
 }  // namespace
 
-bool cp_restoreCheckpoint(const std::string& blockDevice) {
-    LOG(ERROR) << "Restoring checkpoint on " << blockDevice;
+Status cp_restoreCheckpoint(const std::string& blockDevice) {
+    LOG(INFO) << "Restoring checkpoint on " << blockDevice;
     std::fstream device(blockDevice, std::ios::binary | std::ios::in | std::ios::out);
     if (!device) {
         PLOG(ERROR) << "Cannot open " << blockDevice;
-        return false;
+        return Status::fromExceptionCode(errno, ("Cannot open " + blockDevice).c_str());
     }
     char buffer[kBlockSize];
     device.read(buffer, kBlockSize);
     log_sector& ls = *(log_sector*)buffer;
     if (ls.magic != kMagic) {
         LOG(ERROR) << "No magic";
-        return false;
+        return Status::fromExceptionCode(EINVAL, "No magic");
     }
 
     LOG(INFO) << "Restoring " << ls.sequence << " log sectors";
@@ -285,12 +292,15 @@ bool cp_restoreCheckpoint(const std::string& blockDevice) {
         log_sector& ls = *(log_sector*)buffer;
         if (ls.magic != kMagic) {
             LOG(ERROR) << "No magic!";
-            return false;
+            return Status::fromExceptionCode(EINVAL, "No magic");
         }
 
         if ((int)ls.sequence != sequence) {
             LOG(ERROR) << "Expecting log sector " << sequence << " but got " << ls.sequence;
-            return false;
+            return Status::fromExceptionCode(
+                EINVAL, ("Expecting log sector " + std::to_string(sequence) + " but got " +
+                         std::to_string(ls.sequence))
+                            .c_str());
         }
 
         LOG(INFO) << "Restoring from log sector " << ls.sequence;
@@ -309,7 +319,7 @@ bool cp_restoreCheckpoint(const std::string& blockDevice) {
 
             if (le->checksum && checksum != le->checksum) {
                 LOG(ERROR) << "Checksums don't match " << std::hex << checksum;
-                return false;
+                return Status::fromExceptionCode(EINVAL, "Checksums don't match");
             }
 
             device.seekg(le->source * kSectorSize);
@@ -317,20 +327,33 @@ bool cp_restoreCheckpoint(const std::string& blockDevice) {
         }
     }
 
-    return true;
+    return Status::ok();
 }
 
-bool cp_markBootAttempt() {
+Status cp_markBootAttempt() {
     std::string oldContent, newContent;
     int retry = 0;
-    if (!android::base::ReadFileToString(kMetadataCPFile, &oldContent)) return false;
+    struct stat st;
+    int result = stat(kMetadataCPFile.c_str(), &st);
+
+    // If the file doesn't exist, we aren't managing a checkpoint retry counter
+    if (result != 0) return Status::ok();
+    if (!android::base::ReadFileToString(kMetadataCPFile, &oldContent)) {
+        PLOG(ERROR) << "Failed to read checkpoint file";
+        return Status::fromExceptionCode(errno, "Failed to read checkpoint file");
+    }
     std::string retryContent = oldContent.substr(0, oldContent.find_first_of(" "));
 
-    if (!android::base::ParseInt(retryContent, &retry)) return false;
-    if (retry > 0) retry--;
+    if (!android::base::ParseInt(retryContent, &retry))
+        return Status::fromExceptionCode(EINVAL, "Could not parse retry count");
+    if (retry > 0) {
+        retry--;
 
-    newContent = std::to_string(retry);
-    return android::base::WriteStringToFile(newContent, kMetadataCPFile);
+        newContent = std::to_string(retry);
+        if (!android::base::WriteStringToFile(newContent, kMetadataCPFile))
+            return Status::fromExceptionCode(errno, "Could not write checkpoint file");
+    }
+    return Status::ok();
 }
 
 }  // namespace vold
