@@ -123,10 +123,9 @@ int main(int argc, char** argv) {
         bool success = false;
         checkStatus(vold->commitChanges(&success));
         return success ? 1 : 0;
-    } else if (args[0] == "checkpoint" && args[1] == "prepareDriveForCheckpoint" &&
-               args.size() == 3) {
+    } else if (args[0] == "checkpoint" && args[1] == "prepareCheckpoint" && args.size() == 2) {
         bool success = false;
-        checkStatus(vold->prepareDriveForCheckpoint(args[2], &success));
+        checkStatus(vold->prepareCheckpoint(&success));
         return success ? 1 : 0;
     } else if (args[0] == "checkpoint" && args[1] == "restoreCheckpoint" && args.size() == 3) {
         bool success = false;

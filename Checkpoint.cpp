@@ -66,7 +66,7 @@ bool setBowState(std::string const& block_device, std::string const& state) {
 
 bool cp_startCheckpoint(int retry) {
     if (retry < -1) return false;
-    std::string content = std::to_string(retry);
+    std::string content = std::to_string(retry + 1);
     if (retry == -1) {
         sp<IBootControl> module = IBootControl::getService();
         if (module) {
@@ -136,7 +136,7 @@ bool cp_needsRollback() {
     return false;
 }
 
-bool cp_needsCheckpoint(void) {
+bool cp_needsCheckpoint() {
     bool ret;
     std::string content;
     sp<IBootControl> module = IBootControl::getService();
@@ -148,7 +148,7 @@ bool cp_needsCheckpoint(void) {
     return false;
 }
 
-bool cp_prepareDriveForCheckpoint(const std::string&) {
+bool cp_prepareCheckpoint() {
     auto fstab_default = std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)>{
         fs_mgr_read_fstab_default(), fs_mgr_free_fstab};
     if (!fstab_default) return false;
