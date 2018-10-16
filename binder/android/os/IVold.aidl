@@ -96,14 +96,14 @@ interface IVold {
                             int storageFlags);
     void destroyUserStorage(@nullable @utf8InCpp String uuid, int userId, int storageFlags);
 
-    boolean startCheckpoint(int retry);
+    void startCheckpoint(int retry);
     boolean needsCheckpoint();
     boolean needsRollback();
     void abortChanges();
-    boolean commitChanges();
-    boolean prepareCheckpoint();
-    boolean restoreCheckpoint(@utf8InCpp String device);
-    boolean markBootAttempt();
+    void commitChanges();
+    void prepareCheckpoint();
+    void restoreCheckpoint(@utf8InCpp String device);
+    void markBootAttempt();
 
     const int ENCRYPTION_FLAG_NO_UI = 4;
 

@@ -765,12 +765,11 @@ binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::
     return translateBool(e4crypt_destroy_user_storage(uuid_, userId, flags));
 }
 
-binder::Status VoldNativeService::startCheckpoint(int32_t retry, bool* _aidl_return) {
+binder::Status VoldNativeService::startCheckpoint(int32_t retry) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    *_aidl_return = cp_startCheckpoint(retry);
-    return ok();
+    return cp_startCheckpoint(retry);
 }
 
 binder::Status VoldNativeService::needsRollback(bool* _aidl_return) {
@@ -789,46 +788,40 @@ binder::Status VoldNativeService::needsCheckpoint(bool* _aidl_return) {
     return ok();
 }
 
-binder::Status VoldNativeService::commitChanges(bool* _aidl_return) {
+binder::Status VoldNativeService::commitChanges() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    *_aidl_return = cp_commitChanges();
-    return ok();
+    return cp_commitChanges();
 }
 
-binder::Status VoldNativeService::prepareCheckpoint(bool* _aidl_return) {
+binder::Status VoldNativeService::prepareCheckpoint() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    *_aidl_return = cp_prepareCheckpoint();
-    return ok();
+    return cp_prepareCheckpoint();
 }
 
-binder::Status VoldNativeService::restoreCheckpoint(const std::string& mountPoint,
-                                                    bool* _aidl_return) {
+binder::Status VoldNativeService::restoreCheckpoint(const std::string& mountPoint) {
     ENFORCE_UID(AID_SYSTEM);
     CHECK_ARGUMENT_PATH(mountPoint);
     ACQUIRE_LOCK;
 
-    *_aidl_return = cp_restoreCheckpoint(mountPoint);
-    return ok();
+    return cp_restoreCheckpoint(mountPoint);
 }
 
-binder::Status VoldNativeService::markBootAttempt(bool* _aidl_return) {
+binder::Status VoldNativeService::markBootAttempt() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    *_aidl_return = cp_markBootAttempt();
-    return ok();
+    return cp_markBootAttempt();
 }
 
 binder::Status VoldNativeService::abortChanges() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    cp_abortChanges();
-    return ok();
+    return cp_abortChanges();
 }
 
 }  // namespace vold
