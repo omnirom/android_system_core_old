@@ -109,7 +109,7 @@ interface IVold {
     boolean needsRollback();
     void abortChanges();
     boolean commitChanges();
-    boolean prepareDriveForCheckpoint(@utf8InCpp String mountPoint);
+    boolean prepareCheckpoint();
     boolean restoreCheckpoint(@utf8InCpp String device);
     boolean markBootAttempt();
 
