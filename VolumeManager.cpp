@@ -568,13 +568,6 @@ int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::stri
         if (sandboxRoot.empty()) {
             return -errno;
         }
-        std::string sharedSandboxRoot;
-        StringAppendF(&sharedSandboxRoot, "%s/shared", sandboxRoot.c_str());
-        // Create shared sandbox base dir for apps with sharedUserIds
-        if (fs_prepare_dir(sharedSandboxRoot.c_str(), 0700, AID_ROOT, AID_ROOT) != 0) {
-            PLOG(ERROR) << "fs_prepare_dir failed on " << sharedSandboxRoot;
-            return -errno;
-        }
 
         if (!createPkgSpecificDirRoots(volumeRoot)) {
             return -errno;
@@ -691,11 +684,7 @@ std::string VolumeManager::prepareSubDirs(const std::string& pathPrefix, const s
 std::string VolumeManager::prepareSandboxSource(uid_t uid, const std::string& sandboxId,
                                                 const std::string& sandboxRootDir) {
     std::string sandboxSourceDir(sandboxRootDir);
-    if (StartsWith(sandboxId, "shared:")) {
-        StringAppendF(&sandboxSourceDir, "/shared/%s", sandboxId.substr(7).c_str());
-    } else {
-        StringAppendF(&sandboxSourceDir, "/%s", sandboxId.c_str());
-    }
+    StringAppendF(&sandboxSourceDir, "/%s", sandboxId.c_str());
     if (fs_prepare_dir(sandboxSourceDir.c_str(), 0755, uid, uid) != 0) {
         PLOG(ERROR) << "fs_prepare_dir failed on " << sandboxSourceDir;
         return kEmptyString;
@@ -915,11 +904,7 @@ int VolumeManager::destroySandboxForAppOnVol(const std::string& packageName,
     if (volLabel == mPrimary->getLabel() && mPrimary->isEmulated()) {
         StringAppendF(&sandboxDir, "/%d", userId);
     }
-    if (StartsWith(sandboxId, "shared:")) {
-        StringAppendF(&sandboxDir, "/Android/sandbox/shared/%s", sandboxId.substr(7).c_str());
-    } else {
-        StringAppendF(&sandboxDir, "/Android/sandbox/%s", sandboxId.c_str());
-    }
+    StringAppendF(&sandboxDir, "/Android/sandbox/%s", sandboxId.c_str());
 
     if (android::vold::DeleteDirContentsAndDir(sandboxDir) < 0) {
         PLOG(ERROR) << "DeleteDirContentsAndDir failed on " << sandboxDir;
