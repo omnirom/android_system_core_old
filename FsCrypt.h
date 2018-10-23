@@ -18,21 +18,21 @@
 
 #include <cutils/multiuser.h>
 
-bool e4crypt_initialize_global_de();
+bool fscrypt_initialize_global_de();
 
-bool e4crypt_init_user0();
-bool e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral);
-bool e4crypt_destroy_user_key(userid_t user_id);
-bool e4crypt_add_user_key_auth(userid_t user_id, int serial, const std::string& token,
+bool fscrypt_init_user0();
+bool fscrypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral);
+bool fscrypt_destroy_user_key(userid_t user_id);
+bool fscrypt_add_user_key_auth(userid_t user_id, int serial, const std::string& token,
                                const std::string& secret);
-bool e4crypt_fixate_newest_user_key_auth(userid_t user_id);
+bool fscrypt_fixate_newest_user_key_auth(userid_t user_id);
 
-bool e4crypt_unlock_user_key(userid_t user_id, int serial, const std::string& token,
+bool fscrypt_unlock_user_key(userid_t user_id, int serial, const std::string& token,
                              const std::string& secret);
-bool e4crypt_lock_user_key(userid_t user_id);
+bool fscrypt_lock_user_key(userid_t user_id);
 
-bool e4crypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_id, int serial,
+bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_id, int serial,
                                   int flags);
-bool e4crypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_id, int flags);
+bool fscrypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_id, int flags);
 
-bool e4crypt_destroy_volume_keys(const std::string& volume_uuid);
+bool fscrypt_destroy_volume_keys(const std::string& volume_uuid);

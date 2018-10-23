@@ -19,6 +19,6 @@
 
 #include <string>
 
-bool e4crypt_mount_metadata_encrypted(const std::string& mount_point, bool needs_encrypt);
+bool fscrypt_mount_metadata_encrypted(const std::string& mount_point, bool needs_encrypt);
 
 #endif

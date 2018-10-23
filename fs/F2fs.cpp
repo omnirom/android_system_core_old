@@ -20,7 +20,7 @@
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
-#include <ext4_utils/ext4_crypt.h>
+#include <fscrypt/fscrypt.h>
 
 #include <string>
 #include <vector>
@@ -81,7 +81,7 @@ status_t Format(const std::string& source) {
         cmd.push_back("-O");
         cmd.push_back("quota");
     }
-    if (e4crypt_is_native()) {
+    if (fscrypt_is_native()) {
         cmd.push_back("-O");
         cmd.push_back("encrypt");
     }

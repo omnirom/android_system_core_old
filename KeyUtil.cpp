@@ -32,22 +32,19 @@
 namespace android {
 namespace vold {
 
-// ext4enc:TODO get this const from somewhere good
-const int EXT4_KEY_DESCRIPTOR_SIZE = 8;
-
-// ext4enc:TODO Include structure from somewhere sensible
-// MUST be in sync with ext4_crypto.c in kernel
-constexpr int EXT4_ENCRYPTION_MODE_AES_256_XTS = 1;
-constexpr int EXT4_AES_256_XTS_KEY_SIZE = 64;
-constexpr int EXT4_MAX_KEY_SIZE = 64;
-struct ext4_encryption_key {
+// fscrypt:TODO get these definitions from <linux/fs.h>
+constexpr int FS_KEY_DESCRIPTOR_SIZE = 8;
+constexpr int FS_ENCRYPTION_MODE_AES_256_XTS = 1;
+constexpr int FS_AES_256_XTS_KEY_SIZE = 64;
+constexpr int FS_MAX_KEY_SIZE = 64;
+struct fscrypt_key {
     uint32_t mode;
-    char raw[EXT4_MAX_KEY_SIZE];
+    char raw[FS_MAX_KEY_SIZE];
     uint32_t size;
 };
 
 bool randomKey(KeyBuffer* key) {
-    *key = KeyBuffer(EXT4_AES_256_XTS_KEY_SIZE);
+    *key = KeyBuffer(FS_AES_256_XTS_KEY_SIZE);
     if (ReadRandomBytes(key->size(), key->data()) != 0) {
         // TODO status_t plays badly with PLOG, fix it.
         LOG(ERROR) << "Random read failed";
@@ -70,21 +67,20 @@ static std::string generateKeyRef(const char* key, int length) {
     unsigned char key_ref2[SHA512_DIGEST_LENGTH];
     SHA512_Final(key_ref2, &c);
 
-    static_assert(EXT4_KEY_DESCRIPTOR_SIZE <= SHA512_DIGEST_LENGTH,
-                  "Hash too short for descriptor");
-    return std::string((char*)key_ref2, EXT4_KEY_DESCRIPTOR_SIZE);
+    static_assert(FS_KEY_DESCRIPTOR_SIZE <= SHA512_DIGEST_LENGTH, "Hash too short for descriptor");
+    return std::string((char*)key_ref2, FS_KEY_DESCRIPTOR_SIZE);
 }
 
-static bool fillKey(const KeyBuffer& key, ext4_encryption_key* ext4_key) {
-    if (key.size() != EXT4_AES_256_XTS_KEY_SIZE) {
+static bool fillKey(const KeyBuffer& key, fscrypt_key* fs_key) {
+    if (key.size() != FS_AES_256_XTS_KEY_SIZE) {
         LOG(ERROR) << "Wrong size key " << key.size();
         return false;
     }
-    static_assert(EXT4_AES_256_XTS_KEY_SIZE <= sizeof(ext4_key->raw), "Key too long!");
-    ext4_key->mode = EXT4_ENCRYPTION_MODE_AES_256_XTS;
-    ext4_key->size = key.size();
-    memset(ext4_key->raw, 0, sizeof(ext4_key->raw));
-    memcpy(ext4_key->raw, key.data(), key.size());
+    static_assert(FS_AES_256_XTS_KEY_SIZE <= sizeof(fs_key->raw), "Key too long!");
+    fs_key->mode = FS_ENCRYPTION_MODE_AES_256_XTS;
+    fs_key->size = key.size();
+    memset(fs_key->raw, 0, sizeof(fs_key->raw));
+    memcpy(fs_key->raw, key.data(), key.size());
     return true;
 }
 
@@ -100,8 +96,8 @@ static std::string keyname(const std::string& prefix, const std::string& raw_ref
 }
 
 // Get the keyring we store all keys in
-static bool e4cryptKeyring(key_serial_t* device_keyring) {
-    *device_keyring = keyctl_search(KEY_SPEC_SESSION_KEYRING, "keyring", "e4crypt", 0);
+static bool fscryptKeyring(key_serial_t* device_keyring) {
+    *device_keyring = keyctl_search(KEY_SPEC_SESSION_KEYRING, "keyring", "fscrypt", 0);
     if (*device_keyring == -1) {
         PLOG(ERROR) << "Unable to find device keyring";
         return false;
@@ -112,18 +108,18 @@ static bool e4cryptKeyring(key_serial_t* device_keyring) {
 // Install password into global keyring
 // Return raw key reference for use in policy
 bool installKey(const KeyBuffer& key, std::string* raw_ref) {
-    // Place ext4_encryption_key into automatically zeroing buffer.
-    KeyBuffer ext4KeyBuffer(sizeof(ext4_encryption_key));
-    ext4_encryption_key& ext4_key = *reinterpret_cast<ext4_encryption_key*>(ext4KeyBuffer.data());
+    // Place fscrypt_key into automatically zeroing buffer.
+    KeyBuffer fsKeyBuffer(sizeof(fscrypt_key));
+    fscrypt_key& fs_key = *reinterpret_cast<fscrypt_key*>(fsKeyBuffer.data());
 
-    if (!fillKey(key, &ext4_key)) return false;
-    *raw_ref = generateKeyRef(ext4_key.raw, ext4_key.size);
+    if (!fillKey(key, &fs_key)) return false;
+    *raw_ref = generateKeyRef(fs_key.raw, fs_key.size);
     key_serial_t device_keyring;
-    if (!e4cryptKeyring(&device_keyring)) return false;
+    if (!fscryptKeyring(&device_keyring)) return false;
     for (char const* const* name_prefix = NAME_PREFIXES; *name_prefix != nullptr; name_prefix++) {
         auto ref = keyname(*name_prefix, *raw_ref);
         key_serial_t key_id =
-            add_key("logon", ref.c_str(), (void*)&ext4_key, sizeof(ext4_key), device_keyring);
+            add_key("logon", ref.c_str(), (void*)&fs_key, sizeof(fs_key), device_keyring);
         if (key_id == -1) {
             PLOG(ERROR) << "Failed to insert key into keyring " << device_keyring;
             return false;
@@ -136,7 +132,7 @@ bool installKey(const KeyBuffer& key, std::string* raw_ref) {
 
 bool evictKey(const std::string& raw_ref) {
     key_serial_t device_keyring;
-    if (!e4cryptKeyring(&device_keyring)) return false;
+    if (!fscryptKeyring(&device_keyring)) return false;
     bool success = true;
     for (char const* const* name_prefix = NAME_PREFIXES; *name_prefix != nullptr; name_prefix++) {
         auto ref = keyname(*name_prefix, raw_ref);
