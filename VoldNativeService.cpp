@@ -358,12 +358,16 @@ binder::Status VoldNativeService::onUserRemoved(int32_t userId) {
 }
 
 binder::Status VoldNativeService::onUserStarted(int32_t userId,
-                                                const std::vector<std::string>& packageNames) {
+                                                const std::vector<std::string>& packageNames,
+                                                const std::vector<int>& appIds,
+                                                const std::vector<std::string>& sandboxIds) {
     ENFORCE_UID(AID_SYSTEM);
     CHECK_ARGUMENT_PACKAGE_NAMES(packageNames);
+    CHECK_ARGUMENT_SANDBOX_IDS(sandboxIds);
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->onUserStarted(userId, packageNames));
+    return translate(
+        VolumeManager::Instance()->onUserStarted(userId, packageNames, appIds, sandboxIds));
 }
 
 binder::Status VoldNativeService::onUserStopped(int32_t userId) {
@@ -899,7 +903,7 @@ binder::Status VoldNativeService::prepareSandboxForApp(const std::string& packag
 }
 
 binder::Status VoldNativeService::destroySandboxForApp(const std::string& packageName,
-                                                       int32_t appId, const std::string& sandboxId,
+                                                       const std::string& sandboxId,
                                                        int32_t userId) {
     ENFORCE_UID(AID_SYSTEM);
     CHECK_ARGUMENT_PACKAGE_NAME(packageName);
@@ -907,7 +911,7 @@ binder::Status VoldNativeService::destroySandboxForApp(const std::string& packag
     ACQUIRE_LOCK;
 
     return translate(
-        VolumeManager::Instance()->destroySandboxForApp(packageName, appId, sandboxId, userId));
+        VolumeManager::Instance()->destroySandboxForApp(packageName, sandboxId, userId));
 }
 
 binder::Status VoldNativeService::startCheckpoint(int32_t retry) {

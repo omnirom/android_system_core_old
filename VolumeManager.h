@@ -90,7 +90,8 @@ class VolumeManager {
 
     int onUserAdded(userid_t userId, int userSerialNumber);
     int onUserRemoved(userid_t userId);
-    int onUserStarted(userid_t userId, const std::vector<std::string>& packageNames);
+    int onUserStarted(userid_t userId, const std::vector<std::string>& packageNames,
+                      const std::vector<int>& appIds, const std::vector<std::string>& sandboxIds);
     int onUserStopped(userid_t userId);
 
     int addAppIds(const std::vector<std::string>& packageNames, const std::vector<int32_t>& appIds);
@@ -98,8 +99,8 @@ class VolumeManager {
                       const std::vector<std::string>& sandboxIds);
     int prepareSandboxForApp(const std::string& packageName, appid_t appId,
                              const std::string& sandboxId, userid_t userId);
-    int destroySandboxForApp(const std::string& packageName, appid_t appId,
-                             const std::string& sandboxId, userid_t userId);
+    int destroySandboxForApp(const std::string& packageName, const std::string& sandboxId,
+                             userid_t userId);
 
     int onVolumeMounted(android::vold::VolumeBase* vol);
     int onVolumeUnmounted(android::vold::VolumeBase* vol);
