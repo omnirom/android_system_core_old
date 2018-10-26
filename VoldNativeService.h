@@ -39,7 +39,9 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
 
     binder::Status onUserAdded(int32_t userId, int32_t userSerial);
     binder::Status onUserRemoved(int32_t userId);
-    binder::Status onUserStarted(int32_t userId, const std::vector<std::string>& packageNames);
+    binder::Status onUserStarted(int32_t userId, const std::vector<std::string>& packageNames,
+                                 const std::vector<int>& appIds,
+                                 const std::vector<std::string>& sandboxIds);
     binder::Status onUserStopped(int32_t userId);
 
     binder::Status addAppIds(const std::vector<std::string>& packageNames,
@@ -118,7 +120,7 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
 
     binder::Status prepareSandboxForApp(const std::string& packageName, int32_t appId,
                                         const std::string& sandboxId, int32_t userId);
-    binder::Status destroySandboxForApp(const std::string& packageName, int32_t appId,
+    binder::Status destroySandboxForApp(const std::string& packageName,
                                         const std::string& sandboxId, int32_t userId);
 
     binder::Status startCheckpoint(int32_t retry);

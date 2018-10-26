@@ -761,7 +761,9 @@ int VolumeManager::onUserRemoved(userid_t userId) {
     return 0;
 }
 
-int VolumeManager::onUserStarted(userid_t userId, const std::vector<std::string>& packageNames) {
+int VolumeManager::onUserStarted(userid_t userId, const std::vector<std::string>& packageNames,
+                                 const std::vector<int>& appIds,
+                                 const std::vector<std::string>& sandboxIds) {
     LOG(VERBOSE) << "onUserStarted: " << userId;
     // Note that sometimes the system will spin up processes from Zygote
     // before actually starting the user, so we're okay if Zygote
@@ -771,6 +773,10 @@ int VolumeManager::onUserStarted(userid_t userId, const std::vector<std::string>
 
     mStartedUsers.insert(userId);
     mUserPackages[userId] = packageNames;
+    for (size_t i = 0; i < packageNames.size(); ++i) {
+        mAppIds[packageNames[i]] = appIds[i];
+        mSandboxIds[appIds[i]] = sandboxIds[i];
+    }
     if (mPrimary) {
         linkPrimary(userId);
     }
@@ -852,13 +858,13 @@ int VolumeManager::prepareSandboxForApp(const std::string& packageName, appid_t 
     return prepareSandboxes(userId, {packageName}, visibleVolLabels);
 }
 
-int VolumeManager::destroySandboxForApp(const std::string& packageName, appid_t appId,
+int VolumeManager::destroySandboxForApp(const std::string& packageName,
                                         const std::string& sandboxId, userid_t userId) {
     if (!GetBoolProperty(kIsolatedStorage, false)) {
         return 0;
     }
-    LOG(VERBOSE) << "destroySandboxForApp: " << packageName << ", appId=" << appId
-                 << ", sandboxId=" << sandboxId << ", userId=" << userId;
+    LOG(VERBOSE) << "destroySandboxForApp: " << packageName << ", sandboxId=" << sandboxId
+                 << ", userId=" << userId;
     auto& userPackages = mUserPackages[userId];
     std::remove(userPackages.begin(), userPackages.end(), packageName);
     // If the package is not uninstalled in any other users, remove appId and sandboxId
@@ -872,8 +878,11 @@ int VolumeManager::destroySandboxForApp(const std::string& packageName, appid_t 
         }
     }
     if (!installedInAnyUser) {
-        mAppIds.erase(packageName);
-        mSandboxIds.erase(appId);
+        const auto& entry = mAppIds.find(packageName);
+        if (entry != mAppIds.end()) {
+            mSandboxIds.erase(entry->second);
+            mAppIds.erase(entry);
+        }
     }
 
     std::vector<std::string> visibleVolLabels;
