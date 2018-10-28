@@ -105,6 +105,11 @@ interface IVold {
     void restoreCheckpoint(@utf8InCpp String device);
     void markBootAttempt();
 
+    @utf8InCpp String createStubVolume(@utf8InCpp String sourcePath,
+            @utf8InCpp String mountPath, @utf8InCpp String fsType,
+            @utf8InCpp String fsUuid, @utf8InCpp String fsLabel);
+    void destroyStubVolume(@utf8InCpp String volId);
+
     const int ENCRYPTION_FLAG_NO_UI = 4;
 
     const int ENCRYPTION_STATE_NONE = 1;
@@ -151,4 +156,5 @@ interface IVold {
     const int VOLUME_TYPE_EMULATED = 2;
     const int VOLUME_TYPE_ASEC = 3;
     const int VOLUME_TYPE_OBB = 4;
+    const int VOLUME_TYPE_STUB = 5;
 }
