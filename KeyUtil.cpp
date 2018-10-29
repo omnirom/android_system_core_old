@@ -16,6 +16,7 @@
 
 #include "KeyUtil.h"
 
+#include <linux/fs.h>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -32,16 +33,7 @@
 namespace android {
 namespace vold {
 
-// fscrypt:TODO get these definitions from <linux/fs.h>
-constexpr int FS_KEY_DESCRIPTOR_SIZE = 8;
-constexpr int FS_ENCRYPTION_MODE_AES_256_XTS = 1;
 constexpr int FS_AES_256_XTS_KEY_SIZE = 64;
-constexpr int FS_MAX_KEY_SIZE = 64;
-struct fscrypt_key {
-    uint32_t mode;
-    char raw[FS_MAX_KEY_SIZE];
-    uint32_t size;
-};
 
 bool randomKey(KeyBuffer* key) {
     *key = KeyBuffer(FS_AES_256_XTS_KEY_SIZE);
@@ -54,7 +46,7 @@ bool randomKey(KeyBuffer* key) {
 }
 
 // Get raw keyref - used to make keyname and to pass to ioctl
-static std::string generateKeyRef(const char* key, int length) {
+static std::string generateKeyRef(const uint8_t* key, int length) {
     SHA512_CTX c;
 
     SHA512_Init(&c);
