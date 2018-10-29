@@ -194,11 +194,11 @@ static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
     return true;
 }
 
-bool e4crypt_mount_metadata_encrypted(const std::string& mount_point, bool needs_encrypt) {
-    LOG(DEBUG) << "e4crypt_mount_metadata_encrypted: " << mount_point << " " << needs_encrypt;
+bool fscrypt_mount_metadata_encrypted(const std::string& mount_point, bool needs_encrypt) {
+    LOG(DEBUG) << "fscrypt_mount_metadata_encrypted: " << mount_point << " " << needs_encrypt;
     auto encrypted_state = android::base::GetProperty("ro.crypto.state", "");
     if (encrypted_state != "") {
-        LOG(DEBUG) << "e4crypt_enable_crypto got unexpected starting state: " << encrypted_state;
+        LOG(DEBUG) << "fscrypt_enable_crypto got unexpected starting state: " << encrypted_state;
         return false;
     }
     auto data_rec = fs_mgr_get_entry_for_mount_point(fstab_default, mount_point);
