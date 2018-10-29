@@ -25,7 +25,7 @@
 #include "VolumeManager.h"
 
 #include "Checkpoint.h"
-#include "Ext4Crypt.h"
+#include "FsCrypt.h"
 #include "MetadataCrypt.h"
 #include "cryptfs.h"
 
@@ -35,8 +35,8 @@
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
-#include <ext4_utils/ext4_crypt.h>
 #include <fs_mgr.h>
+#include <fscrypt/fscrypt.h>
 #include <private/android_filesystem_config.h>
 #include <utils/Trace.h>
 
@@ -574,11 +574,11 @@ binder::Status VoldNativeService::fdeEnable(int32_t passwordType, const std::str
     ACQUIRE_CRYPT_LOCK;
 
     LOG(DEBUG) << "fdeEnable(" << passwordType << ", *, " << encryptionFlags << ")";
-    if (e4crypt_is_native()) {
-        LOG(ERROR) << "e4crypt_is_native, fdeEnable invalid";
-        return error("e4crypt_is_native, fdeEnable invalid");
+    if (fscrypt_is_native()) {
+        LOG(ERROR) << "fscrypt_is_native, fdeEnable invalid";
+        return error("fscrypt_is_native, fdeEnable invalid");
     }
-    LOG(DEBUG) << "!e4crypt_is_native, spawning fdeEnableInternal";
+    LOG(DEBUG) << "!fscrypt_is_native, spawning fdeEnableInternal";
 
     // Spawn as thread so init can issue commands back to vold without
     // causing deadlock, usually as a result of prep_data_fs.
@@ -652,14 +652,14 @@ binder::Status VoldNativeService::fbeEnable() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(e4crypt_initialize_global_de());
+    return translateBool(fscrypt_initialize_global_de());
 }
 
 binder::Status VoldNativeService::mountDefaultEncrypted() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    if (!e4crypt_is_native()) {
+    if (!fscrypt_is_native()) {
         // Spawn as thread so init can issue commands back to vold without
         // causing deadlock, usually as a result of prep_data_fs.
         std::thread(&cryptfs_mount_default_encrypted).detach();
@@ -671,7 +671,7 @@ binder::Status VoldNativeService::initUser0() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(e4crypt_init_user0());
+    return translateBool(fscrypt_init_user0());
 }
 
 binder::Status VoldNativeService::isConvertibleToFbe(bool* _aidl_return) {
@@ -686,28 +686,28 @@ binder::Status VoldNativeService::mountFstab(const std::string& mountPoint) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    return translateBool(e4crypt_mount_metadata_encrypted(mountPoint, false));
+    return translateBool(fscrypt_mount_metadata_encrypted(mountPoint, false));
 }
 
 binder::Status VoldNativeService::encryptFstab(const std::string& mountPoint) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    return translateBool(e4crypt_mount_metadata_encrypted(mountPoint, true));
+    return translateBool(fscrypt_mount_metadata_encrypted(mountPoint, true));
 }
 
 binder::Status VoldNativeService::createUserKey(int32_t userId, int32_t userSerial, bool ephemeral) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(e4crypt_vold_create_user_key(userId, userSerial, ephemeral));
+    return translateBool(fscrypt_vold_create_user_key(userId, userSerial, ephemeral));
 }
 
 binder::Status VoldNativeService::destroyUserKey(int32_t userId) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(e4crypt_destroy_user_key(userId));
+    return translateBool(fscrypt_destroy_user_key(userId));
 }
 
 binder::Status VoldNativeService::addUserKeyAuth(int32_t userId, int32_t userSerial,
@@ -716,14 +716,14 @@ binder::Status VoldNativeService::addUserKeyAuth(int32_t userId, int32_t userSer
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(e4crypt_add_user_key_auth(userId, userSerial, token, secret));
+    return translateBool(fscrypt_add_user_key_auth(userId, userSerial, token, secret));
 }
 
 binder::Status VoldNativeService::fixateNewestUserKeyAuth(int32_t userId) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(e4crypt_fixate_newest_user_key_auth(userId));
+    return translateBool(fscrypt_fixate_newest_user_key_auth(userId));
 }
 
 binder::Status VoldNativeService::unlockUserKey(int32_t userId, int32_t userSerial,
@@ -732,14 +732,14 @@ binder::Status VoldNativeService::unlockUserKey(int32_t userId, int32_t userSeri
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(e4crypt_unlock_user_key(userId, userSerial, token, secret));
+    return translateBool(fscrypt_unlock_user_key(userId, userSerial, token, secret));
 }
 
 binder::Status VoldNativeService::lockUserKey(int32_t userId) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(e4crypt_lock_user_key(userId));
+    return translateBool(fscrypt_lock_user_key(userId));
 }
 
 binder::Status VoldNativeService::prepareUserStorage(const std::unique_ptr<std::string>& uuid,
@@ -751,7 +751,7 @@ binder::Status VoldNativeService::prepareUserStorage(const std::unique_ptr<std::
     CHECK_ARGUMENT_HEX(uuid_);
 
     ACQUIRE_CRYPT_LOCK;
-    return translateBool(e4crypt_prepare_user_storage(uuid_, userId, userSerial, flags));
+    return translateBool(fscrypt_prepare_user_storage(uuid_, userId, userSerial, flags));
 }
 
 binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::string>& uuid,
@@ -762,7 +762,7 @@ binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::
     CHECK_ARGUMENT_HEX(uuid_);
 
     ACQUIRE_CRYPT_LOCK;
-    return translateBool(e4crypt_destroy_user_storage(uuid_, userId, flags));
+    return translateBool(fscrypt_destroy_user_storage(uuid_, userId, flags));
 }
 
 binder::Status VoldNativeService::startCheckpoint(int32_t retry) {
