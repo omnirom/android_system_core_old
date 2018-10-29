@@ -36,12 +36,12 @@
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <cutils/properties.h>
-#include <ext4_utils/ext4_crypt.h>
+#include <fscrypt/fscrypt.h>
 #include <logwrap/logwrap.h>
 #include <selinux/selinux.h>
 
 #include "Ext4.h"
-#include "Ext4Crypt.h"
+#include "FsCrypt.h"
 #include "Utils.h"
 #include "VoldUtil.h"
 
@@ -175,7 +175,7 @@ status_t Format(const std::string& source, unsigned long numSectors, const std::
     if (android::base::GetBoolProperty("vold.has_quota", false)) {
         options += ",quota";
     }
-    if (e4crypt_is_native()) {
+    if (fscrypt_is_native()) {
         options += ",encrypt";
     }
 

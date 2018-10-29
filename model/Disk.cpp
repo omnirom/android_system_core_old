@@ -15,7 +15,7 @@
  */
 
 #include "Disk.h"
-#include "Ext4Crypt.h"
+#include "FsCrypt.h"
 #include "PrivateVolume.h"
 #include "PublicVolume.h"
 #include "Utils.h"
@@ -28,7 +28,7 @@
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
-#include <ext4_utils/ext4_crypt.h>
+#include <fscrypt/fscrypt.h>
 
 #include "cryptfs.h"
 
