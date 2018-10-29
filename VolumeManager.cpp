@@ -49,10 +49,10 @@
 
 #include <private/android_filesystem_config.h>
 
-#include <ext4_utils/ext4_crypt.h>
+#include <fscrypt/fscrypt.h>
 
 #include "Devmapper.h"
-#include "Ext4Crypt.h"
+#include "FsCrypt.h"
 #include "Loop.h"
 #include "NetlinkManager.h"
 #include "Process.h"
@@ -338,8 +338,8 @@ int VolumeManager::forgetPartition(const std::string& partGuid, const std::strin
         LOG(ERROR) << "Failed to unlink " << keyPath;
         success = false;
     }
-    if (e4crypt_is_native()) {
-        if (!e4crypt_destroy_volume_keys(fsUuid)) {
+    if (fscrypt_is_native()) {
+        if (!fscrypt_destroy_volume_keys(fsUuid)) {
             success = false;
         }
     }
