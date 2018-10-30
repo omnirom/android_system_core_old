@@ -24,6 +24,7 @@
 #include <selinux/selinux.h>
 #include <utils/Errors.h>
 
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -133,6 +134,8 @@ bool IsRunningInEmulator();
 status_t UnmountTree(const std::string& prefix);
 
 status_t DeleteDirContentsAndDir(const std::string& pathname);
+
+status_t WaitForFile(const char* filename, std::chrono::nanoseconds timeout);
 
 }  // namespace vold
 }  // namespace android
