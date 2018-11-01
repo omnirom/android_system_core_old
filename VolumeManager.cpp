@@ -50,6 +50,7 @@
 
 #include <fscrypt/fscrypt.h>
 
+#include "AppFuseUtil.h"
 #include "Devmapper.h"
 #include "FsCrypt.h"
 #include "Loop.h"
@@ -631,78 +632,6 @@ int VolumeManager::mkdirs(const std::string& path) {
     }
 }
 
-static size_t kAppFuseMaxMountPointName = 32;
-
-static android::status_t getMountPath(uid_t uid, const std::string& name, std::string* path) {
-    if (name.size() > kAppFuseMaxMountPointName) {
-        LOG(ERROR) << "AppFuse mount name is too long.";
-        return -EINVAL;
-    }
-    for (size_t i = 0; i < name.size(); i++) {
-        if (!isalnum(name[i])) {
-            LOG(ERROR) << "AppFuse mount name contains invalid character.";
-            return -EINVAL;
-        }
-    }
-    *path = StringPrintf("/mnt/appfuse/%d_%s", uid, name.c_str());
-    return android::OK;
-}
-
-static android::status_t mount(int device_fd, const std::string& path) {
-    // Remove existing mount.
-    android::vold::ForceUnmount(path);
-
-    const auto opts = StringPrintf(
-        "fd=%i,"
-        "rootmode=40000,"
-        "default_permissions,"
-        "allow_other,"
-        "user_id=0,group_id=0,"
-        "context=\"u:object_r:app_fuse_file:s0\","
-        "fscontext=u:object_r:app_fusefs:s0",
-        device_fd);
-
-    const int result =
-        TEMP_FAILURE_RETRY(mount("/dev/fuse", path.c_str(), "fuse",
-                                 MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME, opts.c_str()));
-    if (result != 0) {
-        PLOG(ERROR) << "Failed to mount " << path;
-        return -errno;
-    }
-
-    return android::OK;
-}
-
-static android::status_t runCommand(const std::string& command, uid_t uid, const std::string& path,
-                                    int device_fd) {
-    if (DEBUG_APPFUSE) {
-        LOG(DEBUG) << "Run app fuse command " << command << " for the path " << path << " and uid "
-                   << uid;
-    }
-
-    if (command == "mount") {
-        return mount(device_fd, path);
-    } else if (command == "unmount") {
-        // If it's just after all FD opened on mount point are closed, umount2 can fail with
-        // EBUSY. To avoid the case, specify MNT_DETACH.
-        if (umount2(path.c_str(), UMOUNT_NOFOLLOW | MNT_DETACH) != 0 && errno != EINVAL &&
-            errno != ENOENT) {
-            PLOG(ERROR) << "Failed to unmount directory.";
-            return -errno;
-        }
-        if (rmdir(path.c_str()) != 0) {
-            PLOG(ERROR) << "Failed to remove the mount directory.";
-            return -errno;
-        }
-        return android::OK;
-    } else {
-        LOG(ERROR) << "Unknown appfuse command " << command;
-        return -EPERM;
-    }
-
-    return android::OK;
-}
-
 int VolumeManager::createObb(const std::string& sourcePath, const std::string& sourceKey,
                              int32_t ownerGid, std::string* outVolId) {
     int id = mNextObbId++;
@@ -756,56 +685,13 @@ int VolumeManager::destroyStubVolume(const std::string& volId) {
 }
 
 int VolumeManager::mountAppFuse(uid_t uid, int mountId, unique_fd* device_fd) {
-    std::string name = std::to_string(mountId);
-
-    // Check mount point name.
-    std::string path;
-    if (getMountPath(uid, name, &path) != android::OK) {
-        LOG(ERROR) << "Invalid mount point name";
-        return -1;
-    }
-
-    // Create directories.
-    const android::status_t result = android::vold::PrepareDir(path, 0700, 0, 0);
-    if (result != android::OK) {
-        PLOG(ERROR) << "Failed to prepare directory " << path;
-        return -1;
-    }
-
-    // Open device FD.
-    device_fd->reset(open("/dev/fuse", O_RDWR));  // not O_CLOEXEC
-    if (device_fd->get() == -1) {
-        PLOG(ERROR) << "Failed to open /dev/fuse";
-        return -1;
-    }
-
-    // Mount.
-    return runCommand("mount", uid, path, device_fd->get());
+    return android::vold::MountAppFuse(uid, mountId, device_fd);
 }
 
 int VolumeManager::unmountAppFuse(uid_t uid, int mountId) {
-    std::string name = std::to_string(mountId);
-
-    // Check mount point name.
-    std::string path;
-    if (getMountPath(uid, name, &path) != android::OK) {
-        LOG(ERROR) << "Invalid mount point name";
-        return -1;
-    }
-
-    return runCommand("unmount", uid, path, -1 /* device_fd */);
+    return android::vold::UnmountAppFuse(uid, mountId);
 }
 
 int VolumeManager::openAppFuseFile(uid_t uid, int mountId, int fileId, int flags) {
-    std::string name = std::to_string(mountId);
-
-    // Check mount point name.
-    std::string mountPoint;
-    if (getMountPath(uid, name, &mountPoint) != android::OK) {
-        LOG(ERROR) << "Invalid mount point name";
-        return -1;
-    }
-
-    std::string path = StringPrintf("%s/%d", mountPoint.c_str(), fileId);
-    return TEMP_FAILURE_RETRY(open(path.c_str(), flags));
+    return android::vold::OpenAppFuseFile(uid, mountId, fileId, flags);
 }
