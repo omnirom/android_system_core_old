@@ -134,11 +134,14 @@ cc_library_static {
     product_variables: {
         arc: {
             exclude_srcs: [
+                "AppFuseUtil.cpp",
                 "model/ObbVolume.cpp",
             ],
             static_libs: [
                 "arc_services_aidl",
+                "libarcappfuse",
                 "libarcobbvolume",
+                "libparcelfiledescriptor",
             ],
         },
         debuggable: {
@@ -163,7 +166,9 @@ cc_binary {
         arc: {
             static_libs: [
                 "arc_services_aidl",
+                "libarcappfuse",
                 "libarcobbvolume",
+                "libparcelfiledescriptor",
             ],
         },
     },
