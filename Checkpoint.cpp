@@ -82,6 +82,7 @@ Status cp_startCheckpoint(int retry) {
 }
 
 Status cp_commitChanges() {
+    if (!cp_needsCheckpoint()) return Status::ok();
     // Must take action for list of mounted checkpointed things here
     // To do this, we walk the list of mounted file systems.
     // But we also need to get the matching fstab entries to see
@@ -104,14 +105,17 @@ Status cp_commitChanges() {
 
         if (fs_mgr_is_checkpoint_fs(fstab_rec)) {
             if (!strcmp(fstab_rec->fs_type, "f2fs")) {
-                mount(mount_rec->blk_device, mount_rec->mount_point, "none",
-                      MS_REMOUNT | fstab_rec->flags, "checkpoint=enable");
+                if (mount(mount_rec->blk_device, mount_rec->mount_point, "none",
+                          MS_REMOUNT | fstab_rec->flags, "checkpoint=enable")) {
+                    return Status::fromExceptionCode(EINVAL, "Failed to remount");
+                }
             }
         } else if (fs_mgr_is_checkpoint_blk(fstab_rec)) {
-            setBowState(mount_rec->blk_device, "2");
+            if (!setBowState(mount_rec->blk_device, "2"))
+                return Status::fromExceptionCode(EINVAL, "Failed to set bow state");
         }
     }
-    if (android::base::RemoveFileIfExists(kMetadataCPFile, &err_str))
+    if (!android::base::RemoveFileIfExists(kMetadataCPFile, &err_str))
         return Status::fromExceptionCode(errno, err_str.c_str());
     return Status::ok();
 }
