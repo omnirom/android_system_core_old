@@ -818,7 +818,8 @@ static status_t delete_dir_contents(DIR* dir) {
                 result = -errno;
                 continue;
             }
-            std::unique_ptr<DIR, decltype(&closedir)> subdirp(fdopendir(subfd), closedir);
+            std::unique_ptr<DIR, decltype(&closedir)> subdirp(
+                android::base::Fdopendir(std::move(subfd)), closedir);
             if (!subdirp) {
                 PLOG(ERROR) << "Couldn't fdopendir " << name;
                 result = -errno;
