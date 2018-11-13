@@ -129,6 +129,7 @@ cc_library_static {
         "model/PrivateVolume.cpp",
         "model/PublicVolume.cpp",
         "model/VolumeBase.cpp",
+        "model/StubVolume.cpp",
         "secontext.cpp",
     ],
     product_variables: {
