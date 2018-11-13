@@ -63,6 +63,7 @@
 #include "fs/Vfat.h"
 #include "model/EmulatedVolume.h"
 #include "model/ObbVolume.h"
+#include "model/StubVolume.h"
 
 using android::base::StartsWith;
 using android::base::StringPrintf;
@@ -90,6 +91,7 @@ VolumeManager* VolumeManager::Instance() {
 VolumeManager::VolumeManager() {
     mDebug = false;
     mNextObbId = 0;
+    mNextStubVolumeId = 0;
     // For security reasons, assume that a secure keyguard is
     // showing until we hear otherwise
     mSecureKeyguardShowing = true;
@@ -300,6 +302,11 @@ std::shared_ptr<android::vold::VolumeBase> VolumeManager::findVolume(const std::
     for (const auto& disk : mDisks) {
         auto vol = disk->findVolume(id);
         if (vol != nullptr) {
+            return vol;
+        }
+    }
+    for (const auto& vol : mStubVolumes) {
+        if (vol->getId() == id) {
             return vol;
         }
     }
@@ -558,6 +565,7 @@ int VolumeManager::shutdown() {
     for (const auto& disk : mDisks) {
         disk->destroy();
     }
+    mStubVolumes.clear();
     mDisks.clear();
     mPendingDisks.clear();
     android::vold::sSleepOnUnmount = true;
@@ -571,6 +579,9 @@ int VolumeManager::unmountAll() {
     // First, try gracefully unmounting all known devices
     if (mInternalEmulated != nullptr) {
         mInternalEmulated->unmount();
+    }
+    for (const auto& stub : mStubVolumes) {
+        stub->unmount();
     }
     for (const auto& disk : mDisks) {
         disk->unmountAll();
@@ -778,6 +789,32 @@ int VolumeManager::destroyObb(const std::string& volId) {
         if ((*i)->getId() == volId) {
             (*i)->destroy();
             i = mObbVolumes.erase(i);
+        } else {
+            ++i;
+        }
+    }
+    return android::OK;
+}
+
+int VolumeManager::createStubVolume(const std::string& sourcePath, const std::string& mountPath,
+                                    const std::string& fsType, const std::string& fsUuid,
+                                    const std::string& fsLabel, std::string* outVolId) {
+    int id = mNextStubVolumeId++;
+    auto vol = std::shared_ptr<android::vold::VolumeBase>(
+        new android::vold::StubVolume(id, sourcePath, mountPath, fsType, fsUuid, fsLabel));
+    vol->create();
+
+    mStubVolumes.push_back(vol);
+    *outVolId = vol->getId();
+    return android::OK;
+}
+
+int VolumeManager::destroyStubVolume(const std::string& volId) {
+    auto i = mStubVolumes.begin();
+    while (i != mStubVolumes.end()) {
+        if ((*i)->getId() == volId) {
+            (*i)->destroy();
+            i = mStubVolumes.erase(i);
         } else {
             ++i;
         }

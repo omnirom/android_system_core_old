@@ -124,6 +124,11 @@ class VolumeManager {
                   std::string* outVolId);
     int destroyObb(const std::string& volId);
 
+    int createStubVolume(const std::string& sourcePath, const std::string& mountPath,
+                         const std::string& fsType, const std::string& fsUuid,
+                         const std::string& fsLabel, std::string* outVolId);
+    int destroyStubVolume(const std::string& volId);
+
     int mountAppFuse(uid_t uid, pid_t pid, int mountId, android::base::unique_fd* device_fd);
     int unmountAppFuse(uid_t uid, pid_t pid, int mountId);
 
@@ -146,6 +151,7 @@ class VolumeManager {
     std::list<std::shared_ptr<android::vold::Disk>> mDisks;
     std::list<std::shared_ptr<android::vold::Disk>> mPendingDisks;
     std::list<std::shared_ptr<android::vold::VolumeBase>> mObbVolumes;
+    std::list<std::shared_ptr<android::vold::VolumeBase>> mStubVolumes;
 
     std::unordered_map<userid_t, int> mAddedUsers;
     std::unordered_set<userid_t> mStartedUsers;
@@ -156,6 +162,7 @@ class VolumeManager {
     std::shared_ptr<android::vold::VolumeBase> mPrimary;
 
     int mNextObbId;
+    int mNextStubVolumeId;
     bool mSecureKeyguardShowing;
 };
 

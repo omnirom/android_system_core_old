@@ -54,6 +54,7 @@ class VolumeBase {
         kEmulated,
         kAsec,
         kObb,
+        kStub,
     };
 
     enum MountFlags {

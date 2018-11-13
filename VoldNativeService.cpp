@@ -479,6 +479,29 @@ binder::Status VoldNativeService::destroyObb(const std::string& volId) {
     return translate(VolumeManager::Instance()->destroyObb(volId));
 }
 
+binder::Status VoldNativeService::createStubVolume(
+    const std::string& sourcePath, const std::string& mountPath, const std::string& fsType,
+    const std::string& fsUuid, const std::string& fsLabel, std::string* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PATH(sourcePath);
+    CHECK_ARGUMENT_PATH(mountPath);
+    CHECK_ARGUMENT_HEX(fsUuid);
+    // Label limitation seems to be different between fs (including allowed characters), so checking
+    // is quite meaningless.
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->createStubVolume(sourcePath, mountPath, fsType,
+                                                                 fsUuid, fsLabel, _aidl_return));
+}
+
+binder::Status VoldNativeService::destroyStubVolume(const std::string& volId) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_ID(volId);
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->destroyStubVolume(volId));
+}
+
 binder::Status VoldNativeService::fstrim(
     int32_t fstrimFlags, const android::sp<android::os::IVoldTaskListener>& listener) {
     ENFORCE_UID(AID_SYSTEM);
