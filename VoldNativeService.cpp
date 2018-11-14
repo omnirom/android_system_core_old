@@ -191,11 +191,11 @@ binder::Status checkArgumentPackageNames(const std::vector<std::string>& package
 }
 
 binder::Status checkArgumentSandboxId(const std::string& sandboxId) {
-    // sandboxId will be in either the format shared:<shared-user-id> or <package-name>
+    // sandboxId will be in either the format shared-<shared-user-id> or <package-name>
     // and <shared-user-id> name has same requirements as <package-name>.
     std::size_t nameStartIndex = 0;
-    if (android::base::StartsWith(sandboxId, "shared:")) {
-        nameStartIndex = 7;  // len("shared:")
+    if (android::base::StartsWith(sandboxId, "shared-")) {
+        nameStartIndex = 7;  // len("shared-")
     }
     return checkArgumentPackageName(sandboxId.substr(nameStartIndex));
 }
