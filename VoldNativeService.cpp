@@ -654,19 +654,36 @@ binder::Status VoldNativeService::abortIdleMaint(
     return ok();
 }
 
-binder::Status VoldNativeService::mountAppFuse(int32_t uid, int32_t pid, int32_t mountId,
+binder::Status VoldNativeService::mountAppFuse(int32_t uid, int32_t mountId,
                                                android::base::unique_fd* _aidl_return) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->mountAppFuse(uid, pid, mountId, _aidl_return));
+    return translate(VolumeManager::Instance()->mountAppFuse(uid, mountId, _aidl_return));
 }
 
-binder::Status VoldNativeService::unmountAppFuse(int32_t uid, int32_t pid, int32_t mountId) {
+binder::Status VoldNativeService::unmountAppFuse(int32_t uid, int32_t mountId) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->unmountAppFuse(uid, pid, mountId));
+    return translate(VolumeManager::Instance()->unmountAppFuse(uid, mountId));
+}
+
+binder::Status VoldNativeService::openAppFuseFile(int32_t uid, int32_t mountId, int32_t fileId,
+                                                  int32_t flags,
+                                                  android::base::unique_fd* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    int fd = VolumeManager::Instance()->openAppFuseFile(uid, mountId, fileId, flags);
+    if (fd == -1) {
+        return error("Failed to open AppFuse file for uid: " + std::to_string(uid) +
+                     " mountId: " + std::to_string(mountId) + " fileId: " + std::to_string(fileId) +
+                     " flags: " + std::to_string(flags));
+    }
+
+    *_aidl_return = android::base::unique_fd(fd);
+    return ok();
 }
 
 binder::Status VoldNativeService::fdeCheckPassword(const std::string& password) {
