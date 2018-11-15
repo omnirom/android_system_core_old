@@ -57,6 +57,7 @@
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
+#include <android-base/unique_fd.h>
 
 using android::base::StringPrintf;
 using android::base::WriteStringToFile;
@@ -172,8 +173,25 @@ static void fixate_user_ce_key(const std::string& directory_path, const std::str
     auto const current_path = get_ce_key_current_path(directory_path);
     if (to_fix != current_path) {
         LOG(DEBUG) << "Renaming " << to_fix << " to " << current_path;
+        android::base::unique_fd fd(TEMP_FAILURE_RETRY(
+            open(to_fix.c_str(), O_RDONLY | O_CLOEXEC)));
+        if (fd == -1) {
+            PLOG(ERROR) << "Failed to open " << to_fix;
+            return;
+        }
+        if (fsync(fd) == -1) {
+            if (errno == EROFS || errno == EINVAL) {
+                PLOG(WARNING) << "Skip fsync " << to_fix
+                              << " on a file system does not support synchronization";
+            } else {
+                PLOG(ERROR) << "Failed to fsync " << to_fix;
+                unlink(to_fix.c_str());
+                return;
+            }
+        }
         if (rename(to_fix.c_str(), current_path.c_str()) != 0) {
             PLOG(WARNING) << "Unable to rename " << to_fix << " to " << current_path;
+            return;
         }
     }
 }
