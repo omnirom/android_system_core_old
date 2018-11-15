@@ -141,9 +141,8 @@ class VolumeManager {
                          const std::string& fsLabel, std::string* outVolId);
     int destroyStubVolume(const std::string& volId);
 
-    int mountAppFuse(uid_t uid, int mountId, android::base::unique_fd* device_fd);
-    int unmountAppFuse(uid_t uid, int mountId);
-    int openAppFuseFile(uid_t uid, int mountId, int fileId, int flags);
+    int mountAppFuse(uid_t uid, pid_t pid, int mountId, android::base::unique_fd* device_fd);
+    int unmountAppFuse(uid_t uid, pid_t pid, int mountId);
 
   private:
     VolumeManager();
