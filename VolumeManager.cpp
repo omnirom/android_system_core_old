@@ -1221,7 +1221,7 @@ int VolumeManager::unmountAll() {
 
     // Worst case we might have some stale mounts lurking around, so
     // force unmount those just to be safe.
-    FILE* fp = setmntent("/proc/mounts", "r");
+    FILE* fp = setmntent("/proc/mounts", "re");
     if (fp == NULL) {
         PLOG(ERROR) << "Failed to open /proc/mounts";
         return -errno;

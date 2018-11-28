@@ -767,7 +767,7 @@ bool IsRunningInEmulator() {
 }
 
 status_t UnmountTree(const std::string& prefix) {
-    FILE* fp = setmntent("/proc/mounts", "r");
+    FILE* fp = setmntent("/proc/mounts", "re");
     if (fp == NULL) {
         PLOG(ERROR) << "Failed to open /proc/mounts";
         return -errno;
