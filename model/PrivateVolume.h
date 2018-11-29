@@ -41,6 +41,7 @@ public:
     virtual ~PrivateVolume();
     const std::string& getFsType() { return mFsType; };
     const std::string& getRawDevPath() { return mRawDevPath; };
+    const std::string& getRawDmDevPath() { return mDmDevPath; };
 
 protected:
     status_t doCreate() override;

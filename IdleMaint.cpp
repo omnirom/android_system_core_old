@@ -15,6 +15,7 @@
  */
 
 #include "IdleMaint.h"
+#include "FileDeviceUtils.h"
 #include "Utils.h"
 #include "VolumeManager.h"
 #include "model/PrivateVolume.h"
@@ -85,8 +86,8 @@ static void addFromVolumeManager(std::list<std::string>* paths,
             } else if (path_type == PathTypes::kBlkDevice) {
                 std::string gc_path;
                 const std::string& fs_type = vol->getFsType();
-                if (fs_type == "f2fs" &&
-                    Realpath(vol->getRawDevPath(), &gc_path)) {
+                if (fs_type == "f2fs" && (Realpath(vol->getRawDmDevPath(), &gc_path) ||
+                                          Realpath(vol->getRawDevPath(), &gc_path))) {
                     paths->push_back(std::string("/sys/fs/") + fs_type +
                                      "/" + Basename(gc_path));
                 }
@@ -130,7 +131,8 @@ static void addFromFstab(std::list<std::string>* paths, PathTypes path_type) {
         } else if (path_type == PathTypes::kBlkDevice) {
             std::string gc_path;
             if (std::string(fstab->recs[i].fs_type) == "f2fs" &&
-                Realpath(fstab->recs[i].blk_device, &gc_path)) {
+                Realpath(android::vold::BlockDeviceForPath(
+                    std::string(fstab->recs[i].mount_point) + "/"), &gc_path)) {
                 paths->push_back(std::string("/sys/fs/") + fstab->recs[i].fs_type +
                                  "/" + Basename(gc_path));
             }
