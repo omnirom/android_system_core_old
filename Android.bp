@@ -31,6 +31,7 @@ cc_defaults {
         "libbootloader_message",
         "libfec",
         "libfec_rs",
+        "libfs_avb",
         "libfs_mgr",
         "libscrypt_static",
         "libsquashfs_utils",
