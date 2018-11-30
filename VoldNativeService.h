@@ -82,9 +82,11 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status runIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
     binder::Status abortIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
 
-    binder::Status mountAppFuse(int32_t uid, int32_t pid, int32_t mountId,
+    binder::Status mountAppFuse(int32_t uid, int32_t mountId,
                                 android::base::unique_fd* _aidl_return);
-    binder::Status unmountAppFuse(int32_t uid, int32_t pid, int32_t mountId);
+    binder::Status unmountAppFuse(int32_t uid, int32_t mountId);
+    binder::Status openAppFuseFile(int32_t uid, int32_t mountId, int32_t fileId, int32_t flags,
+                                   android::base::unique_fd* _aidl_return);
 
     binder::Status fdeCheckPassword(const std::string& password);
     binder::Status fdeRestart();
