@@ -38,8 +38,6 @@
 #include "model/Disk.h"
 #include "model/VolumeBase.h"
 
-#define DEBUG_APPFUSE 0
-
 class VolumeManager {
   private:
     static VolumeManager* sInstance;
