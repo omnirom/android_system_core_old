@@ -2544,24 +2544,25 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
 static unsigned int persist_get_max_entries(int encrypted) {
     struct crypt_mnt_ftr crypt_ftr;
     unsigned int dsize;
-    unsigned int max_persistent_entries;
 
     /* If encrypted, use the values from the crypt_ftr, otherwise
      * use the values for the current spec.
      */
     if (encrypted) {
         if (get_crypt_ftr_and_key(&crypt_ftr)) {
-            return -1;
+            /* Something is wrong, assume no space for entries */
+            return 0;
         }
         dsize = crypt_ftr.persist_data_size;
     } else {
         dsize = CRYPT_PERSIST_DATA_SIZE;
     }
 
-    max_persistent_entries = (dsize - sizeof(struct crypt_persist_data)) /
-        sizeof(struct crypt_persist_entry);
-
-    return max_persistent_entries;
+    if (dsize > sizeof(struct crypt_persist_data)) {
+        return (dsize - sizeof(struct crypt_persist_data)) / sizeof(struct crypt_persist_entry);
+    } else {
+        return 0;
+    }
 }
 
 static int persist_get_key(const char *fieldname, char *value)
