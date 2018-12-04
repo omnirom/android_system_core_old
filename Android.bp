@@ -144,7 +144,6 @@ cc_library_static {
                 "arc_services_aidl",
                 "libarcappfuse",
                 "libarcobbvolume",
-                "libparcelfiledescriptor",
             ],
         },
         debuggable: {
@@ -171,7 +170,6 @@ cc_binary {
                 "arc_services_aidl",
                 "libarcappfuse",
                 "libarcobbvolume",
-                "libparcelfiledescriptor",
             ],
         },
     },
