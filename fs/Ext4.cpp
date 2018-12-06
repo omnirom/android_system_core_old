@@ -117,7 +117,7 @@ status_t Check(const std::string& source, const std::string& target) {
         cmd.push_back(c_source);
 
         // ext4 devices are currently always trusted
-        return ForkExecvp(cmd, sFsckContext);
+        return ForkExecvp(cmd, nullptr, sFsckContext);
     }
 
     return 0;

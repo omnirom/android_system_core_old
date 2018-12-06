@@ -67,7 +67,7 @@ status_t Check(const std::string& source) {
         cmd.push_back(source);
 
         // Fat devices are currently always untrusted
-        rc = ForkExecvp(cmd, sFsckUntrustedContext);
+        rc = ForkExecvp(cmd, nullptr, sFsckUntrustedContext);
 
         if (rc < 0) {
             LOG(ERROR) << "Filesystem check failed due to logwrap error";
