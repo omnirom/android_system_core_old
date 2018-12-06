@@ -68,12 +68,8 @@ status_t ReadMetadataUntrusted(const std::string& path, std::string* fsType, std
                                std::string* fsLabel);
 
 /* Returns either WEXITSTATUS() status, or a negative errno */
-status_t ForkExecvp(const std::vector<std::string>& args);
-status_t ForkExecvp(const std::vector<std::string>& args, security_context_t context);
-
-status_t ForkExecvp(const std::vector<std::string>& args, std::vector<std::string>& output);
-status_t ForkExecvp(const std::vector<std::string>& args, std::vector<std::string>& output,
-                    security_context_t context);
+status_t ForkExecvp(const std::vector<std::string>& args, std::vector<std::string>* output = nullptr,
+                    security_context_t context = nullptr);
 
 pid_t ForkExecvpAsync(const std::vector<std::string>& args);
 
