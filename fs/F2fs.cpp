@@ -48,7 +48,7 @@ status_t Check(const std::string& source) {
     cmd.push_back(source);
 
     // f2fs devices are currently always trusted
-    return ForkExecvp(cmd, sFsckContext);
+    return ForkExecvp(cmd, nullptr, sFsckContext);
 }
 
 status_t Mount(const std::string& source, const std::string& target) {

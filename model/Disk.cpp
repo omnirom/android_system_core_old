@@ -341,7 +341,7 @@ status_t Disk::readPartitions() {
     cmd.push_back(mDevPath);
 
     std::vector<std::string> output;
-    status_t res = ForkExecvp(cmd, output);
+    status_t res = ForkExecvp(cmd, &output);
     if (res != OK) {
         LOG(WARNING) << "sgdisk failed to scan " << mDevPath;
 
