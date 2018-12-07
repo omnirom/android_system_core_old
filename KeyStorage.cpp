@@ -480,6 +480,7 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBu
         if (!encryptWithoutKeymaster(appId, key, &encryptedKey)) return false;
     }
     if (!writeStringToFile(encryptedKey, dir + "/" + kFn_encrypted_key)) return false;
+    if (!FsyncDirectory(dir)) return false;
     return true;
 }
 
