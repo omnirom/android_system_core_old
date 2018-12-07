@@ -297,29 +297,25 @@ status_t ForkExecvp(const std::vector<std::string>& args, std::vector<std::strin
                     security_context_t context) {
     auto argv = ConvertToArgv(args);
 
-    int fd[2];
-    if (pipe2(fd, O_CLOEXEC) != 0) {
-        PLOG(ERROR) << "pipe2 in ForkExecvp";
+    android::base::unique_fd pipe_read, pipe_write;
+    if (!android::base::Pipe(&pipe_read, &pipe_write)) {
+        PLOG(ERROR) << "Pipe in ForkExecvp";
         return -errno;
     }
-    android::base::unique_fd pipe_read(fd[0]);
-    android::base::unique_fd pipe_write(fd[1]);
 
     pid_t pid = fork();
     if (pid == 0) {
         if (context) {
             if (setexeccon(context)) {
-                LOG(ERROR) << "Failed to setexeccon";
+                LOG(ERROR) << "Failed to setexeccon in ForkExecvp";
                 abort();
             }
         }
         pipe_read.reset();
-        if (pipe_write.get() != STDOUT_FILENO) {
-            dup2(pipe_write.get(), STDOUT_FILENO);
-            pipe_write.reset();
-        }
+        dup2(pipe_write.get(), STDOUT_FILENO);
+        pipe_write.reset();
         execvp(argv[0], const_cast<char**>(argv.data()));
-        PLOG(ERROR) << "Failed to exec";
+        PLOG(ERROR) << "exec in ForkExecvp";
         _exit(EXIT_FAILURE);
     }
     if (pid == -1) {
