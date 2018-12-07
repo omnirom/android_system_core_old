@@ -751,28 +751,9 @@ bool IsRunningInEmulator() {
 }
 
 status_t UnmountTree(const std::string& prefix) {
-    FILE* fp = setmntent("/proc/mounts", "re");
-    if (fp == NULL) {
-        PLOG(ERROR) << "Failed to open /proc/mounts";
+    if (umount2(prefix.c_str(), MNT_DETACH)) {
+        PLOG(ERROR) << "Failed to unmount " << prefix;
         return -errno;
-    }
-
-    // Some volumes can be stacked on each other, so force unmount in
-    // reverse order to give us the best chance of success.
-    std::list<std::string> toUnmount;
-    mntent* mentry;
-    while ((mentry = getmntent(fp)) != NULL) {
-        auto test = std::string(mentry->mnt_dir) + "/";
-        if (android::base::StartsWith(test, prefix)) {
-            toUnmount.push_front(test);
-        }
-    }
-    endmntent(fp);
-
-    for (const auto& path : toUnmount) {
-        if (umount2(path.c_str(), MNT_DETACH)) {
-            PLOG(ERROR) << "Failed to unmount " << path;
-        }
     }
     return OK;
 }
