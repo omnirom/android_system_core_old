@@ -312,7 +312,10 @@ status_t ForkExecvp(const std::vector<std::string>& args, std::vector<std::strin
             }
         }
         pipe_read.reset();
-        dup2(pipe_write.get(), STDOUT_FILENO);
+        if (dup2(pipe_write.get(), STDOUT_FILENO) == -1) {
+            PLOG(ERROR) << "dup2 in ForkExecvp";
+            _exit(EXIT_FAILURE);
+        }
         pipe_write.reset();
         execvp(argv[0], const_cast<char**>(argv.data()));
         PLOG(ERROR) << "exec in ForkExecvp";
