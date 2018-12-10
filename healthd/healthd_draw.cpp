@@ -224,9 +224,28 @@ void HealthdDraw::draw_percent(const animation* anim) {
     int x, y;
     determine_xy(field, str.size(), &x, &y);
 
-    LOGV("drawing percent %s %d %d\n", str.c_str(), x, y);
-    gr_color(field.color_r, field.color_g, field.color_b, field.color_a);
-    draw_text(field.font, x, y, str.c_str());
+  int batt_height = 0;
+  // get height of battery image to draw text below
+  const animation::frame& frame = anim->frames[anim->cur_frame];
+  if (anim->num_frames != 0) {
+      // nothing else should happen actually
+      batt_height = gr_get_height(frame.surface);
+  }
+  // draw it below the battery image
+  y = (gr_fb_height() + batt_height) / 2 + char_height_ * 2;
+
+  if (cur_level < 15) {
+      gr_color(255, 0, 0, 255); // red
+  } else if (cur_level < 50) {
+      gr_color(255, 128, 0, 255); // orange
+  } else if (cur_level < 90) {
+      gr_color(field.color_r, field.color_g, field.color_b, field.color_a);
+  } else { // cur_level >= 90
+      gr_color(0, 255, 0, 255); // green
+  }
+
+  LOGV("drawing percent %s %d %d\n", str.c_str(), x, y);
+  draw_text(field.font, x, y, str.c_str());
 }
 
 void HealthdDraw::draw_battery(const animation* anim) {
