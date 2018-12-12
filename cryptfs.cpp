@@ -36,6 +36,7 @@
 #include "secontext.h"
 
 #include <android-base/properties.h>
+#include <android-base/stringprintf.h>
 #include <bootloader_message/bootloader_message.h>
 #include <cutils/android_reboot.h>
 #include <cutils/properties.h>
@@ -74,6 +75,7 @@ extern "C" {
 #include <crypto_scrypt.h>
 }
 
+using android::base::StringPrintf;
 using namespace std::chrono_literals;
 
 #define UNUSED __attribute__((unused))
@@ -316,6 +318,10 @@ constexpr CryptoType default_crypto_type = CryptoType()
 
 constexpr CryptoType supported_crypto_types[] = {
     default_crypto_type,
+    CryptoType()
+        .set_property_name("adiantum")
+        .set_crypto_name("xchacha12,aes-adiantum-plain64")
+        .set_keysize(32),
     // Add new CryptoTypes here.  Order is not important.
 };
 
@@ -1040,6 +1046,21 @@ static std::string extra_params_as_string(const std::vector<std::string>& extra_
     return extra_params;
 }
 
+// Only adds parameters if the property is set.
+static void add_sector_size_param(std::vector<std::string>* extra_params_vec) {
+    constexpr char DM_CRYPT_SECTOR_SIZE[] = "ro.crypto.fde_sector_size";
+    char sector_size[PROPERTY_VALUE_MAX];
+
+    if (property_get(DM_CRYPT_SECTOR_SIZE, sector_size, "") > 0) {
+        std::string param = StringPrintf("sector_size:%s", sector_size);
+        extra_params_vec->push_back(std::move(param));
+
+        // With this option, IVs will match the sector numbering, instead
+        // of being hard-coded to being based on 512-byte sectors.
+        extra_params_vec->emplace_back("iv_large_sectors");
+    }
+}
+
 static int create_crypto_blk_dev(struct crypt_mnt_ftr* crypt_ftr, const unsigned char* master_key,
                                  const char* real_blk_name, char* crypto_blk_name, const char* name,
                                  uint32_t flags) {
@@ -1085,6 +1106,7 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr* crypt_ftr, const unsigned
     if (flags & CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE) {
         extra_params_vec.emplace_back("allow_encrypt_override");
     }
+    add_sector_size_param(&extra_params_vec);
     load_count = load_crypto_mapping_table(crypt_ftr, master_key, real_blk_name, name, fd,
                                            extra_params_as_string(extra_params_vec).c_str());
     if (load_count < 0) {
