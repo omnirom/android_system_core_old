@@ -73,6 +73,7 @@ using android::base::StartsWith;
 using android::base::StringAppendF;
 using android::base::StringPrintf;
 using android::base::unique_fd;
+using android::vold::VoldNativeService;
 
 static const char* kPathUserMount = "/mnt/user";
 static const char* kPathVirtualDisk = "/data/misc/vold/virtual_disk";
@@ -496,38 +497,9 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
                 _exit(1);
             }
 
-            struct stat storageSb;
-            if (TEMP_FAILURE_RETRY(stat("/storage", &storageSb)) == -1) {
-                PLOG(ERROR) << "Failed to stat /storage";
+            int mountMode = getMountModeForRunningProc(packagesForUid, userId, fullWriteSb);
+            if (mountMode == -1) {
                 _exit(1);
-            }
-
-            // Some packages have access to full external storage, identify processes belonging
-            // to those packages by comparing inode no.s of /mnt/runtime/write and /storage
-            if (storageSb.st_dev == fullWriteSb.st_dev && storageSb.st_ino == fullWriteSb.st_ino) {
-                _exit(0);
-            } else {
-                // Some packages don't have access to external storage and processes belonging to
-                // those packages don't have anything mounted at /storage. So, identify those
-                // processes by comparing inode no.s of /mnt/user/%d/package/%s
-                // and /storage
-                std::string pkgStorageSource;
-                for (auto& package : packagesForUid) {
-                    std::string sandbox =
-                        StringPrintf("/mnt/user/%d/package/%s", userId, package.c_str());
-                    struct stat s;
-                    if (TEMP_FAILURE_RETRY(stat(sandbox.c_str(), &s)) == -1) {
-                        PLOG(ERROR) << "Failed to stat " << sandbox;
-                        _exit(1);
-                    }
-                    if (storageSb.st_dev == s.st_dev && storageSb.st_ino == s.st_ino) {
-                        pkgStorageSource = sandbox;
-                        break;
-                    }
-                }
-                if (pkgStorageSource.empty()) {
-                    _exit(0);
-                }
             }
 
             for (auto& volumeLabel : visibleVolLabels) {
@@ -540,7 +512,23 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
                 for (auto& package : packagesForUid) {
                     mountPkgSpecificDir(mntSource, mntTarget, package, "data");
                     mountPkgSpecificDir(mntSource, mntTarget, package, "media");
-                    mountPkgSpecificDir(mntSource, mntTarget, package, "obb");
+                    if (mountMode != VoldNativeService::REMOUNT_MODE_INSTALLER) {
+                        mountPkgSpecificDir(mntSource, mntTarget, package, "obb");
+                    }
+                }
+                if (mountMode == VoldNativeService::REMOUNT_MODE_INSTALLER) {
+                    StringAppendF(&mntSource, "/Android/obb");
+                    StringAppendF(&mntTarget, "/Android/obb");
+                    if (TEMP_FAILURE_RETRY(mount(mntSource.c_str(), mntTarget.c_str(), nullptr,
+                                                 MS_BIND | MS_REC, nullptr)) == -1) {
+                        PLOG(ERROR) << "Failed to mount " << mntSource << " to " << mntTarget;
+                        continue;
+                    }
+                    if (TEMP_FAILURE_RETRY(mount(nullptr, mntTarget.c_str(), nullptr,
+                                                 MS_REC | MS_SLAVE, nullptr)) == -1) {
+                        PLOG(ERROR) << "Failed to set MS_SLAVE at " << mntTarget.c_str();
+                        continue;
+                    }
                 }
             }
             _exit(0);
@@ -553,6 +541,44 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
         }
     }
     return 0;
+}
+
+int VolumeManager::getMountModeForRunningProc(const std::vector<std::string>& packagesForUid,
+                                              userid_t userId, struct stat& mntWriteStat) {
+    struct stat storageSb;
+    if (TEMP_FAILURE_RETRY(stat("/storage", &storageSb)) == -1) {
+        PLOG(ERROR) << "Failed to stat /storage";
+        return -1;
+    }
+
+    // Some packages have access to full external storage, identify processes belonging
+    // to those packages by comparing inode no.s of /mnt/runtime/write and /storage
+    if (storageSb.st_dev == mntWriteStat.st_dev && storageSb.st_ino == mntWriteStat.st_ino) {
+        return VoldNativeService::REMOUNT_MODE_FULL;
+    }
+
+    std::string obbMountFile =
+        StringPrintf("/mnt/user/%d/package/%s/obb_mount", userId, packagesForUid[0].c_str());
+    if (access(obbMountFile.c_str(), F_OK) == 0) {
+        return VoldNativeService::REMOUNT_MODE_INSTALLER;
+    }
+
+    // Some packages don't have access to external storage and processes belonging to
+    // those packages don't have anything mounted at /storage. So, identify those
+    // processes by comparing inode no.s of /mnt/user/%d/package/%s
+    // and /storage
+    for (auto& package : packagesForUid) {
+        std::string sandbox = StringPrintf("/mnt/user/%d/package/%s", userId, package.c_str());
+        struct stat sandboxStat;
+        if (TEMP_FAILURE_RETRY(stat(sandbox.c_str(), &sandboxStat)) == -1) {
+            PLOG(ERROR) << "Failed to stat " << sandbox;
+            return -1;
+        }
+        if (storageSb.st_dev == sandboxStat.st_dev && storageSb.st_ino == sandboxStat.st_ino) {
+            return VoldNativeService::REMOUNT_MODE_WRITE;
+        }
+    }
+    return VoldNativeService::REMOUNT_MODE_NONE;
 }
 
 int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::string>& packageNames,
