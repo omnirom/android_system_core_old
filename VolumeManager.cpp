@@ -402,7 +402,7 @@ int VolumeManager::mountPkgSpecificDir(const std::string& mntSourceRoot,
 
 int VolumeManager::mountPkgSpecificDirsForRunningProcs(
     userid_t userId, const std::vector<std::string>& packageNames,
-    const std::vector<std::string>& visibleVolLabels) {
+    const std::vector<std::string>& visibleVolLabels, int remountMode) {
     // TODO: New processes could be started while traversing over the existing
     // processes which would end up not having the necessary bind mounts. This
     // issue needs to be fixed, may be by doing multiple passes here?
@@ -497,9 +497,32 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
                 _exit(1);
             }
 
-            int mountMode = getMountModeForRunningProc(packagesForUid, userId, fullWriteSb);
-            if (mountMode == -1) {
-                _exit(1);
+            int mountMode;
+            if (remountMode == -1) {
+                mountMode = getMountModeForRunningProc(packagesForUid, userId, fullWriteSb);
+                if (mountMode == -1) {
+                    _exit(1);
+                }
+            } else {
+                mountMode = remountMode;
+                std::string obbMountFile = StringPrintf("/mnt/user/%d/package/%s/obb_mount", userId,
+                                                        packagesForUid[0].c_str());
+                if (mountMode == VoldNativeService::REMOUNT_MODE_INSTALLER) {
+                    if (access(obbMountFile.c_str(), F_OK) != 0) {
+                        const unique_fd fd(
+                            TEMP_FAILURE_RETRY(open(obbMountFile.c_str(), O_RDWR | O_CREAT, 0660)));
+                    }
+                } else {
+                    if (access(obbMountFile.c_str(), F_OK) == 0) {
+                        remove(obbMountFile.c_str());
+                    }
+                }
+            }
+            if (mountMode == VoldNativeService::REMOUNT_MODE_FULL ||
+                mountMode == VoldNativeService::REMOUNT_MODE_NONE) {
+                // These mount modes are not going to change dynamically, so don't bother
+                // unmounting/remounting dirs.
+                _exit(0);
             }
 
             for (auto& volumeLabel : visibleVolLabels) {
@@ -509,6 +532,13 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
                     StringAppendF(&mntSource, "/%d", userId);
                     StringAppendF(&mntTarget, "/%d", userId);
                 }
+                std::string obbSourceDir = StringPrintf("%s/Android/obb", mntSource.c_str());
+                std::string obbTargetDir = StringPrintf("%s/Android/obb", mntTarget.c_str());
+                if (umount2(obbTargetDir.c_str(), MNT_DETACH) == -1 && errno != EINVAL &&
+                    errno != ENOENT) {
+                    PLOG(ERROR) << "Failed to unmount " << obbTargetDir;
+                    continue;
+                }
                 for (auto& package : packagesForUid) {
                     mountPkgSpecificDir(mntSource, mntTarget, package, "data");
                     mountPkgSpecificDir(mntSource, mntTarget, package, "media");
@@ -517,16 +547,14 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
                     }
                 }
                 if (mountMode == VoldNativeService::REMOUNT_MODE_INSTALLER) {
-                    StringAppendF(&mntSource, "/Android/obb");
-                    StringAppendF(&mntTarget, "/Android/obb");
-                    if (TEMP_FAILURE_RETRY(mount(mntSource.c_str(), mntTarget.c_str(), nullptr,
-                                                 MS_BIND | MS_REC, nullptr)) == -1) {
-                        PLOG(ERROR) << "Failed to mount " << mntSource << " to " << mntTarget;
+                    if (TEMP_FAILURE_RETRY(mount(obbSourceDir.c_str(), obbTargetDir.c_str(),
+                                                 nullptr, MS_BIND | MS_REC, nullptr)) == -1) {
+                        PLOG(ERROR) << "Failed to mount " << obbSourceDir << " to " << obbTargetDir;
                         continue;
                     }
-                    if (TEMP_FAILURE_RETRY(mount(nullptr, mntTarget.c_str(), nullptr,
+                    if (TEMP_FAILURE_RETRY(mount(nullptr, obbTargetDir.c_str(), nullptr,
                                                  MS_REC | MS_SLAVE, nullptr)) == -1) {
-                        PLOG(ERROR) << "Failed to set MS_SLAVE at " << mntTarget.c_str();
+                        PLOG(ERROR) << "Failed to set MS_SLAVE at " << obbTargetDir.c_str();
                         continue;
                     }
                 }
@@ -693,7 +721,7 @@ int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::stri
             }
         }
     }
-    mountPkgSpecificDirsForRunningProcs(userId, packageNames, visibleVolLabels);
+    mountPkgSpecificDirsForRunningProcs(userId, packageNames, visibleVolLabels, -1);
     return 0;
 }
 
@@ -1064,11 +1092,55 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
     return 0;
 }
 
-int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
-    // If the isolated storage is enabled, return -1 since in the isolated storage world, there
-    // are no longer any runtime storage permissions, so this shouldn't be called anymore.
-    if (GetBoolProperty(kIsolatedStorage, false)) {
+int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
+    if (!GetBoolProperty(kIsolatedStorage, false)) {
+        return remountUidLegacy(uid, mountMode);
+    }
+
+    appid_t appId = multiuser_get_app_id(uid);
+    userid_t userId = multiuser_get_user_id(uid);
+    std::vector<std::string> visibleVolLabels;
+    for (auto& volId : mVisibleVolumeIds) {
+        auto vol = findVolume(volId);
+        userid_t mountUserId = vol->getMountUserId();
+        if (mountUserId == userId || vol->isEmulated()) {
+            visibleVolLabels.push_back(vol->getLabel());
+        }
+    }
+
+    // Finding one package with appId is enough
+    std::vector<std::string> packageNames;
+    for (auto it = mAppIds.begin(); it != mAppIds.end(); ++it) {
+        if (it->second == appId) {
+            packageNames.push_back(it->first);
+            break;
+        }
+    }
+    if (packageNames.empty()) {
+        PLOG(ERROR) << "Failed to find packageName for " << uid;
         return -1;
+    }
+    return mountPkgSpecificDirsForRunningProcs(userId, packageNames, visibleVolLabels, mountMode);
+}
+
+int VolumeManager::remountUidLegacy(uid_t uid, int32_t mountMode) {
+    std::string mode;
+    switch (mountMode) {
+        case VoldNativeService::REMOUNT_MODE_NONE:
+            mode = "none";
+            break;
+        case VoldNativeService::REMOUNT_MODE_DEFAULT:
+            mode = "default";
+            break;
+        case VoldNativeService::REMOUNT_MODE_READ:
+            mode = "read";
+            break;
+        case VoldNativeService::REMOUNT_MODE_WRITE:
+            mode = "write";
+            break;
+        default:
+            PLOG(ERROR) << "Unknown mode " << std::to_string(mountMode);
+            return -1;
     }
     LOG(DEBUG) << "Remounting " << uid << " as mode " << mode;
 

@@ -107,7 +107,8 @@ class VolumeManager {
 
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
 
-    int remountUid(uid_t uid, const std::string& mode);
+    int remountUid(uid_t uid, int32_t remountMode);
+    int remountUidLegacy(uid_t uid, int32_t remountMode);
 
     /* Reset all internal state, typically during framework boot */
     int reset();
@@ -153,7 +154,8 @@ class VolumeManager {
                          const std::vector<std::string>& visibleVolLabels);
     int mountPkgSpecificDirsForRunningProcs(userid_t userId,
                                             const std::vector<std::string>& packageNames,
-                                            const std::vector<std::string>& visibleVolLabels);
+                                            const std::vector<std::string>& visibleVolLabels,
+                                            int remountMode);
     int destroySandboxesForVol(android::vold::VolumeBase* vol, userid_t userId);
     std::string prepareSandboxSource(uid_t uid, const std::string& sandboxId,
                                      const std::string& sandboxRootDir);
