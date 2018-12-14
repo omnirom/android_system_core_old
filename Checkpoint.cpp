@@ -26,6 +26,7 @@
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/parseint.h>
+#include <android-base/properties.h>
 #include <android-base/unique_fd.h>
 #include <android/hardware/boot/1.0/IBootControl.h>
 #include <cutils/android_reboot.h>
@@ -36,6 +37,7 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 
+using android::base::SetProperty;
 using android::binder::Status;
 using android::hardware::hidl_string;
 using android::hardware::boot::V1_0::BoolResult;
@@ -81,8 +83,15 @@ Status cp_startCheckpoint(int retry) {
     return Status::ok();
 }
 
+namespace {
+
+bool isCheckpointing = false;
+}
+
 Status cp_commitChanges() {
-    if (!cp_needsCheckpoint()) return Status::ok();
+    if (!isCheckpointing) {
+        return Status::ok();
+    }
     // Must take action for list of mounted checkpointed things here
     // To do this, we walk the list of mounted file systems.
     // But we also need to get the matching fstab entries to see
@@ -115,6 +124,8 @@ Status cp_commitChanges() {
                 return Status::fromExceptionCode(EINVAL, "Failed to set bow state");
         }
     }
+    SetProperty("vold.checkpoint_committed", "1");
+    isCheckpointing = false;
     if (!android::base::RemoveFileIfExists(kMetadataCPFile, &err_str))
         return Status::fromExceptionCode(errno, err_str.c_str());
     return Status::ok();
@@ -152,10 +163,16 @@ bool cp_needsCheckpoint() {
     std::string content;
     sp<IBootControl> module = IBootControl::getService();
 
-    if (module && module->isSlotMarkedSuccessful(module->getCurrentSlot()) == BoolResult::FALSE)
+    if (module && module->isSlotMarkedSuccessful(module->getCurrentSlot()) == BoolResult::FALSE) {
+        isCheckpointing = true;
         return true;
+    }
     ret = android::base::ReadFileToString(kMetadataCPFile, &content);
-    if (ret) return content != "0";
+    if (ret) {
+        ret = content != "0";
+        isCheckpointing = ret;
+        return ret;
+    }
     return false;
 }
 
