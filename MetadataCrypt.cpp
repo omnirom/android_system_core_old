@@ -30,6 +30,7 @@
 
 #include <linux/dm-ioctl.h>
 
+#include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 #include <android-base/unique_fd.h>
@@ -40,6 +41,7 @@
 #include "EncryptInplace.h"
 #include "KeyStorage.h"
 #include "KeyUtil.h"
+#include "Keymaster.h"
 #include "Utils.h"
 #include "VoldUtil.h"
 #include "secontext.h"
@@ -51,6 +53,9 @@
 using android::vold::KeyBuffer;
 
 static const std::string kDmNameUserdata = "userdata";
+
+static const char* kFn_keymaster_key_blob = "keymaster_key_blob";
+static const char* kFn_keymaster_key_blob_upgraded = "keymaster_key_blob_upgraded";
 
 static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
     // fs_mgr_do_mount runs fsck. Use setexeccon to run trusted
@@ -74,12 +79,41 @@ static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
     return true;
 }
 
+namespace android {
+namespace vold {
+
+// Note: It is possible to orphan a key if it is removed before deleting
+// Update this once keymaster APIs change, and we have a proper commit.
+static void commit_key(std::string dir) {
+    while (!android::base::WaitForProperty("vold.checkpoint_committed", "1")) {
+        LOG(ERROR) << "Wait for boot timed out";
+    }
+    Keymaster keymaster;
+    auto keyPath = dir + "/" + kFn_keymaster_key_blob;
+    auto newKeyPath = dir + "/" + kFn_keymaster_key_blob_upgraded;
+    std::string key;
+
+    if (!android::base::ReadFileToString(keyPath, &key)) {
+        LOG(ERROR) << "Failed to read old key: " << dir;
+        return;
+    }
+    if (rename(newKeyPath.c_str(), keyPath.c_str()) != 0) {
+        PLOG(ERROR) << "Unable to move upgraded key to location: " << keyPath;
+        return;
+    }
+    if (!keymaster.deleteKey(key)) {
+        LOG(ERROR) << "Key deletion failed during upgrade, continuing anyway: " << dir;
+    }
+    LOG(INFO) << "Old Key deleted: " << dir;
+}
+
 static bool read_key(struct fstab_rec const* data_rec, bool create_if_absent, KeyBuffer* key) {
     if (!data_rec->key_dir) {
         LOG(ERROR) << "Failed to get key_dir";
         return false;
     }
     std::string key_dir = data_rec->key_dir;
+    std::string sKey;
     auto dir = key_dir + "/key";
     LOG(DEBUG) << "key_dir/key: " << dir;
     if (fs_mkdirs(dir.c_str(), 0700)) {
@@ -87,9 +121,29 @@ static bool read_key(struct fstab_rec const* data_rec, bool create_if_absent, Ke
         return false;
     }
     auto temp = key_dir + "/tmp";
-    if (!android::vold::retrieveKey(create_if_absent, dir, temp, key)) return false;
+    auto newKeyPath = dir + "/" + kFn_keymaster_key_blob_upgraded;
+    /* If we have a leftover upgraded key, delete it.
+     * We either failed an update and must return to the old key,
+     * or we rebooted before commiting the keys in a freak accident.
+     * Either way, we can re-upgrade the key if we need to.
+     */
+    Keymaster keymaster;
+    if (pathExists(newKeyPath)) {
+        if (!android::base::ReadFileToString(newKeyPath, &sKey))
+            LOG(ERROR) << "Failed to read old key: " << dir;
+        else if (!keymaster.deleteKey(sKey))
+            LOG(ERROR) << "Old key deletion failed, continuing anyway: " << dir;
+        else
+            unlink(newKeyPath.c_str());
+    }
+    bool needs_cp = cp_needsCheckpoint();
+    if (!android::vold::retrieveKey(create_if_absent, dir, temp, key, needs_cp)) return false;
+    if (needs_cp && pathExists(newKeyPath)) std::thread(commit_key, dir).detach();
     return true;
 }
+
+}  // namespace vold
+}  // namespace android
 
 static KeyBuffer default_key_params(const std::string& real_blkdev, const KeyBuffer& key) {
     KeyBuffer hex_key;
