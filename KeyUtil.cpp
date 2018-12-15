@@ -169,10 +169,10 @@ bool retrieveAndInstallKey(bool create_if_absent, const KeyAuthentication& key_a
 }
 
 bool retrieveKey(bool create_if_absent, const std::string& key_path, const std::string& tmp_path,
-                 KeyBuffer* key) {
+                 KeyBuffer* key, bool keepOld) {
     if (pathExists(key_path)) {
         LOG(DEBUG) << "Key exists, using: " << key_path;
-        if (!retrieveKey(key_path, kEmptyAuthentication, key)) return false;
+        if (!retrieveKey(key_path, kEmptyAuthentication, key, keepOld)) return false;
     } else {
         if (!create_if_absent) {
             LOG(ERROR) << "No key found in " << key_path;
