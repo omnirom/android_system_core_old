@@ -900,7 +900,8 @@ int VolumeManager::destroySandboxForApp(const std::string& packageName,
     LOG(VERBOSE) << "destroySandboxForApp: " << packageName << ", sandboxId=" << sandboxId
                  << ", userId=" << userId;
     auto& userPackages = mUserPackages[userId];
-    std::remove(userPackages.begin(), userPackages.end(), packageName);
+    userPackages.erase(std::remove(userPackages.begin(), userPackages.end(), packageName),
+                       userPackages.end());
     // If the package is not uninstalled in any other users, remove appId and sandboxId
     // corresponding to it from the internal state.
     bool installedInAnyUser = false;
