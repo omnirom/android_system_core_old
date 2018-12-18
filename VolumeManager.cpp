@@ -327,7 +327,8 @@ std::shared_ptr<android::vold::VolumeBase> VolumeManager::findVolume(const std::
     return nullptr;
 }
 
-void VolumeManager::listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list) {
+void VolumeManager::listVolumes(android::vold::VolumeBase::Type type,
+                                std::list<std::string>& list) const {
     list.clear();
     for (const auto& disk : mDisks) {
         disk->listVolumes(type, list);

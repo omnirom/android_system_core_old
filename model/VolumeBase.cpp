@@ -153,7 +153,7 @@ status_t VolumeBase::setLabel(const std::string& label) {
     return OK;
 }
 
-android::sp<android::os::IVoldListener> VolumeBase::getListener() {
+android::sp<android::os::IVoldListener> VolumeBase::getListener() const {
     if (mSilent) {
         return nullptr;
     } else {

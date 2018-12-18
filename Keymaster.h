@@ -46,8 +46,8 @@ class KeymasterOperation {
     ~KeymasterOperation();
     // Is this instance valid? This is false if creation fails, and becomes
     // false on finish or if an update fails.
-    explicit operator bool() { return mError == km::ErrorCode::OK; }
-    km::ErrorCode errorCode() { return mError; }
+    explicit operator bool() const { return mError == km::ErrorCode::OK; }
+    km::ErrorCode errorCode() const { return mError; }
     // Call "update" repeatedly until all of the input is consumed, and
     // concatenate the output. Return true on success.
     template <class TI, class TO>
