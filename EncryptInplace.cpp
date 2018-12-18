@@ -524,11 +524,11 @@ static int cryptfs_enable_inplace_full(char* crypto_blkdev, char* real_blkdev, o
     for (i /= CRYPT_SECTORS_PER_BUFSIZE; i < numblocks; i++) {
         new_pct = (i + blocks_already_done) / one_pct;
         if (set_progress_properties && new_pct > cur_pct) {
-            char buf[8];
+            char property_buf[8];
 
             cur_pct = new_pct;
-            snprintf(buf, sizeof(buf), "%" PRId64, cur_pct);
-            android::base::SetProperty("vold.encrypt_progress", buf);
+            snprintf(property_buf, sizeof(property_buf), "%" PRId64, cur_pct);
+            android::base::SetProperty("vold.encrypt_progress", property_buf);
         }
         if (unix_read(realfd, buf, CRYPT_INPLACE_BUFSIZE) <= 0) {
             PLOG(ERROR) << "Error reading real_blkdev " << real_blkdev << " for inplace encrypt";
