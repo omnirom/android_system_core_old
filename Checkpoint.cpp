@@ -296,9 +296,9 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
         PLOG(ERROR) << "Cannot open " << blockDevice;
         return Status::fromExceptionCode(errno, ("Cannot open " + blockDevice).c_str());
     }
-    char buffer[kBlockSize];
-    device.read(buffer, kBlockSize);
-    log_sector& ls = *(log_sector*)buffer;
+    alignas(alignof(log_sector)) char ls_buffer[kBlockSize];
+    device.read(ls_buffer, kBlockSize);
+    log_sector& ls = *reinterpret_cast<log_sector*>(ls_buffer);
     if (ls.magic != kMagic) {
         LOG(ERROR) << "No magic";
         return Status::fromExceptionCode(EINVAL, "No magic");
@@ -307,10 +307,9 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
     LOG(INFO) << "Restoring " << ls.sequence << " log sectors";
 
     for (int sequence = ls.sequence; sequence >= 0; sequence--) {
-        char buffer[kBlockSize];
         device.seekg(0);
-        device.read(buffer, kBlockSize);
-        log_sector& ls = *(log_sector*)buffer;
+        device.read(ls_buffer, kBlockSize);
+        ls = *reinterpret_cast<log_sector*>(ls_buffer);
         if (ls.magic != kMagic) {
             LOG(ERROR) << "No magic!";
             return Status::fromExceptionCode(EINVAL, "No magic");
