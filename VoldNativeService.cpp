@@ -556,24 +556,7 @@ binder::Status VoldNativeService::remountUid(int32_t uid, int32_t remountMode) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    std::string tmp;
-    switch (remountMode) {
-        case REMOUNT_MODE_NONE:
-            tmp = "none";
-            break;
-        case REMOUNT_MODE_DEFAULT:
-            tmp = "default";
-            break;
-        case REMOUNT_MODE_READ:
-            tmp = "read";
-            break;
-        case REMOUNT_MODE_WRITE:
-            tmp = "write";
-            break;
-        default:
-            return error("Unknown mode " + std::to_string(remountMode));
-    }
-    return translate(VolumeManager::Instance()->remountUid(uid, tmp));
+    return translate(VolumeManager::Instance()->remountUid(uid, remountMode));
 }
 
 binder::Status VoldNativeService::mkdirs(const std::string& path) {
