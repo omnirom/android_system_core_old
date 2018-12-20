@@ -52,7 +52,7 @@ class VolumeManager {
     std::mutex& getCryptLock() { return mCryptLock; }
 
     void setListener(android::sp<android::os::IVoldListener> listener) { mListener = listener; }
-    android::sp<android::os::IVoldListener> getListener() { return mListener; }
+    android::sp<android::os::IVoldListener> getListener() const { return mListener; }
 
     int start();
     int stop();
@@ -68,8 +68,8 @@ class VolumeManager {
             return !fnmatch(mSysPattern.c_str(), sysPath.c_str(), 0);
         }
 
-        const std::string& getNickname() { return mNickname; }
-        int getFlags() { return mFlags; }
+        const std::string& getNickname() const { return mNickname; }
+        int getFlags() const { return mFlags; }
 
       private:
         std::string mSysPattern;
@@ -82,7 +82,7 @@ class VolumeManager {
     std::shared_ptr<android::vold::Disk> findDisk(const std::string& id);
     std::shared_ptr<android::vold::VolumeBase> findVolume(const std::string& id);
 
-    void listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list);
+    void listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list) const;
 
     int forgetPartition(const std::string& partGuid, const std::string& fsUuid);
 

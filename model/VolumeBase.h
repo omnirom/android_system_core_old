@@ -78,16 +78,16 @@ class VolumeBase {
         kBadRemoval,
     };
 
-    const std::string& getId() { return mId; }
-    const std::string& getDiskId() { return mDiskId; }
-    const std::string& getPartGuid() { return mPartGuid; }
-    Type getType() { return mType; }
-    int getMountFlags() { return mMountFlags; }
-    userid_t getMountUserId() { return mMountUserId; }
-    State getState() { return mState; }
-    const std::string& getPath() { return mPath; }
-    const std::string& getInternalPath() { return mInternalPath; }
-    const std::string& getLabel() { return mLabel; }
+    const std::string& getId() const { return mId; }
+    const std::string& getDiskId() const { return mDiskId; }
+    const std::string& getPartGuid() const { return mPartGuid; }
+    Type getType() const { return mType; }
+    int getMountFlags() const { return mMountFlags; }
+    userid_t getMountUserId() const { return mMountUserId; }
+    State getState() const { return mState; }
+    const std::string& getPath() const { return mPath; }
+    const std::string& getInternalPath() const { return mInternalPath; }
+    const std::string& getLabel() const { return mLabel; }
 
     status_t setDiskId(const std::string& diskId);
     status_t setPartGuid(const std::string& partGuid);
@@ -124,7 +124,7 @@ class VolumeBase {
     status_t setInternalPath(const std::string& internalPath);
     status_t setLabel(const std::string& label);
 
-    android::sp<android::os::IVoldListener> getListener();
+    android::sp<android::os::IVoldListener> getListener() const;
 
   private:
     /* ID that uniquely references volume while alive */
