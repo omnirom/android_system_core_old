@@ -84,7 +84,7 @@ namespace vold {
 
 // Note: It is possible to orphan a key if it is removed before deleting
 // Update this once keymaster APIs change, and we have a proper commit.
-static void commit_key(std::string dir) {
+static void commit_key(const std::string& dir) {
     while (!android::base::WaitForProperty("vold.checkpoint_committed", "1")) {
         LOG(ERROR) << "Wait for boot timed out";
     }
