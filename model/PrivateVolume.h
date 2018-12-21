@@ -39,9 +39,9 @@ class PrivateVolume : public VolumeBase {
   public:
     PrivateVolume(dev_t device, const std::string& keyRaw);
     virtual ~PrivateVolume();
-    const std::string& getFsType() { return mFsType; };
-    const std::string& getRawDevPath() { return mRawDevPath; };
-    const std::string& getRawDmDevPath() { return mDmDevPath; };
+    const std::string& getFsType() const { return mFsType; };
+    const std::string& getRawDevPath() const { return mRawDevPath; };
+    const std::string& getRawDmDevPath() const { return mDmDevPath; };
 
   protected:
     status_t doCreate() override;
