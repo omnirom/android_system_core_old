@@ -31,7 +31,7 @@ namespace vold {
 // If only "secret" is nonempty, it is used to decrypt in a non-Keymaster process.
 class KeyAuthentication {
   public:
-    KeyAuthentication(std::string t, std::string s) : token{t}, secret{s} {};
+    KeyAuthentication(const std::string& t, const std::string& s) : token{t}, secret{s} {};
 
     bool usesKeymaster() const { return !token.empty() || secret.empty(); };
 
