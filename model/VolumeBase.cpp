@@ -143,7 +143,7 @@ status_t VolumeBase::setInternalPath(const std::string& internalPath) {
     return OK;
 }
 
-android::sp<android::os::IVoldListener> VolumeBase::getListener() {
+android::sp<android::os::IVoldListener> VolumeBase::getListener() const {
     if (mSilent) {
         return nullptr;
     } else {

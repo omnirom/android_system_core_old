@@ -54,18 +54,18 @@ class Disk {
         kEmmc = 1 << 4,
     };
 
-    const std::string& getId() { return mId; }
-    const std::string& getEventPath() { return mEventPath; }
-    const std::string& getSysPath() { return mSysPath; }
-    const std::string& getDevPath() { return mDevPath; }
-    dev_t getDevice() { return mDevice; }
-    uint64_t getSize() { return mSize; }
-    const std::string& getLabel() { return mLabel; }
-    int getFlags() { return mFlags; }
+    const std::string& getId() const { return mId; }
+    const std::string& getEventPath() const { return mEventPath; }
+    const std::string& getSysPath() const { return mSysPath; }
+    const std::string& getDevPath() const { return mDevPath; }
+    dev_t getDevice() const { return mDevice; }
+    uint64_t getSize() const { return mSize; }
+    const std::string& getLabel() const { return mLabel; }
+    int getFlags() const { return mFlags; }
 
     std::shared_ptr<VolumeBase> findVolume(const std::string& id);
 
-    void listVolumes(VolumeBase::Type type, std::list<std::string>& list);
+    void listVolumes(VolumeBase::Type type, std::list<std::string>& list) const;
 
     status_t create();
     status_t destroy();
