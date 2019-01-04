@@ -33,6 +33,7 @@
 
 #include <linux/kdev_t.h>
 
+#include <ApexProperties.sysprop.h>
 #include <android-base/logging.h>
 #include <android-base/parseint.h>
 #include <android-base/properties.h>
@@ -432,6 +433,8 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
     struct stat sb;
     pid_t child;
 
+    static bool apexUpdatable = android::sysprop::ApexProperties::updatable().value_or(false);
+
     if (!(dir = opendir("/proc"))) {
         PLOG(ERROR) << "Failed to opendir";
         return -1;
@@ -474,6 +477,26 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
         if (rootName == pidName) {
             LOG(WARNING) << "Skipping due to root namespace";
             goto next;
+        }
+
+        if (apexUpdatable) {
+            std::string exeName;
+            // When ro.apex.bionic_updatable is set to true,
+            // some early native processes have mount namespaces that are different
+            // from that of the init. Therefore, above check can't filter them out.
+            // Since the propagation type of / is 'shared', unmounting /storage
+            // for the early native processes affects other processes including
+            // init. Filter out such processes by skipping if a process is a
+            // non-Java process whose UID is < AID_APP_START. (The UID condition
+            // is required to not filter out child processes spawned by apps.)
+            if (!android::vold::Readlinkat(pidFd, "exe", &exeName)) {
+                PLOG(WARNING) << "Failed to read exe name for " << de->d_name;
+                goto next;
+            }
+            if (!StartsWith(exeName, "/system/bin/app_process") && sb.st_uid < AID_APP_START) {
+                LOG(WARNING) << "Skipping due to native system process";
+                goto next;
+            }
         }
 
         // We purposefully leave the namespace open across the fork

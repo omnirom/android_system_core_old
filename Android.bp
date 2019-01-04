@@ -152,6 +152,9 @@ cc_library_static {
     shared_libs: [
         "android.hardware.health.storage@1.0",
     ],
+    whole_static_libs: [
+        "com.android.sysprop.apex",
+    ],
 }
 
 cc_binary {
