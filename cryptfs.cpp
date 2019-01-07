@@ -1144,6 +1144,7 @@ static int delete_crypto_blk_dev(const char* name) {
     char buffer[DM_CRYPT_BUF_SIZE];
     struct dm_ioctl* io;
     int retval = -1;
+    int err;
 
     if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
         SLOGE("Cannot open device-mapper\n");
@@ -1153,8 +1154,9 @@ static int delete_crypto_blk_dev(const char* name) {
     io = (struct dm_ioctl*)buffer;
 
     ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
-    if (ioctl(fd, DM_DEV_REMOVE, io)) {
-        SLOGE("Cannot remove dm-crypt device\n");
+    err = ioctl(fd, DM_DEV_REMOVE, io);
+    if (err) {
+        SLOGE("Cannot remove dm-crypt device %s: %s\n", name, strerror(errno));
         goto errout;
     }
 
