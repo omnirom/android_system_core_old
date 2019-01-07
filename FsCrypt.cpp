@@ -173,27 +173,12 @@ static void fixate_user_ce_key(const std::string& directory_path, const std::str
     auto const current_path = get_ce_key_current_path(directory_path);
     if (to_fix != current_path) {
         LOG(DEBUG) << "Renaming " << to_fix << " to " << current_path;
-        android::base::unique_fd fd(TEMP_FAILURE_RETRY(
-            open(to_fix.c_str(), O_RDONLY | O_CLOEXEC)));
-        if (fd == -1) {
-            PLOG(ERROR) << "Failed to open " << to_fix;
-            return;
-        }
-        if (fsync(fd) == -1) {
-            if (errno == EROFS || errno == EINVAL) {
-                PLOG(WARNING) << "Skip fsync " << to_fix
-                              << " on a file system does not support synchronization";
-            } else {
-                PLOG(ERROR) << "Failed to fsync " << to_fix;
-                unlink(to_fix.c_str());
-                return;
-            }
-        }
         if (rename(to_fix.c_str(), current_path.c_str()) != 0) {
             PLOG(WARNING) << "Unable to rename " << to_fix << " to " << current_path;
             return;
         }
     }
+    android::vold::FsyncDirectory(directory_path);
 }
 
 static bool read_and_fixate_user_ce_key(userid_t user_id,
@@ -588,6 +573,7 @@ bool fscrypt_add_user_key_auth(userid_t user_id, int serial, const std::string& 
     std::string ce_key_path;
     if (!get_ce_key_new_path(directory_path, paths, &ce_key_path)) return false;
     if (!android::vold::storeKeyAtomically(ce_key_path, user_key_temp, auth, ce_key)) return false;
+    if (!android::vold::FsyncDirectory(directory_path)) return false;
     return true;
 }
 

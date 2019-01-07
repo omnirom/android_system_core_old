@@ -846,5 +846,23 @@ status_t WaitForFile(const char* filename, std::chrono::nanoseconds timeout) {
     return -1;
 }
 
+bool FsyncDirectory(const std::string& dirname) {
+    android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(dirname.c_str(), O_RDONLY | O_CLOEXEC)));
+    if (fd == -1) {
+        PLOG(ERROR) << "Failed to open " << dirname;
+        return false;
+    }
+    if (fsync(fd) == -1) {
+        if (errno == EROFS || errno == EINVAL) {
+            PLOG(WARNING) << "Skip fsync " << dirname
+                          << " on a file system does not support synchronization";
+        } else {
+            PLOG(ERROR) << "Failed to fsync " << dirname;
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace vold
 }  // namespace android
