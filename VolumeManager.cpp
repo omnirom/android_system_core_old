@@ -425,8 +425,13 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
         return -1;
     }
 
-    struct stat fullWriteSb;
-    if (TEMP_FAILURE_RETRY(stat("/mnt/runtime/write", &fullWriteSb)) == -1) {
+    struct stat mntFullSb;
+    struct stat mntWriteSb;
+    if (TEMP_FAILURE_RETRY(stat("/mnt/runtime/full", &mntFullSb)) == -1) {
+        PLOG(ERROR) << "Failed to stat /mnt/runtime/full";
+        return -1;
+    }
+    if (TEMP_FAILURE_RETRY(stat("/mnt/runtime/write", &mntWriteSb)) == -1) {
         PLOG(ERROR) << "Failed to stat /mnt/runtime/write";
         return -1;
     }
@@ -505,7 +510,8 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
 
             int mountMode;
             if (remountMode == -1) {
-                mountMode = getMountModeForRunningProc(packagesForUid, userId, fullWriteSb);
+                mountMode =
+                    getMountModeForRunningProc(packagesForUid, userId, mntWriteSb, mntFullSb);
                 if (mountMode == -1) {
                     _exit(1);
                 }
@@ -525,6 +531,7 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
                 }
             }
             if (mountMode == VoldNativeService::REMOUNT_MODE_FULL ||
+                mountMode == VoldNativeService::REMOUNT_MODE_LEGACY ||
                 mountMode == VoldNativeService::REMOUNT_MODE_NONE) {
                 // These mount modes are not going to change dynamically, so don't bother
                 // unmounting/remounting dirs.
@@ -578,7 +585,8 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
 }
 
 int VolumeManager::getMountModeForRunningProc(const std::vector<std::string>& packagesForUid,
-                                              userid_t userId, struct stat& mntWriteStat) {
+                                              userid_t userId, struct stat& mntWriteStat,
+                                              struct stat& mntFullStat) {
     struct stat storageSb;
     if (TEMP_FAILURE_RETRY(stat("/storage", &storageSb)) == -1) {
         PLOG(ERROR) << "Failed to stat /storage";
@@ -586,9 +594,11 @@ int VolumeManager::getMountModeForRunningProc(const std::vector<std::string>& pa
     }
 
     // Some packages have access to full external storage, identify processes belonging
-    // to those packages by comparing inode no.s of /mnt/runtime/write and /storage
-    if (storageSb.st_dev == mntWriteStat.st_dev && storageSb.st_ino == mntWriteStat.st_ino) {
+    // to those packages by comparing inode no.s of /mnt/runtime/full and /storage
+    if (storageSb.st_dev == mntFullStat.st_dev && storageSb.st_ino == mntFullStat.st_ino) {
         return VoldNativeService::REMOUNT_MODE_FULL;
+    } else if (storageSb.st_dev == mntWriteStat.st_dev && storageSb.st_ino == mntWriteStat.st_ino) {
+        return VoldNativeService::REMOUNT_MODE_LEGACY;
     }
 
     std::string obbMountFile =

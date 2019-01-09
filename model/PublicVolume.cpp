@@ -185,36 +185,16 @@ status_t PublicVolume::doMount() {
                 PLOG(ERROR) << "Failed to exec";
             }
         } else {
-            // In Pre-Q, apps have full read access to secondary storage devices but only
-            // write access for their package specific directories. In Q, they only have access
-            // to their own sandboxes and they can write anywhere inside the sandbox. Instead of
-            // updating sdcardfs to allow packages writing into their own sandboxes, we could
-            // just allow them to write anywhere by passing "-w".
             // clang-format off
-            if (GetBoolProperty(kIsolatedStorage, false)) {
-                if (execl(kFusePath, kFusePath,
-                        "-u", "1023", // AID_MEDIA_RW
-                        "-g", "1023", // AID_MEDIA_RW
-                        "-U", std::to_string(getMountUserId()).c_str(),
-                        "-w",
-                        mRawPath.c_str(),
-                        stableName.c_str(),
-                        NULL)) {
-                    // clang-format on
-                    PLOG(ERROR) << "Failed to exec";
-                }
-            } else {
-                // clang-format off
-                if (execl(kFusePath, kFusePath,
-                        "-u", "1023", // AID_MEDIA_RW
-                        "-g", "1023", // AID_MEDIA_RW
-                        "-U", std::to_string(getMountUserId()).c_str(),
-                        mRawPath.c_str(),
-                        stableName.c_str(),
-                        NULL)) {
-                    // clang-format on
-                    PLOG(ERROR) << "Failed to exec";
-                }
+            if (execl(kFusePath, kFusePath,
+                    "-u", "1023", // AID_MEDIA_RW
+                    "-g", "1023", // AID_MEDIA_RW
+                    "-U", std::to_string(getMountUserId()).c_str(),
+                    mRawPath.c_str(),
+                    stableName.c_str(),
+                    NULL)) {
+                // clang-format on
+                PLOG(ERROR) << "Failed to exec";
             }
         }
 

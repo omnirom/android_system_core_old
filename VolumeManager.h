@@ -174,7 +174,7 @@ class VolumeManager {
     int destroySandboxForAppOnVol(const std::string& packageName, const std::string& sandboxId,
                                   userid_t userId, const std::string& volLabel);
     int getMountModeForRunningProc(const std::vector<std::string>& packagesForUid, userid_t userId,
-                                   struct stat& mntWriteStat);
+                                   struct stat& mntWriteStat, struct stat& mntFullStat);
 
     void handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk);
     void handleDiskChanged(dev_t device);
