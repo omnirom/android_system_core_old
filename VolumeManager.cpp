@@ -866,8 +866,8 @@ int VolumeManager::onUserStopped(userid_t userId) {
     if (GetBoolProperty(kIsolatedStorage, false)) {
         mUserPackages.erase(userId);
         std::string mntTargetDir = StringPrintf("/mnt/user/%d", userId);
-        if (android::vold::UnmountTree(mntTargetDir) != 0) {
-            PLOG(ERROR) << "unmountTree on " << mntTargetDir << " failed";
+        if (android::vold::UnmountTreeWithPrefix(mntTargetDir) < 0) {
+            PLOG(ERROR) << "UnmountTreeWithPrefix on " << mntTargetDir << " failed";
             return -errno;
         }
         if (android::vold::DeleteDirContentsAndDir(mntTargetDir) < 0) {
@@ -969,8 +969,8 @@ int VolumeManager::destroySandboxForAppOnVol(const std::string& packageName,
                  << ", volLabel=" << volLabel;
     std::string pkgSandboxTarget =
         StringPrintf("/mnt/user/%d/package/%s", userId, packageName.c_str());
-    if (android::vold::UnmountTree(pkgSandboxTarget)) {
-        PLOG(ERROR) << "UnmountTree failed on " << pkgSandboxTarget;
+    if (android::vold::UnmountTreeWithPrefix(pkgSandboxTarget) < 0) {
+        PLOG(ERROR) << "UnmountTreeWithPrefix failed on " << pkgSandboxTarget;
     }
 
     std::string sandboxDir = StringPrintf("/mnt/runtime/write/%s", volLabel.c_str());
@@ -1070,8 +1070,8 @@ int VolumeManager::destroySandboxesForVol(android::vold::VolumeBase* vol, userid
     for (auto& packageName : packageNames) {
         std::string volSandboxRoot = StringPrintf("/mnt/user/%d/package/%s/%s", userId,
                                                   packageName.c_str(), vol->getLabel().c_str());
-        if (android::vold::UnmountTree(volSandboxRoot) != 0) {
-            PLOG(ERROR) << "unmountTree on " << volSandboxRoot << " failed";
+        if (android::vold::UnmountTreeWithPrefix(volSandboxRoot) < 0) {
+            PLOG(ERROR) << "UnmountTreeWithPrefix on " << volSandboxRoot << " failed";
             continue;
         }
         if (android::vold::DeleteDirContentsAndDir(volSandboxRoot) < 0) {
@@ -1283,7 +1283,7 @@ int VolumeManager::reset() {
     mVisibleVolumeIds.clear();
 
     // For unmounting dirs under /mnt/user/<user-id>/package/<package-name>
-    android::vold::UnmountTree("/mnt/user/");
+    android::vold::UnmountTreeWithPrefix("/mnt/user/");
     return 0;
 }
 
