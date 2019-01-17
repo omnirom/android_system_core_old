@@ -144,6 +144,15 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/vold")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/storaged")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/rollback")) return false;
+
+            auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
+            if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM, system_ce_path + "/backup")) {
+                return false;
+            }
+            if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM,
+                             system_ce_path + "/backup_stage")) {
+                return false;
+            }
         }
     }
     return true;
