@@ -119,6 +119,7 @@ status_t PublicVolume::doMount() {
     mFuseDefault = StringPrintf("/mnt/runtime/default/%s", stableName.c_str());
     mFuseRead = StringPrintf("/mnt/runtime/read/%s", stableName.c_str());
     mFuseWrite = StringPrintf("/mnt/runtime/write/%s", stableName.c_str());
+    mFuseFull = StringPrintf("/mnt/runtime/full/%s", stableName.c_str());
 
     setInternalPath(mRawPath);
     if (getMountFlags() & MountFlags::kVisible) {
@@ -156,12 +157,13 @@ status_t PublicVolume::doMount() {
 
     if (fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
         fs_prepare_dir(mFuseRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
-        fs_prepare_dir(mFuseWrite.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+        fs_prepare_dir(mFuseWrite.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+        fs_prepare_dir(mFuseFull.c_str(), 0700, AID_ROOT, AID_ROOT)) {
         PLOG(ERROR) << getId() << " failed to create FUSE mount points";
         return -errno;
     }
 
-    dev_t before = GetDevice(mFuseWrite);
+    dev_t before = GetDevice(mFuseFull);
 
     if (!(mFusePid = fork())) {
         if (getMountFlags() & MountFlags::kPrimary) {
@@ -201,7 +203,7 @@ status_t PublicVolume::doMount() {
     }
 
     nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
-    while (before == GetDevice(mFuseWrite)) {
+    while (before == GetDevice(mFuseFull)) {
         LOG(DEBUG) << "Waiting for FUSE to spin up...";
         usleep(50000);  // 50ms
 
@@ -230,16 +232,19 @@ status_t PublicVolume::doUnmount() {
     ForceUnmount(mFuseDefault);
     ForceUnmount(mFuseRead);
     ForceUnmount(mFuseWrite);
+    ForceUnmount(mFuseFull);
     ForceUnmount(mRawPath);
 
     rmdir(mFuseDefault.c_str());
     rmdir(mFuseRead.c_str());
     rmdir(mFuseWrite.c_str());
+    rmdir(mFuseFull.c_str());
     rmdir(mRawPath.c_str());
 
     mFuseDefault.clear();
     mFuseRead.clear();
     mFuseWrite.clear();
+    mFuseFull.clear();
     mRawPath.clear();
 
     return OK;
