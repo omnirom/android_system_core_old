@@ -79,6 +79,7 @@ static const char* kPathUserMount = "/mnt/user";
 static const char* kPathVirtualDisk = "/data/misc/vold/virtual_disk";
 
 static const char* kIsolatedStorage = "persist.sys.isolated_storage";
+static const char* kIsolatedStorageSnapshot = "sys.isolated_storage_snapshot";
 static const char* kPropVirtualDisk = "persist.sys.virtual_disk";
 
 static const std::string kEmptyString("");
@@ -107,6 +108,10 @@ VolumeManager::VolumeManager() {
 }
 
 VolumeManager::~VolumeManager() {}
+
+static bool hasIsolatedStorage() {
+    return GetBoolProperty(kIsolatedStorageSnapshot, GetBoolProperty(kIsolatedStorage, false));
+}
 
 int VolumeManager::updateVirtualDisk() {
     ATRACE_NAME("VolumeManager::updateVirtualDisk");
@@ -843,7 +848,7 @@ int VolumeManager::onUserStarted(userid_t userId, const std::vector<std::string>
     if (mPrimary) {
         linkPrimary(userId);
     }
-    if (GetBoolProperty(kIsolatedStorage, false)) {
+    if (hasIsolatedStorage()) {
         std::vector<std::string> visibleVolLabels;
         for (auto& volId : mVisibleVolumeIds) {
             auto vol = findVolume(volId);
@@ -863,7 +868,7 @@ int VolumeManager::onUserStopped(userid_t userId) {
     LOG(VERBOSE) << "onUserStopped: " << userId;
     mStartedUsers.erase(userId);
 
-    if (GetBoolProperty(kIsolatedStorage, false)) {
+    if (hasIsolatedStorage()) {
         mUserPackages.erase(userId);
         std::string mntTargetDir = StringPrintf("/mnt/user/%d", userId);
         if (android::vold::UnmountTreeWithPrefix(mntTargetDir) < 0) {
@@ -897,7 +902,7 @@ int VolumeManager::addSandboxIds(const std::vector<int32_t>& appIds,
 
 int VolumeManager::prepareSandboxForApp(const std::string& packageName, appid_t appId,
                                         const std::string& sandboxId, userid_t userId) {
-    if (!GetBoolProperty(kIsolatedStorage, false)) {
+    if (!hasIsolatedStorage()) {
         return 0;
     } else if (mStartedUsers.find(userId) == mStartedUsers.end()) {
         // User not started, no need to do anything now. Required bind mounts for the package will
@@ -923,7 +928,7 @@ int VolumeManager::prepareSandboxForApp(const std::string& packageName, appid_t 
 
 int VolumeManager::destroySandboxForApp(const std::string& packageName,
                                         const std::string& sandboxId, userid_t userId) {
-    if (!GetBoolProperty(kIsolatedStorage, false)) {
+    if (!hasIsolatedStorage()) {
         return 0;
     }
     LOG(VERBOSE) << "destroySandboxForApp: " << packageName << ", sandboxId=" << sandboxId
@@ -1001,7 +1006,7 @@ int VolumeManager::onSecureKeyguardStateChanged(bool isShowing) {
 }
 
 int VolumeManager::onVolumeMounted(android::vold::VolumeBase* vol) {
-    if (!GetBoolProperty(kIsolatedStorage, false)) {
+    if (!hasIsolatedStorage()) {
         return 0;
     }
 
@@ -1036,7 +1041,7 @@ int VolumeManager::onVolumeMounted(android::vold::VolumeBase* vol) {
 }
 
 int VolumeManager::onVolumeUnmounted(android::vold::VolumeBase* vol) {
-    if (!GetBoolProperty(kIsolatedStorage, false)) {
+    if (!hasIsolatedStorage()) {
         return 0;
     }
 
@@ -1084,7 +1089,7 @@ int VolumeManager::destroySandboxesForVol(android::vold::VolumeBase* vol, userid
 }
 
 int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol) {
-    if (GetBoolProperty(kIsolatedStorage, false)) {
+    if (hasIsolatedStorage()) {
         return 0;
     }
     mPrimary = vol;
@@ -1095,7 +1100,7 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
 }
 
 int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
-    if (!GetBoolProperty(kIsolatedStorage, false)) {
+    if (!hasIsolatedStorage()) {
         return remountUidLegacy(uid, mountMode);
     }
 
