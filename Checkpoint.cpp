@@ -244,13 +244,14 @@ struct log_entry {
     uint32_t checksum;
 } __attribute__((packed));
 
-struct log_sector {
+struct log_sector_v1_0 {
     uint32_t magic;
+    uint16_t header_version;
+    uint16_t header_size;
     uint32_t block_size;
     uint32_t count;
     uint32_t sequence;
     uint64_t sector0;
-    struct log_entry entries[];
 } __attribute__((packed));
 
 // MAGIC is BOW in ascii
@@ -354,7 +355,7 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
             return Status::fromExceptionCode(errno, ("Cannot open " + blockDevice).c_str());
         }
 
-        log_sector original_ls;
+        log_sector_v1_0 original_ls;
         device.read(reinterpret_cast<char*>(&original_ls), sizeof(original_ls));
         if (original_ls.magic != kMagic) {
             LOG(ERROR) << "No magic";
@@ -366,7 +367,7 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
         for (int sequence = original_ls.sequence; sequence >= 0 && status.isOk(); sequence--) {
             auto buffer =
                 read(device, logs, validating, 0, original_ls.block_size, original_ls.block_size);
-            log_sector& ls = *reinterpret_cast<log_sector*>(&buffer[0]);
+            log_sector_v1_0 const& ls = *reinterpret_cast<log_sector_v1_0*>(&buffer[0]);
             if (ls.magic != kMagic) {
                 LOG(ERROR) << "No magic!";
                 status = Status::fromExceptionCode(EINVAL, "No magic");
@@ -390,9 +391,13 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
 
             LOG(INFO) << action << " from log sector " << ls.sequence;
 
-            for (log_entry* le = &ls.entries[ls.count - 1]; le >= ls.entries; --le) {
-                LOG(INFO) << action << " " << le->size << " bytes from sector " << le->dest
-                          << " to " << le->source << " with checksum " << std::hex << le->checksum;
+            for (log_entry* le =
+                     reinterpret_cast<log_entry*>(&buffer[ls.header_size]) + ls.count - 1;
+                 le >= reinterpret_cast<log_entry*>(&buffer[ls.header_size]); --le) {
+                // This is very noisy - limit to DEBUG only
+                LOG(DEBUG) << action << " " << le->size << " bytes from sector " << le->dest
+                           << " to " << le->source << " with checksum " << std::hex << le->checksum;
+
                 auto buffer = read(device, logs, validating, le->dest, le->size, ls.block_size);
                 uint32_t checksum = le->source / (ls.block_size / kSectorSize);
                 for (size_t i = 0; i < le->size; i += ls.block_size) {
