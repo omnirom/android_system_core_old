@@ -811,7 +811,7 @@ static status_t delete_dir_contents(DIR* dir) {
         return -errno;
     }
 
-    status_t result;
+    status_t result = OK;
     struct dirent* de;
     while ((de = readdir(dir))) {
         const char* name = de->d_name;
