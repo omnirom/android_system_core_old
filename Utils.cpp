@@ -377,7 +377,7 @@ status_t ReadRandomBytes(size_t bytes, char* buf) {
         return -errno;
     }
 
-    size_t n;
+    ssize_t n;
     while ((n = TEMP_FAILURE_RETRY(read(fd, &buf[0], bytes))) > 0) {
         bytes -= n;
         buf += n;
