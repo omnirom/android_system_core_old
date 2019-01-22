@@ -1398,14 +1398,15 @@ static int decrypt_master_key(const char* passwd, unsigned char* decrypted_maste
 
 static int create_encrypted_random_key(const char* passwd, unsigned char* master_key,
                                        unsigned char* salt, struct crypt_mnt_ftr* crypt_ftr) {
-    int fd;
     unsigned char key_buf[MAX_KEY_LEN];
 
-    /* Get some random bits for a key */
-    fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
-    read(fd, key_buf, sizeof(key_buf));
-    read(fd, salt, SALT_LEN);
-    close(fd);
+    /* Get some random bits for a key and salt */
+    if (android::vold::ReadRandomBytes(sizeof(key_buf), reinterpret_cast<char*>(key_buf)) != 0) {
+        return -1;
+    }
+    if (android::vold::ReadRandomBytes(SALT_LEN, reinterpret_cast<char*>(salt)) != 0) {
+        return -1;
+    }
 
     /* Now encrypt it with the password */
     return encrypt_master_key(passwd, salt, key_buf, master_key, crypt_ftr);
