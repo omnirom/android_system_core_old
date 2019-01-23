@@ -105,6 +105,10 @@ int main(int argc, char** argv) {
         checkStatus(vold->mountFstab(args[2]));
     } else if (args[0] == "cryptfs" && args[1] == "encryptFstab" && args.size() == 3) {
         checkStatus(vold->encryptFstab(args[2]));
+    } else if (args[0] == "checkpoint" && args[1] == "supportsCheckpoint" && args.size() == 2) {
+        bool supported = false;
+        checkStatus(vold->supportsCheckpoint(&supported));
+        return supported ? 1 : 0;
     } else if (args[0] == "checkpoint" && args[1] == "startCheckpoint" && args.size() == 3) {
         int retry;
         if (!android::base::ParseInt(args[2], &retry)) exit(EINVAL);

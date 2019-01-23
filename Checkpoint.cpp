@@ -67,6 +67,21 @@ bool setBowState(std::string const& block_device, std::string const& state) {
 
 }  // namespace
 
+Status cp_supportsCheckpoint(bool& result) {
+    result = false;
+    auto fstab_default = std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)>{
+        fs_mgr_read_fstab_default(), fs_mgr_free_fstab};
+    if (!fstab_default) return Status::fromExceptionCode(EINVAL, "Failed to get fstab");
+
+    for (int i = 0; i < fstab_default->num_entries; ++i) {
+        if (fs_mgr_is_checkpoint(&fstab_default->recs[i])) {
+            result = true;
+            return Status::ok();
+        }
+    }
+    return Status::ok();
+}
+
 Status cp_startCheckpoint(int retry) {
     if (retry < -1) return Status::fromExceptionCode(EINVAL, "Retry count must be more than -1");
     std::string content = std::to_string(retry + 1);
