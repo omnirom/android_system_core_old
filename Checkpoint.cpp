@@ -45,6 +45,7 @@ using android::fs_mgr::ReadDefaultFstab;
 using android::fs_mgr::ReadFstabFromFile;
 using android::hardware::hidl_string;
 using android::hardware::boot::V1_0::BoolResult;
+using android::hardware::boot::V1_0::CommandResult;
 using android::hardware::boot::V1_0::IBootControl;
 using android::hardware::boot::V1_0::Slot;
 
@@ -108,6 +109,16 @@ Status cp_commitChanges() {
     if (!isCheckpointing) {
         return Status::ok();
     }
+    sp<IBootControl> module = IBootControl::getService();
+    if (module) {
+        CommandResult cr;
+        module->markBootSuccessful([&cr](CommandResult result) { cr = result; });
+        if (!cr.success) {
+            std::string msg = "Error marking booted successfully: " + std::string(cr.errMsg);
+            return Status::fromExceptionCode(EINVAL, String8(msg.c_str()));
+        }
+        LOG(INFO) << "Marked slot as booted successfully.";
+    }
     // Must take action for list of mounted checkpointed things here
     // To do this, we walk the list of mounted file systems.
     // But we also need to get the matching fstab entries to see
@@ -138,6 +149,7 @@ Status cp_commitChanges() {
         }
     }
     SetProperty("vold.checkpoint_committed", "1");
+    LOG(INFO) << "Checkpoint has been committed.";
     isCheckpointing = false;
     if (!android::base::RemoveFileIfExists(kMetadataCPFile, &err_str))
         return Status::fromExceptionCode(errno, err_str.c_str());
