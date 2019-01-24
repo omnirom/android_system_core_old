@@ -23,6 +23,8 @@
 namespace android {
 namespace vold {
 
+android::binder::Status cp_supportsCheckpoint(bool& result);
+
 android::binder::Status cp_startCheckpoint(int retry);
 
 android::binder::Status cp_commitChanges();
