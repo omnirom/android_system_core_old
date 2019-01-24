@@ -996,5 +996,12 @@ binder::Status VoldNativeService::abortChanges() {
     return cp_abortChanges();
 }
 
+binder::Status VoldNativeService::supportsCheckpoint(bool* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return cp_supportsCheckpoint(*_aidl_return);
+}
+
 }  // namespace vold
 }  // namespace android
