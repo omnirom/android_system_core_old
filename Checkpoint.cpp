@@ -114,8 +114,10 @@ Status cp_commitChanges() {
 
         if (fs_mgr_is_checkpoint_fs(fstab_rec)) {
             if (!strcmp(fstab_rec->fs_type, "f2fs")) {
+                std::string options = mount_rec->fs_options;
+                options += ",checkpoint=enable";
                 if (mount(mount_rec->blk_device, mount_rec->mount_point, "none",
-                          MS_REMOUNT | fstab_rec->flags, "checkpoint=enable")) {
+                          MS_REMOUNT | fstab_rec->flags, options.c_str())) {
                     return Status::fromExceptionCode(EINVAL, "Failed to remount");
                 }
             }
