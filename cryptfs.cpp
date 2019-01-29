@@ -984,7 +984,10 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr* crypt_ftr,
     convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
 
     buff_offset = crypt_params - buffer;
-    SLOGI("Extra parameters for dm_crypt: %s\n", extra_params);
+    SLOGI(
+        "Creating crypto dev \"%s\"; cipher=%s, keysize=%u, real_dev=%s, len=%llu, params=\"%s\"\n",
+        name, crypt_ftr->crypto_type_name, crypt_ftr->keysize, real_blk_name, tgt->length * 512,
+        extra_params);
     snprintf(crypt_params, sizeof(buffer) - buff_offset, "%s %s 0 %s 0 %s",
              crypt_ftr->crypto_type_name, master_key_ascii, real_blk_name, extra_params);
     crypt_params += strlen(crypt_params) + 1;
