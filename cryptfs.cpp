@@ -35,6 +35,7 @@
 #include "VolumeManager.h"
 #include "secontext.h"
 
+#include <android-base/parseint.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <bootloader_message/bootloader_message.h>
@@ -75,6 +76,7 @@ extern "C" {
 #include <crypto_scrypt.h>
 }
 
+using android::base::ParseUint;
 using android::base::StringPrintf;
 using namespace std::chrono_literals;
 
@@ -1046,19 +1048,37 @@ static std::string extra_params_as_string(const std::vector<std::string>& extra_
     return extra_params;
 }
 
-// Only adds parameters if the property is set.
-static void add_sector_size_param(std::vector<std::string>* extra_params_vec) {
+/*
+ * If the ro.crypto.fde_sector_size system property is set, append the
+ * parameters to make dm-crypt use the specified crypto sector size and round
+ * the crypto device size down to a crypto sector boundary.
+ */
+static int add_sector_size_param(std::vector<std::string>* extra_params_vec,
+                                 struct crypt_mnt_ftr* ftr) {
     constexpr char DM_CRYPT_SECTOR_SIZE[] = "ro.crypto.fde_sector_size";
-    char sector_size[PROPERTY_VALUE_MAX];
+    char value[PROPERTY_VALUE_MAX];
 
-    if (property_get(DM_CRYPT_SECTOR_SIZE, sector_size, "") > 0) {
-        std::string param = StringPrintf("sector_size:%s", sector_size);
+    if (property_get(DM_CRYPT_SECTOR_SIZE, value, "") > 0) {
+        unsigned int sector_size;
+
+        if (!ParseUint(value, &sector_size) || sector_size < 512 || sector_size > 4096 ||
+            (sector_size & (sector_size - 1)) != 0) {
+            SLOGE("Invalid value for %s: %s.  Must be >= 512, <= 4096, and a power of 2\n",
+                  DM_CRYPT_SECTOR_SIZE, value);
+            return -1;
+        }
+
+        std::string param = StringPrintf("sector_size:%u", sector_size);
         extra_params_vec->push_back(std::move(param));
 
         // With this option, IVs will match the sector numbering, instead
         // of being hard-coded to being based on 512-byte sectors.
         extra_params_vec->emplace_back("iv_large_sectors");
+
+        // Round the crypto device size down to a crypto sector boundary.
+        ftr->fs_size &= ~((sector_size / 512) - 1);
     }
+    return 0;
 }
 
 static int create_crypto_blk_dev(struct crypt_mnt_ftr* crypt_ftr, const unsigned char* master_key,
@@ -1106,7 +1126,10 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr* crypt_ftr, const unsigned
     if (flags & CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE) {
         extra_params_vec.emplace_back("allow_encrypt_override");
     }
-    add_sector_size_param(&extra_params_vec);
+    if (add_sector_size_param(&extra_params_vec, crypt_ftr)) {
+        SLOGE("Error processing dm-crypt sector size param\n");
+        goto errout;
+    }
     load_count = load_crypto_mapping_table(crypt_ftr, master_key, real_blk_name, name, fd,
                                            extra_params_as_string(extra_params_vec).c_str());
     if (load_count < 0) {
