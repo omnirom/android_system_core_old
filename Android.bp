@@ -132,7 +132,6 @@ cc_library_static {
         "model/PublicVolume.cpp",
         "model/VolumeBase.cpp",
         "model/StubVolume.cpp",
-        "secontext.cpp",
     ],
     product_variables: {
         arc: {
