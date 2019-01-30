@@ -33,7 +33,6 @@
 #include "Utils.h"
 #include "VoldUtil.h"
 #include "VolumeManager.h"
-#include "secontext.h"
 
 #include <android-base/parseint.h>
 #include <android-base/properties.h>
@@ -1610,7 +1609,7 @@ static int cryptfs_restart_internal(int restart_main) {
          * fs_mgr_do_mount runs fsck. Use setexeccon to run trusted
          * partitions in the fsck domain.
          */
-        if (setexeccon(secontextFsck())) {
+        if (setexeccon(android::vold::sFsckContext)) {
             SLOGE("Failed to setexeccon");
             return -1;
         }

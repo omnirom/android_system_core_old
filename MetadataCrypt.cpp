@@ -44,7 +44,6 @@
 #include "Keymaster.h"
 #include "Utils.h"
 #include "VoldUtil.h"
-#include "secontext.h"
 
 #define DM_CRYPT_BUF_SIZE 4096
 #define TABLE_LOAD_RETRIES 10
@@ -60,7 +59,7 @@ static const char* kFn_keymaster_key_blob_upgraded = "keymaster_key_blob_upgrade
 static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
     // fs_mgr_do_mount runs fsck. Use setexeccon to run trusted
     // partitions in the fsck domain.
-    if (setexeccon(secontextFsck())) {
+    if (setexeccon(android::vold::sFsckContext)) {
         PLOG(ERROR) << "Failed to setexeccon";
         return false;
     }
