@@ -45,6 +45,8 @@ using android::base::Realpath;
 using android::base::StringPrintf;
 using android::base::Timer;
 using android::base::WriteStringToFile;
+using android::fs_mgr::Fstab;
+using android::fs_mgr::ReadDefaultFstab;
 using android::hardware::Return;
 using android::hardware::Void;
 using android::hardware::health::storage::V1_0::IGarbageCollectCallback;
@@ -102,48 +104,43 @@ static void addFromVolumeManager(std::list<std::string>* paths, PathTypes path_t
 }
 
 static void addFromFstab(std::list<std::string>* paths, PathTypes path_type) {
-    std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)> fstab(fs_mgr_read_fstab_default(),
-                                                               fs_mgr_free_fstab);
-    struct fstab_rec* prev_rec = NULL;
+    Fstab fstab;
+    ReadDefaultFstab(&fstab);
 
-    for (int i = 0; i < fstab->num_entries; i++) {
-        auto fs_type = std::string(fstab->recs[i].fs_type);
-        /* Skip raw partitions */
-        if (fs_type == "emmc" || fs_type == "mtd") {
+    std::string previous_mount_point;
+    for (const auto& entry : fstab) {
+        // Skip raw partitions.
+        if (entry.fs_type == "emmc" || entry.fs_type == "mtd") {
             continue;
         }
-        /* Skip read-only filesystems */
-        if (fstab->recs[i].flags & MS_RDONLY) {
+        // Skip read-only filesystems
+        if (entry.flags & MS_RDONLY) {
             continue;
         }
-        if (fs_mgr_is_voldmanaged(&fstab->recs[i])) {
-            continue; /* Should we trim fat32 filesystems? */
+        if (entry.fs_mgr_flags.vold_managed) {
+            continue;  // Should we trim fat32 filesystems?
         }
-        if (fs_mgr_is_notrim(&fstab->recs[i])) {
+        if (entry.fs_mgr_flags.no_trim) {
             continue;
         }
 
-        /* Skip the multi-type partitions, which are required to be following each other.
-         * See fs_mgr.c's mount_with_alternatives().
-         */
-        if (prev_rec && !strcmp(prev_rec->mount_point, fstab->recs[i].mount_point)) {
+        // Skip the multi-type partitions, which are required to be following each other.
+        // See fs_mgr.c's mount_with_alternatives().
+        if (entry.mount_point == previous_mount_point) {
             continue;
         }
 
         if (path_type == PathTypes::kMountPoint) {
-            paths->push_back(fstab->recs[i].mount_point);
+            paths->push_back(entry.mount_point);
         } else if (path_type == PathTypes::kBlkDevice) {
             std::string gc_path;
-            if (std::string(fstab->recs[i].fs_type) == "f2fs" &&
-                Realpath(
-                    android::vold::BlockDeviceForPath(std::string(fstab->recs[i].mount_point) + "/"),
-                    &gc_path)) {
-                paths->push_back(std::string("/sys/fs/") + fstab->recs[i].fs_type + "/" +
-                                 Basename(gc_path));
+            if (entry.fs_type == "f2fs" &&
+                Realpath(android::vold::BlockDeviceForPath(entry.mount_point + "/"), &gc_path)) {
+                paths->push_back("/sys/fs/" + entry.fs_type + "/" + Basename(gc_path));
             }
         }
 
-        prev_rec = &fstab->recs[i];
+        previous_mount_point = entry.mount_point;
     }
 }
 
@@ -263,22 +260,21 @@ static int stopGc(const std::list<std::string>& paths) {
 }
 
 static void runDevGcFstab(void) {
-    std::unique_ptr<fstab, decltype(&fs_mgr_free_fstab)> fstab(fs_mgr_read_fstab_default(),
-                                                               fs_mgr_free_fstab);
-    struct fstab_rec* rec = NULL;
+    Fstab fstab;
+    ReadDefaultFstab(&fstab);
 
-    for (int i = 0; i < fstab->num_entries; i++) {
-        if (fs_mgr_has_sysfs_path(&fstab->recs[i])) {
-            rec = &fstab->recs[i];
+    std::string path;
+    for (const auto& entry : fstab) {
+        if (!entry.sysfs_path.empty()) {
+            path = entry.sysfs_path;
             break;
         }
     }
-    if (!rec) {
+
+    if (path.empty()) {
         return;
     }
 
-    std::string path;
-    path.append(rec->sysfs_path);
     path = path + "/manual_gc";
     Timer timer;
 

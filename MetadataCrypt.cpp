@@ -49,6 +49,8 @@
 #define TABLE_LOAD_RETRIES 10
 #define DEFAULT_KEY_TARGET_TYPE "default-key"
 
+using android::fs_mgr::FstabEntry;
+using android::fs_mgr::GetEntryForMountPoint;
 using android::vold::KeyBuffer;
 
 static const std::string kDmNameUserdata = "userdata";
@@ -63,7 +65,7 @@ static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
         PLOG(ERROR) << "Failed to setexeccon";
         return false;
     }
-    auto mount_rc = fs_mgr_do_mount(fstab_default, const_cast<char*>(mount_point),
+    auto mount_rc = fs_mgr_do_mount(&fstab_default, const_cast<char*>(mount_point),
                                     const_cast<char*>(blk_device), nullptr,
                                     android::vold::cp_needsCheckpoint());
     if (setexeccon(nullptr)) {
@@ -106,12 +108,12 @@ static void commit_key(const std::string& dir) {
     LOG(INFO) << "Old Key deleted: " << dir;
 }
 
-static bool read_key(struct fstab_rec const* data_rec, bool create_if_absent, KeyBuffer* key) {
-    if (!data_rec->key_dir) {
+static bool read_key(const FstabEntry& data_rec, bool create_if_absent, KeyBuffer* key) {
+    if (data_rec.key_dir.empty()) {
         LOG(ERROR) << "Failed to get key_dir";
         return false;
     }
-    std::string key_dir = data_rec->key_dir;
+    std::string key_dir = data_rec.key_dir;
     std::string sKey;
     auto dir = key_dir + "/key";
     LOG(DEBUG) << "key_dir/key: " << dir;
@@ -254,13 +256,14 @@ bool fscrypt_mount_metadata_encrypted(const std::string& mount_point, bool needs
         LOG(DEBUG) << "fscrypt_enable_crypto got unexpected starting state: " << encrypted_state;
         return false;
     }
-    auto data_rec = fs_mgr_get_entry_for_mount_point(fstab_default, mount_point);
+
+    auto data_rec = GetEntryForMountPoint(&fstab_default, mount_point);
     if (!data_rec) {
         LOG(ERROR) << "Failed to get data_rec";
         return false;
     }
     KeyBuffer key;
-    if (!read_key(data_rec, needs_encrypt, &key)) return false;
+    if (!read_key(*data_rec, needs_encrypt, &key)) return false;
     uint64_t nr_sec;
     if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
     std::string crypto_blkdev;
@@ -271,9 +274,8 @@ bool fscrypt_mount_metadata_encrypted(const std::string& mount_point, bool needs
     if (needs_encrypt) {
         LOG(INFO) << "Beginning inplace encryption, nr_sec: " << nr_sec;
         off64_t size_already_done = 0;
-        auto rc =
-            cryptfs_enable_inplace(const_cast<char*>(crypto_blkdev.c_str()), data_rec->blk_device,
-                                   nr_sec, &size_already_done, nr_sec, 0, false);
+        auto rc = cryptfs_enable_inplace(crypto_blkdev.data(), data_rec->blk_device.data(), nr_sec,
+                                         &size_already_done, nr_sec, 0, false);
         if (rc != 0) {
             LOG(ERROR) << "Inplace crypto failed with code: " << rc;
             return false;
@@ -286,6 +288,6 @@ bool fscrypt_mount_metadata_encrypted(const std::string& mount_point, bool needs
     }
 
     LOG(DEBUG) << "Mounting metadata-encrypted filesystem:" << mount_point;
-    mount_via_fs_mgr(data_rec->mount_point, crypto_blkdev.c_str());
+    mount_via_fs_mgr(data_rec->mount_point.c_str(), crypto_blkdev.c_str());
     return true;
 }
