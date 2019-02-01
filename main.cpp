@@ -50,6 +50,7 @@ static void parse_args(int argc, char** argv);
 struct selabel_handle* sehandle;
 
 using android::base::StringPrintf;
+using android::fs_mgr::ReadDefaultFstab;
 
 int main(int argc, char** argv) {
     atrace_set_tracing_enabled(false);
@@ -216,8 +217,7 @@ static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quot
                           bool* has_reserved) {
     ATRACE_NAME("process_config");
 
-    fstab_default = fs_mgr_read_fstab_default();
-    if (!fstab_default) {
+    if (!ReadDefaultFstab(&fstab_default)) {
         PLOG(ERROR) << "Failed to open default fstab";
         return -1;
     }
@@ -226,30 +226,29 @@ static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quot
     *has_adoptable = false;
     *has_quota = false;
     *has_reserved = false;
-    for (int i = 0; i < fstab_default->num_entries; i++) {
-        auto rec = &fstab_default->recs[i];
-        if (fs_mgr_is_quota(rec)) {
+    for (const auto& entry : fstab_default) {
+        if (entry.fs_mgr_flags.quota) {
             *has_quota = true;
         }
-        if (rec->reserved_size > 0) {
+        if (entry.reserved_size > 0) {
             *has_reserved = true;
         }
 
-        if (fs_mgr_is_voldmanaged(rec)) {
-            if (fs_mgr_is_nonremovable(rec)) {
+        if (entry.fs_mgr_flags.vold_managed) {
+            if (entry.fs_mgr_flags.nonremovable) {
                 LOG(WARNING) << "nonremovable no longer supported; ignoring volume";
                 continue;
             }
 
-            std::string sysPattern(rec->blk_device);
-            std::string nickname(rec->label);
+            std::string sysPattern(entry.blk_device);
+            std::string nickname(entry.label);
             int flags = 0;
 
-            if (fs_mgr_is_encryptable(rec)) {
+            if (entry.is_encryptable()) {
                 flags |= android::vold::Disk::Flags::kAdoptable;
                 *has_adoptable = true;
             }
-            if (fs_mgr_is_noemulatedsd(rec) ||
+            if (entry.fs_mgr_flags.no_emulated_sd ||
                 android::base::GetBoolProperty("vold.debug.default_primary", false)) {
                 flags |= android::vold::Disk::Flags::kDefaultPrimary;
             }
