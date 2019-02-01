@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-#include <linux/fs.h>
-#include <sys/ioctl.h>
+#include "VoldUtil.h"
 
-struct fstab* fstab_default;
+android::fs_mgr::Fstab fstab_default;
