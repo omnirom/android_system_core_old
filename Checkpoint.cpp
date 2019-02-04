@@ -16,6 +16,7 @@
 
 #define LOG_TAG "Checkpoint"
 #include "Checkpoint.h"
+#include "VoldUtil.h"
 
 #include <fstream>
 #include <list>
@@ -72,10 +73,6 @@ bool setBowState(std::string const& block_device, std::string const& state) {
 
 Status cp_supportsCheckpoint(bool& result) {
     result = false;
-    Fstab fstab_default;
-    if (!ReadDefaultFstab(&fstab_default)) {
-        return Status::fromExceptionCode(EINVAL, "Failed to get fstab");
-    }
 
     for (const auto& entry : fstab_default) {
         if (entry.fs_mgr_flags.checkpoint_blk || entry.fs_mgr_flags.checkpoint_fs) {
@@ -116,10 +113,6 @@ Status cp_commitChanges() {
     // But we also need to get the matching fstab entries to see
     // the original flags
     std::string err_str;
-    Fstab fstab_default;
-    if (!ReadDefaultFstab(&fstab_default)) {
-        return Status::fromExceptionCode(EINVAL, "Failed to get fstab");
-    }
 
     Fstab mounts;
     if (!ReadFstabFromFile("/proc/mounts", &mounts)) {
@@ -197,11 +190,6 @@ bool cp_needsCheckpoint() {
 }
 
 Status cp_prepareCheckpoint() {
-    Fstab fstab_default;
-    if (!ReadDefaultFstab(&fstab_default)) {
-        return Status::fromExceptionCode(EINVAL, "Failed to get fstab");
-    }
-
     Fstab mounts;
     if (!ReadFstabFromFile("/proc/mounts", &mounts)) {
         return Status::fromExceptionCode(EINVAL, "Failed to get /proc/mounts");
