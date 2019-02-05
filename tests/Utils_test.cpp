@@ -27,6 +27,7 @@ TEST_F(UtilsTest, FindValueTest) {
     std::string tmp;
 
     ASSERT_FALSE(FindValue("", "KEY", &tmp));
+    ASSERT_FALSE(FindValue("NOTMATCH=\"VALUE\"", "KEY", &tmp));
     ASSERT_FALSE(FindValue("BADKEY=\"VALUE\"", "KEY", &tmp));
 
     ASSERT_TRUE(FindValue("KEY=\"VALUE\"", "KEY", &tmp));
@@ -37,6 +38,9 @@ TEST_F(UtilsTest, FindValueTest) {
 
     ASSERT_TRUE(FindValue("BADKEY=\"VALUE\" KEY=\"BAZ\"", "KEY", &tmp));
     ASSERT_EQ("BAZ", tmp);
+
+    ASSERT_TRUE(FindValue("BADKEY=\"VALUE\" NOTKEY=\"OTHER\" KEY=\"QUUX\"", "KEY", &tmp));
+    ASSERT_EQ("QUUX", tmp);
 }
 
 }  // namespace vold
