@@ -202,12 +202,15 @@ status_t BindMount(const std::string& source, const std::string& target) {
 
 bool FindValue(const std::string& raw, const std::string& key, std::string* value) {
     auto qual = key + "=\"";
-    auto start = raw.find(qual);
-    if (start > 0 && raw[start - 1] != ' ') {
-        start = raw.find(qual, start + 1);
+    size_t start = 0;
+    while (true) {
+        start = raw.find(qual, start);
+        if (start == std::string::npos) return false;
+        if (start == 0 || raw[start - 1] == ' ') {
+            break;
+        }
+        start += 1;
     }
-
-    if (start == std::string::npos) return false;
     start += qual.length();
 
     auto end = raw.find("\"", start);
