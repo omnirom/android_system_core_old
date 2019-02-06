@@ -57,6 +57,12 @@ status_t KillProcessesUsingPath(const std::string& path);
 /* Creates bind mount from source to target */
 status_t BindMount(const std::string& source, const std::string& target);
 
+/** Creates a symbolic link to target */
+status_t Symlink(const std::string& target, const std::string& linkpath);
+
+/** Calls unlink(2) at linkpath */
+status_t Unlink(const std::string& linkpath);
+
 bool FindValue(const std::string& raw, const std::string& key, std::string* value);
 
 /* Reads filesystem metadata from device at path */

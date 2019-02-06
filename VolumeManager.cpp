@@ -73,6 +73,11 @@ using android::base::StartsWith;
 using android::base::StringAppendF;
 using android::base::StringPrintf;
 using android::base::unique_fd;
+using android::vold::BindMount;
+using android::vold::DeleteDirContentsAndDir;
+using android::vold::Symlink;
+using android::vold::Unlink;
+using android::vold::UnmountTree;
 using android::vold::VoldNativeService;
 
 static const char* kPathUserMount = "/mnt/user";
@@ -369,16 +374,8 @@ int VolumeManager::linkPrimary(userid_t userId) {
     }
 
     std::string target(StringPrintf("/mnt/user/%d/primary", userId));
-    if (TEMP_FAILURE_RETRY(unlink(target.c_str()))) {
-        if (errno != ENOENT) {
-            PLOG(WARNING) << "Failed to unlink " << target;
-        }
-    }
     LOG(DEBUG) << "Linking " << source << " to " << target;
-    if (TEMP_FAILURE_RETRY(symlink(source.c_str(), target.c_str()))) {
-        PLOG(WARNING) << "Failed to link";
-        return -errno;
-    }
+    Symlink(source, target);
     return 0;
 }
 
@@ -389,21 +386,7 @@ int VolumeManager::mountPkgSpecificDir(const std::string& mntSourceRoot,
         StringPrintf("%s/Android/%s/%s", mntSourceRoot.c_str(), dirName, packageName.c_str());
     std::string mntTargetDir =
         StringPrintf("%s/Android/%s/%s", mntTargetRoot.c_str(), dirName, packageName.c_str());
-    if (umount2(mntTargetDir.c_str(), MNT_DETACH) == -1 && errno != EINVAL && errno != ENOENT) {
-        PLOG(ERROR) << "Failed to unmount " << mntTargetDir;
-        return -1;
-    }
-    if (TEMP_FAILURE_RETRY(mount(mntSourceDir.c_str(), mntTargetDir.c_str(), nullptr,
-                                 MS_BIND | MS_REC, nullptr)) == -1) {
-        PLOG(ERROR) << "Failed to mount " << mntSourceDir << " to " << mntTargetDir;
-        return -1;
-    }
-    if (TEMP_FAILURE_RETRY(
-            mount(nullptr, mntTargetDir.c_str(), nullptr, MS_REC | MS_SLAVE, nullptr)) == -1) {
-        PLOG(ERROR) << "Failed to set MS_SLAVE at " << mntTargetDir;
-        return -1;
-    }
-    return 0;
+    return BindMount(mntSourceDir, mntTargetDir);
 }
 
 int VolumeManager::mountPkgSpecificDirsForRunningProcs(
@@ -545,11 +528,16 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
                     StringAppendF(&mntSource, "/%d", userId);
                     StringAppendF(&mntTarget, "/%d", userId);
                 }
+
+                std::string sandboxSource =
+                    StringPrintf("%s/Android/sandbox/%s", mntSource.c_str(), sandboxId.c_str());
+                if (BindMount(sandboxSource, mntTarget) < 0) {
+                    continue;
+                }
+
                 std::string obbSourceDir = StringPrintf("%s/Android/obb", mntSource.c_str());
                 std::string obbTargetDir = StringPrintf("%s/Android/obb", mntTarget.c_str());
-                if (umount2(obbTargetDir.c_str(), MNT_DETACH) == -1 && errno != EINVAL &&
-                    errno != ENOENT) {
-                    PLOG(ERROR) << "Failed to unmount " << obbTargetDir;
+                if (UnmountTree(obbTargetDir) < 0) {
                     continue;
                 }
                 for (auto& package : packagesForUid) {
@@ -560,14 +548,7 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
                     }
                 }
                 if (mountMode == VoldNativeService::REMOUNT_MODE_INSTALLER) {
-                    if (TEMP_FAILURE_RETRY(mount(obbSourceDir.c_str(), obbTargetDir.c_str(),
-                                                 nullptr, MS_BIND | MS_REC, nullptr)) == -1) {
-                        PLOG(ERROR) << "Failed to mount " << obbSourceDir << " to " << obbTargetDir;
-                        continue;
-                    }
-                    if (TEMP_FAILURE_RETRY(mount(nullptr, obbTargetDir.c_str(), nullptr,
-                                                 MS_REC | MS_SLAVE, nullptr)) == -1) {
-                        PLOG(ERROR) << "Failed to set MS_SLAVE at " << obbTargetDir.c_str();
+                    if (BindMount(obbSourceDir, obbTargetDir) < 0) {
                         continue;
                     }
                 }
@@ -674,7 +655,6 @@ int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::stri
 
             // [1] Create /mnt/runtime/write/emulated/0/Android/sandbox/<sandboxId>
             // [2] Create /mnt/user/0/package/<packageName>/emulated/0
-            // Mount [1] at [2]
             std::string pkgSandboxSourceDir = prepareSandboxSource(uid, sandboxId, sandboxRoot);
             if (pkgSandboxSourceDir.empty()) {
                 return -errno;
@@ -682,23 +662,6 @@ int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::stri
             std::string pkgSandboxTargetDir = prepareSandboxTarget(
                 packageName, uid, volumeLabel, mntTargetRoot, isVolPrimaryEmulated);
             if (pkgSandboxTargetDir.empty()) {
-                return -errno;
-            }
-            if (umount2(pkgSandboxTargetDir.c_str(), MNT_DETACH) == -1 && errno != EINVAL &&
-                errno != ENOENT) {
-                PLOG(ERROR) << "Failed to unmount " << pkgSandboxTargetDir;
-                return -errno;
-            }
-            if (TEMP_FAILURE_RETRY(mount(pkgSandboxSourceDir.c_str(), pkgSandboxTargetDir.c_str(),
-                                         nullptr, MS_BIND | MS_REC, nullptr)) == -1) {
-                PLOG(ERROR) << "Failed to mount " << pkgSandboxSourceDir << " at "
-                            << pkgSandboxTargetDir;
-                return -errno;
-            }
-            if (TEMP_FAILURE_RETRY(mount(nullptr, pkgSandboxTargetDir.c_str(), nullptr,
-                                         MS_SLAVE | MS_REC, nullptr)) == -1) {
-                PLOG(ERROR) << "Failed to mount " << pkgSandboxSourceDir << " at "
-                            << pkgSandboxTargetDir;
                 return -errno;
             }
 
@@ -710,9 +673,8 @@ int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::stri
             }
 
             if (volumeLabel == mPrimary->getLabel()) {
-                // Create [1] /mnt/user/0/package/<packageName>/self/
-                // Already created [2] /mnt/user/0/package/<packageName>/emulated/0
-                // Mount [2] at [1]
+                // [1] Create /mnt/user/0/package/<packageName>/self/
+                // Link [1] to /storage/emulated/0
                 std::string pkgPrimaryTargetDir =
                     StringPrintf("%s/%s/self", mntTargetRoot.c_str(), packageName.c_str());
                 if (fs_prepare_dir(pkgPrimaryTargetDir.c_str(), 0755, uid, uid) != 0) {
@@ -724,16 +686,7 @@ int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::stri
                 if (isVolPrimaryEmulated) {
                     StringAppendF(&primarySource, "/%d", userId);
                 }
-                if (TEMP_FAILURE_RETRY(unlink(pkgPrimaryTargetDir.c_str()))) {
-                    if (errno != ENOENT) {
-                        PLOG(ERROR) << "Failed to unlink " << pkgPrimaryTargetDir;
-                    }
-                }
-                if (TEMP_FAILURE_RETRY(symlink(primarySource.c_str(), pkgPrimaryTargetDir.c_str()))) {
-                    PLOG(ERROR) << "Failed to link " << primarySource << " at "
-                                << pkgPrimaryTargetDir;
-                    return -errno;
-                }
+                Symlink(primarySource, pkgPrimaryTargetDir);
             }
         }
     }
@@ -879,17 +832,21 @@ int VolumeManager::onUserStopped(userid_t userId) {
     mStartedUsers.erase(userId);
 
     if (hasIsolatedStorage()) {
+        auto& userPackages = mUserPackages[userId];
+        std::string userMntTargetRoot = StringPrintf("/mnt/user/%d", userId);
+        for (auto& package : userPackages) {
+            std::string pkgPrimaryDir = StringPrintf("%s/package/%s/self/primary",
+                                                     userMntTargetRoot.c_str(), package.c_str());
+            if (Unlink(pkgPrimaryDir) < 0) {
+                return -errno;
+            }
+        }
         mUserPackages.erase(userId);
-        std::string mntTargetDir = StringPrintf("/mnt/user/%d", userId);
-        if (android::vold::UnmountTreeWithPrefix(mntTargetDir) < 0) {
-            PLOG(ERROR) << "UnmountTreeWithPrefix on " << mntTargetDir << " failed";
+        if (DeleteDirContentsAndDir(userMntTargetRoot) < 0) {
+            PLOG(ERROR) << "DeleteDirContentsAndDir failed on " << userMntTargetRoot;
             return -errno;
         }
-        if (android::vold::DeleteDirContentsAndDir(mntTargetDir) < 0) {
-            PLOG(ERROR) << "DeleteDirContentsAndDir failed on " << mntTargetDir;
-            return -errno;
-        }
-        LOG(VERBOSE) << "Success: DeleteDirContentsAndDir on " << mntTargetDir;
+        LOG(VERBOSE) << "Success: DeleteDirContentsAndDir on " << userMntTargetRoot;
     }
     return 0;
 }
@@ -974,6 +931,14 @@ int VolumeManager::destroySandboxForApp(const std::string& packageName,
             }
         }
     }
+    std::string pkgMountTargetDir =
+        StringPrintf("/mnt/user/%d/package/%s", userId, packageName.c_str());
+    std::string pkgPrimaryDir = StringPrintf("%s/self/primary", pkgMountTargetDir.c_str());
+    if (Unlink(pkgPrimaryDir) < 0) {
+        return -errno;
+    }
+    DeleteDirContentsAndDir(pkgMountTargetDir);
+
     return 0;
 }
 
@@ -982,11 +947,6 @@ int VolumeManager::destroySandboxForAppOnVol(const std::string& packageName,
                                              const std::string& volLabel) {
     LOG(VERBOSE) << "destroySandboxOnVol: " << packageName << ", userId=" << userId
                  << ", volLabel=" << volLabel;
-    std::string pkgSandboxTarget =
-        StringPrintf("/mnt/user/%d/package/%s", userId, packageName.c_str());
-    if (android::vold::UnmountTreeWithPrefix(pkgSandboxTarget) < 0) {
-        PLOG(ERROR) << "UnmountTreeWithPrefix failed on " << pkgSandboxTarget;
-    }
 
     std::string sandboxDir = StringPrintf("/mnt/runtime/write/%s", volLabel.c_str());
     if (volLabel == mPrimary->getLabel() && mPrimary->isEmulated()) {
@@ -994,10 +954,16 @@ int VolumeManager::destroySandboxForAppOnVol(const std::string& packageName,
     }
     StringAppendF(&sandboxDir, "/Android/sandbox/%s", sandboxId.c_str());
 
-    if (android::vold::DeleteDirContentsAndDir(sandboxDir) < 0) {
+    if (DeleteDirContentsAndDir(sandboxDir) < 0) {
         PLOG(ERROR) << "DeleteDirContentsAndDir failed on " << sandboxDir;
         return -errno;
     }
+
+    std::string pkgMountTargetDir =
+        StringPrintf("/mnt/user/%d/package/%s/%s", userId, packageName.c_str(), volLabel.c_str());
+    // It's okay if this fails
+    DeleteDirContentsAndDir(pkgMountTargetDir);
+
     return 0;
 }
 
@@ -1085,10 +1051,6 @@ int VolumeManager::destroySandboxesForVol(android::vold::VolumeBase* vol, userid
     for (auto& packageName : packageNames) {
         std::string volSandboxRoot = StringPrintf("/mnt/user/%d/package/%s/%s", userId,
                                                   packageName.c_str(), vol->getLabel().c_str());
-        if (android::vold::UnmountTreeWithPrefix(volSandboxRoot) < 0) {
-            PLOG(ERROR) << "UnmountTreeWithPrefix on " << volSandboxRoot << " failed";
-            continue;
-        }
         if (android::vold::DeleteDirContentsAndDir(volSandboxRoot) < 0) {
             PLOG(ERROR) << "DeleteDirContentsAndDir failed on " << volSandboxRoot;
             continue;
@@ -1290,15 +1252,16 @@ int VolumeManager::reset() {
     }
     updateVirtualDisk();
     mAddedUsers.clear();
-    mStartedUsers.clear();
 
     mUserPackages.clear();
     mAppIds.clear();
     mSandboxIds.clear();
     mVisibleVolumeIds.clear();
 
-    // For unmounting dirs under /mnt/user/<user-id>/package/<package-name>
-    android::vold::UnmountTreeWithPrefix("/mnt/user/");
+    for (userid_t userId : mStartedUsers) {
+        DeleteDirContentsAndDir(StringPrintf("/mnt/user/%d/package", userId));
+    }
+    mStartedUsers.clear();
     return 0;
 }
 
