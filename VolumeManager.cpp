@@ -115,7 +115,7 @@ VolumeManager::VolumeManager() {
 VolumeManager::~VolumeManager() {}
 
 static bool hasIsolatedStorage() {
-    return GetBoolProperty(kIsolatedStorageSnapshot, GetBoolProperty(kIsolatedStorage, false));
+    return GetBoolProperty(kIsolatedStorageSnapshot, GetBoolProperty(kIsolatedStorage, true));
 }
 
 int VolumeManager::updateVirtualDisk() {

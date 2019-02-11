@@ -45,8 +45,6 @@ static const char* kFusePath = "/system/bin/sdcard";
 
 static const char* kAsecPath = "/mnt/secure/asec";
 
-static const char* kIsolatedStorage = "persist.sys.isolated_storage";
-
 PublicVolume::PublicVolume(dev_t device) : VolumeBase(Type::kPublic), mDevice(device), mFusePid(0) {
     setId(StringPrintf("public:%u,%u", major(device), minor(device)));
     mDevPath = StringPrintf("/dev/block/vold/%s", getId().c_str());
