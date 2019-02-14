@@ -152,16 +152,23 @@ class VolumeManager {
 
     int prepareSandboxes(userid_t userId, const std::vector<std::string>& packageNames,
                          const std::vector<std::string>& visibleVolLabels);
-    int prepareSandboxTargets(userid_t userId, const std::vector<std::string>& packageNames,
-                              const std::vector<std::string>& visibleVolLabels);
     int mountPkgSpecificDirsForRunningProcs(userid_t userId,
                                             const std::vector<std::string>& packageNames,
                                             const std::vector<std::string>& visibleVolLabels,
                                             int remountMode);
     int destroySandboxesForVol(android::vold::VolumeBase* vol, userid_t userId);
+    std::string prepareSandboxSource(uid_t uid, const std::string& sandboxId,
+                                     const std::string& sandboxRootDir);
+    std::string prepareSandboxTarget(const std::string& packageName, uid_t uid,
+                                     const std::string& volumeLabel,
+                                     const std::string& mntTargetRootDir, bool isUserDependent);
+    std::string preparePkgDataSource(const std::string& packageName, uid_t uid,
+                                     const std::string& dataRootDir);
     std::string prepareSubDirs(const std::string& pathPrefix, const std::string& subDirs,
                                mode_t mode, uid_t uid, gid_t gid);
     bool createPkgSpecificDirRoots(const std::string& volumeRoot);
+    bool createPkgSpecificDirs(const std::string& packageName, uid_t uid,
+                               const std::string& volumeRoot, const std::string& sandboxDirRoot);
     int mountPkgSpecificDir(const std::string& mntSourceRoot, const std::string& mntTargetRoot,
                             const std::string& packageName, const char* dirName);
     int destroySandboxForAppOnVol(const std::string& packageName, const std::string& sandboxId,

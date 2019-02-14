@@ -222,26 +222,6 @@ status_t Unlink(const std::string& linkpath) {
     return OK;
 }
 
-status_t CreateDir(const std::string& dir, mode_t mode) {
-    struct stat sb;
-    if (TEMP_FAILURE_RETRY(stat(dir.c_str(), &sb)) == 0) {
-        if (S_ISDIR(sb.st_mode)) {
-            return OK;
-        } else if (TEMP_FAILURE_RETRY(unlink(dir.c_str())) == -1) {
-            PLOG(ERROR) << "Failed to unlink " << dir;
-            return -errno;
-        }
-    } else if (errno != ENOENT) {
-        PLOG(ERROR) << "Failed to stat " << dir;
-        return -errno;
-    }
-    if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), mode)) == -1) {
-        PLOG(ERROR) << "Failed to mkdir " << dir;
-        return -errno;
-    }
-    return OK;
-}
-
 bool FindValue(const std::string& raw, const std::string& key, std::string* value) {
     auto qual = key + "=\"";
     size_t start = 0;

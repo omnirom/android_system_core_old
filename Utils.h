@@ -63,9 +63,6 @@ status_t Symlink(const std::string& target, const std::string& linkpath);
 /** Calls unlink(2) at linkpath */
 status_t Unlink(const std::string& linkpath);
 
-/** Creates the given directory if it is not already available */
-status_t CreateDir(const std::string& dir, mode_t mode);
-
 bool FindValue(const std::string& raw, const std::string& key, std::string* value);
 
 /* Reads filesystem metadata from device at path */
