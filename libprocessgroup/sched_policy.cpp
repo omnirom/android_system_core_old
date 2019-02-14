@@ -48,7 +48,7 @@ int set_cpuset_policy(int tid, SchedPolicy policy) {
         case SP_BACKGROUND:
             return SetTaskProfiles(tid,
                                    {"HighEnergySaving", "ProcessCapacityLow", "LowIoPriority",
-                                    "TimerSlackHigh"},
+                                    "TimerSlackHigh", "BlkIOBackground"},
                                    true)
                            ? 0
                            : -1;
@@ -57,19 +57,20 @@ int set_cpuset_policy(int tid, SchedPolicy policy) {
         case SP_AUDIO_SYS:
             return SetTaskProfiles(tid,
                                    {"HighPerformance", "ProcessCapacityHigh", "HighIoPriority",
-                                    "TimerSlackNormal"},
+                                    "TimerSlackNormal", "BlkIOBackground"},
                                    true)
                            ? 0
                            : -1;
         case SP_TOP_APP:
             return SetTaskProfiles(tid,
                                    {"MaxPerformance", "ProcessCapacityMax", "MaxIoPriority",
-                                    "TimerSlackNormal"},
+                                    "TimerSlackNormal", "BlkIOBackground"},
                                    true)
                            ? 0
                            : -1;
         case SP_SYSTEM:
-            return SetTaskProfiles(tid, {"ServiceCapacityLow", "TimerSlackNormal"}, true) ? 0 : -1;
+            return SetTaskProfiles(tid, {"ServiceCapacityLow", "TimerSlackNormal",
+                                   "BlkIOBackground"}, true) ? 0 : -1;
         case SP_RESTRICTED:
             return SetTaskProfiles(tid, {"ServiceCapacityRestricted", "TimerSlackNormal"}, true)
                            ? 0
@@ -118,7 +119,7 @@ int set_sched_policy(int tid, SchedPolicy policy) {
         case SP_AUDIO_APP:
         case SP_AUDIO_SYS:
         case SP_TOP_APP:
-            SLOGD("^^^ tid %d (%s)", tid, thread_name);
+            SLOGD("^^^ tid %d policy %d (%s)", tid, policy, thread_name);
             break;
         case SP_SYSTEM:
             SLOGD("/// tid %d (%s)", tid, thread_name);
@@ -134,15 +135,19 @@ int set_sched_policy(int tid, SchedPolicy policy) {
 
     switch (policy) {
         case SP_BACKGROUND:
-            return SetTaskProfiles(tid, {"HighEnergySaving", "TimerSlackHigh"}, true) ? 0 : -1;
+            return SetTaskProfiles(tid, {"HighEnergySaving", "TimerSlackHigh",
+                                        "BlkIOBackground"}, true) ? 0 : -1;
         case SP_FOREGROUND:
         case SP_AUDIO_APP:
         case SP_AUDIO_SYS:
-            return SetTaskProfiles(tid, {"HighPerformance", "TimerSlackNormal"}, true) ? 0 : -1;
+            return SetTaskProfiles(tid, {"HighPerformance", "TimerSlackNormal",
+                                        "BlkIOBackground"}, true) ? 0 : -1;
         case SP_TOP_APP:
-            return SetTaskProfiles(tid, {"MaxPerformance", "TimerSlackNormal"}, true) ? 0 : -1;
+            return SetTaskProfiles(tid, {"MaxPerformance", "TimerSlackNormal",
+                                        "BlkIOBackground"}, true) ? 0 : -1;
         case SP_RT_APP:
-            return SetTaskProfiles(tid, {"RealtimePerformance", "TimerSlackNormal"}, true) ? 0 : -1;
+            return SetTaskProfiles(tid, {"RealtimePerformance", "TimerSlackNormal",
+                                        "BlkIOBackground"}, true) ? 0 : -1;
         default:
             return SetTaskProfiles(tid, {"TimerSlackNormal"}, true) ? 0 : -1;
     }
