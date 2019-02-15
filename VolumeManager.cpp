@@ -68,12 +68,14 @@
 #include "model/ObbVolume.h"
 #include "model/StubVolume.h"
 
+using android::OK;
 using android::base::GetBoolProperty;
 using android::base::StartsWith;
 using android::base::StringAppendF;
 using android::base::StringPrintf;
 using android::base::unique_fd;
 using android::vold::BindMount;
+using android::vold::CreateDir;
 using android::vold::DeleteDirContentsAndDir;
 using android::vold::Symlink;
 using android::vold::Unlink;
@@ -384,8 +386,14 @@ int VolumeManager::mountPkgSpecificDir(const std::string& mntSourceRoot,
                                        const std::string& packageName, const char* dirName) {
     std::string mntSourceDir =
         StringPrintf("%s/Android/%s/%s", mntSourceRoot.c_str(), dirName, packageName.c_str());
+    if (CreateDir(mntSourceDir, 0755) < 0) {
+        return -errno;
+    }
     std::string mntTargetDir =
         StringPrintf("%s/Android/%s/%s", mntTargetRoot.c_str(), dirName, packageName.c_str());
+    if (CreateDir(mntTargetDir, 0755) < 0) {
+        return -errno;
+    }
     return BindMount(mntSourceDir, mntTargetDir);
 }
 
@@ -531,6 +539,9 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
 
                 std::string sandboxSource =
                     StringPrintf("%s/Android/sandbox/%s", mntSource.c_str(), sandboxId.c_str());
+                if (CreateDir(sandboxSource, 0755) < 0) {
+                    continue;
+                }
                 if (BindMount(sandboxSource, mntTarget) < 0) {
                     continue;
                 }
@@ -538,6 +549,9 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
                 std::string obbSourceDir = StringPrintf("%s/Android/obb", mntSource.c_str());
                 std::string obbTargetDir = StringPrintf("%s/Android/obb", mntTarget.c_str());
                 if (UnmountTree(obbTargetDir) < 0) {
+                    continue;
+                }
+                if (!createPkgSpecificDirRoots(mntSource) || !createPkgSpecificDirRoots(mntTarget)) {
                     continue;
                 }
                 for (auto& package : packagesForUid) {
@@ -608,6 +622,8 @@ int VolumeManager::getMountModeForRunningProc(const std::vector<std::string>& pa
 
 int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::string>& packageNames,
                                     const std::vector<std::string>& visibleVolLabels) {
+    prepareSandboxTargets(userId, packageNames, visibleVolLabels);
+
     if (visibleVolLabels.empty()) {
         return 0;
     }
@@ -616,8 +632,7 @@ int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::stri
         bool isVolPrimaryEmulated = (volumeLabel == mPrimary->getLabel() && mPrimary->isEmulated());
         if (isVolPrimaryEmulated) {
             StringAppendF(&volumeRoot, "/%d", userId);
-            if (fs_prepare_dir(volumeRoot.c_str(), 0755, AID_ROOT, AID_ROOT) != 0) {
-                PLOG(ERROR) << "fs_prepare_dir failed on " << volumeRoot;
+            if (CreateDir(volumeRoot, 0755) < 0) {
                 return -errno;
             }
         }
@@ -627,70 +642,124 @@ int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::stri
         if (sandboxRoot.empty()) {
             return -errno;
         }
-
-        if (!createPkgSpecificDirRoots(volumeRoot)) {
-            return -errno;
-        }
-
-        std::string mntTargetRoot = StringPrintf("/mnt/user/%d", userId);
-        if (fs_prepare_dir(mntTargetRoot.c_str(), 0751, AID_ROOT, AID_ROOT) != 0) {
-            PLOG(ERROR) << "fs_prepare_dir failed on " << mntTargetRoot;
-            return -errno;
-        }
-        mntTargetRoot.append("/package");
-        if (fs_prepare_dir(mntTargetRoot.c_str(), 0700, AID_ROOT, AID_ROOT) != 0) {
-            PLOG(ERROR) << "fs_prepare_dir failed on " << mntTargetRoot;
-            return -errno;
-        }
-
-        for (auto& packageName : packageNames) {
-            const auto& it = mAppIds.find(packageName);
-            if (it == mAppIds.end()) {
-                PLOG(ERROR) << "appId is not available for " << packageName;
-                continue;
-            }
-            appid_t appId = it->second;
-            std::string sandboxId = mSandboxIds[appId];
-            uid_t uid = multiuser_get_uid(userId, appId);
-
-            // [1] Create /mnt/runtime/write/emulated/0/Android/sandbox/<sandboxId>
-            // [2] Create /mnt/user/0/package/<packageName>/emulated/0
-            std::string pkgSandboxSourceDir = prepareSandboxSource(uid, sandboxId, sandboxRoot);
-            if (pkgSandboxSourceDir.empty()) {
-                return -errno;
-            }
-            std::string pkgSandboxTargetDir = prepareSandboxTarget(
-                packageName, uid, volumeLabel, mntTargetRoot, isVolPrimaryEmulated);
-            if (pkgSandboxTargetDir.empty()) {
-                return -errno;
-            }
-
-            // Create Android/{data,media,obb}/<packageName> segments at
-            // [1] /mnt/runtime/write/emulated/0/ and
-            // [2] /mnt/runtime/write/emulated/0/Android/sandbox/<sandboxId>/emulated/0/
-            if (!createPkgSpecificDirs(packageName, uid, volumeRoot, pkgSandboxSourceDir)) {
-                return -errno;
-            }
-
-            if (volumeLabel == mPrimary->getLabel()) {
-                // [1] Create /mnt/user/0/package/<packageName>/self/
-                // Link [1] to /storage/emulated/0
-                std::string pkgPrimaryTargetDir =
-                    StringPrintf("%s/%s/self", mntTargetRoot.c_str(), packageName.c_str());
-                if (fs_prepare_dir(pkgPrimaryTargetDir.c_str(), 0755, uid, uid) != 0) {
-                    PLOG(ERROR) << "Failed to fs_prepare_dir on " << pkgPrimaryTargetDir;
-                    return -errno;
-                }
-                StringAppendF(&pkgPrimaryTargetDir, "/primary");
-                std::string primarySource(mPrimary->getPath());
-                if (isVolPrimaryEmulated) {
-                    StringAppendF(&primarySource, "/%d", userId);
-                }
-                Symlink(primarySource, pkgPrimaryTargetDir);
-            }
-        }
     }
     mountPkgSpecificDirsForRunningProcs(userId, packageNames, visibleVolLabels, -1);
+    return 0;
+}
+
+int VolumeManager::prepareSandboxTargets(userid_t userId,
+                                         const std::vector<std::string>& packageNames,
+                                         const std::vector<std::string>& visibleVolLabels) {
+    std::string mntTargetRoot = StringPrintf("/mnt/user/%d", userId);
+    if (fs_prepare_dir(mntTargetRoot.c_str(), 0751, AID_ROOT, AID_ROOT) != 0) {
+        PLOG(ERROR) << "Failed to fs_prepare_dir %s" << mntTargetRoot;
+        return -errno;
+    }
+    StringAppendF(&mntTargetRoot, "/package");
+    if (fs_prepare_dir(mntTargetRoot.c_str(), 0700, AID_ROOT, AID_ROOT) != 0) {
+        PLOG(ERROR) << "Failed to fs_prepare_dir %s" << mntTargetRoot;
+        return -errno;
+    }
+
+    const unique_fd dfd(open(mntTargetRoot.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    if (dfd.get() < 0) {
+        PLOG(ERROR) << "Failed to open " << mntTargetRoot;
+        return -errno;
+    }
+    for (auto& package : packageNames) {
+        const auto& it = mAppIds.find(package);
+        if (it == mAppIds.end()) {
+            PLOG(ERROR) << "appId is not available for " << package;
+            continue;
+        }
+        appid_t appId = it->second;
+        uid_t uid = multiuser_get_uid(userId, appId);
+
+        if (TEMP_FAILURE_RETRY(faccessat(dfd.get(), package.c_str(), F_OK, 0)) == 0) {
+            continue;
+        } else if (errno != ENOENT) {
+            PLOG(ERROR) << "Failed to faccessat " << mntTargetRoot << "/" << package;
+        }
+        if (TEMP_FAILURE_RETRY(mkdirat(dfd.get(), package.c_str(), 0755)) == -1) {
+            PLOG(ERROR) << "Failed to mkdirat " << mntTargetRoot << "/" << package;
+            return -errno;
+        }
+        if (TEMP_FAILURE_RETRY(fchownat(dfd.get(), package.c_str(), uid, uid, 0)) == -1) {
+            PLOG(ERROR) << "Failed to fchownat " << mntTargetRoot << "/" << package;
+            return -errno;
+        }
+    }
+    std::string pkgPrimarySource(kEmptyString);
+    if (mPrimary) {
+        StringAppendF(&pkgPrimarySource, "%s", mPrimary->getPath().c_str());
+        if (mPrimary->isEmulated()) {
+            StringAppendF(&pkgPrimarySource, "/%d", userId);
+        }
+    }
+    for (auto& package : packageNames) {
+        const auto& it = mAppIds.find(package);
+        if (it == mAppIds.end()) {
+            PLOG(ERROR) << "appId is not available for " << package;
+            continue;
+        }
+        appid_t appId = it->second;
+        uid_t uid = multiuser_get_uid(userId, appId);
+
+        std::string pkgMountTarget = StringPrintf("%s/%s", mntTargetRoot.c_str(), package.c_str());
+        const unique_fd packageFd(
+            openat(dfd.get(), package.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+        if (packageFd.get() < 0) {
+            PLOG(ERROR) << "Failed to openat " << mntTargetRoot << "/" << package;
+            return -errno;
+        }
+        for (auto& volumeLabel : visibleVolLabels) {
+            if (TEMP_FAILURE_RETRY(faccessat(packageFd.get(), volumeLabel.c_str(), F_OK, 0)) == 0) {
+                continue;
+            } else if (errno != ENOENT) {
+                PLOG(ERROR) << "Failed to faccessat " << pkgMountTarget << "/" << volumeLabel;
+            }
+            if (TEMP_FAILURE_RETRY(mkdirat(packageFd.get(), volumeLabel.c_str(), 0755)) == -1) {
+                PLOG(ERROR) << "Failed to mkdirat " << pkgMountTarget << "/" << volumeLabel;
+                return -errno;
+            }
+            if (TEMP_FAILURE_RETRY(fchownat(packageFd.get(), volumeLabel.c_str(), uid, uid, 0)) ==
+                -1) {
+                PLOG(ERROR) << "Failed to fchownat " << pkgMountTarget << "/" << volumeLabel;
+                return -errno;
+            }
+
+            if (mPrimary && volumeLabel == mPrimary->getLabel() && mPrimary->isEmulated()) {
+                std::string path =
+                    StringPrintf("%s/%s/%d", pkgMountTarget.c_str(), volumeLabel.c_str(), userId);
+                if (TEMP_FAILURE_RETRY(mkdir(path.c_str(), 0755)) == -1 && errno != EEXIST) {
+                    PLOG(ERROR) << "Failed to mkdir " << path;
+                    return -errno;
+                }
+                if (TEMP_FAILURE_RETRY(chown(path.c_str(), uid, uid)) == -1) {
+                    PLOG(ERROR) << "Failed to chown " << path;
+                }
+            }
+        }
+        if (TEMP_FAILURE_RETRY(faccessat(packageFd.get(), "self", F_OK, 0)) == -1) {
+            if (errno == ENOENT) {
+                if (TEMP_FAILURE_RETRY(mkdirat(packageFd.get(), "self", 0755)) == -1) {
+                    PLOG(ERROR) << "Failed to mkdirat " << pkgMountTarget << "/self";
+                    return -errno;
+                }
+                if (TEMP_FAILURE_RETRY(fchownat(packageFd.get(), "self", uid, uid, 0)) == -1) {
+                    PLOG(ERROR) << "Failed to fchownat " << pkgMountTarget << "/self";
+                    return -errno;
+                }
+            } else {
+                PLOG(ERROR) << "Failed to faccessat " << pkgMountTarget << "/self";
+                return -errno;
+            }
+        }
+        std::string pkgPrimaryTarget = StringPrintf("%s/self/primary", pkgMountTarget.c_str());
+        if (mPrimary && Symlink(pkgPrimarySource, pkgPrimaryTarget) < 0) {
+            return -errno;
+        }
+    }
     return 0;
 }
 
@@ -704,78 +773,22 @@ std::string VolumeManager::prepareSubDirs(const std::string& pathPrefix, const s
             continue;
         }
         StringAppendF(&path, "/%s", subDir.c_str());
-        if (fs_prepare_dir(path.c_str(), mode, uid, gid) != 0) {
-            PLOG(ERROR) << "fs_prepare_dir failed on " << path;
+        if (CreateDir(path, mode) < 0) {
             return kEmptyString;
         }
     }
     return path;
 }
 
-std::string VolumeManager::prepareSandboxSource(uid_t uid, const std::string& sandboxId,
-                                                const std::string& sandboxRootDir) {
-    std::string sandboxSourceDir(sandboxRootDir);
-    StringAppendF(&sandboxSourceDir, "/%s", sandboxId.c_str());
-    if (fs_prepare_dir(sandboxSourceDir.c_str(), 0755, uid, uid) != 0) {
-        PLOG(ERROR) << "fs_prepare_dir failed on " << sandboxSourceDir;
-        return kEmptyString;
-    }
-    return sandboxSourceDir;
-}
-
-std::string VolumeManager::prepareSandboxTarget(const std::string& packageName, uid_t uid,
-                                                const std::string& volumeLabel,
-                                                const std::string& mntTargetRootDir,
-                                                bool isUserDependent) {
-    std::string segment;
-    if (isUserDependent) {
-        segment = StringPrintf("%s/%s/%d/", packageName.c_str(), volumeLabel.c_str(),
-                               multiuser_get_user_id(uid));
-    } else {
-        segment = StringPrintf("%s/%s/", packageName.c_str(), volumeLabel.c_str());
-    }
-    return prepareSubDirs(mntTargetRootDir, segment.c_str(), 0755, uid, uid);
-}
-
-std::string VolumeManager::preparePkgDataSource(const std::string& packageName, uid_t uid,
-                                                const std::string& dataRootDir) {
-    std::string dataSourceDir = StringPrintf("%s/%s", dataRootDir.c_str(), packageName.c_str());
-    if (fs_prepare_dir(dataSourceDir.c_str(), 0755, uid, uid) != 0) {
-        PLOG(ERROR) << "fs_prepare_dir failed on " << dataSourceDir;
-        return kEmptyString;
-    }
-    return dataSourceDir;
-}
-
 bool VolumeManager::createPkgSpecificDirRoots(const std::string& volumeRoot) {
     std::string volumeAndroidRoot = StringPrintf("%s/Android", volumeRoot.c_str());
-    if (fs_prepare_dir(volumeAndroidRoot.c_str(), 0700, AID_ROOT, AID_ROOT) != 0) {
-        PLOG(ERROR) << "fs_prepare_dir failed on " << volumeAndroidRoot;
+    if (CreateDir(volumeAndroidRoot, 0700) < 0) {
         return false;
     }
     std::array<std::string, 3> dirs = {"data", "media", "obb"};
     for (auto& dir : dirs) {
         std::string path = StringPrintf("%s/%s", volumeAndroidRoot.c_str(), dir.c_str());
-        if (fs_prepare_dir(path.c_str(), 0700, AID_ROOT, AID_ROOT) != 0) {
-            PLOG(ERROR) << "fs_prepare_dir failed on " << path;
-            return false;
-        }
-    }
-    return true;
-}
-
-bool VolumeManager::createPkgSpecificDirs(const std::string& packageName, uid_t uid,
-                                          const std::string& volumeRoot,
-                                          const std::string& sandboxDirRoot) {
-    std::array<std::string, 3> dirs = {"data", "media", "obb"};
-    for (auto& dir : dirs) {
-        std::string sourceDir = StringPrintf("%s/Android/%s", volumeRoot.c_str(), dir.c_str());
-        if (prepareSubDirs(sourceDir, packageName, 0755, uid, uid).empty()) {
-            return false;
-        }
-        std::string sandboxSegment =
-            StringPrintf("Android/%s/%s/", dir.c_str(), packageName.c_str());
-        if (prepareSubDirs(sandboxDirRoot, sandboxSegment, 0755, uid, uid).empty()) {
+        if (CreateDir(path, 0700) < 0) {
             return false;
         }
     }
