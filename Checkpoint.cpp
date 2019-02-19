@@ -202,6 +202,10 @@ bool cp_needsCheckpoint() {
 }
 
 Status cp_prepareCheckpoint() {
+    if (!isCheckpointing) {
+        return Status::ok();
+    }
+
     Fstab mounts;
     if (!ReadFstabFromFile("/proc/mounts", &mounts)) {
         return Status::fromExceptionCode(EINVAL, "Failed to get /proc/mounts");
