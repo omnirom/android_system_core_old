@@ -235,7 +235,7 @@ status_t CreateDir(const std::string& dir, mode_t mode) {
         PLOG(ERROR) << "Failed to stat " << dir;
         return -errno;
     }
-    if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), mode)) == -1) {
+    if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), mode)) == -1 && errno != EEXIST) {
         PLOG(ERROR) << "Failed to mkdir " << dir;
         return -errno;
     }

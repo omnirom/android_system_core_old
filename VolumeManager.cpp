@@ -680,7 +680,7 @@ int VolumeManager::prepareSandboxTargets(userid_t userId,
         } else if (errno != ENOENT) {
             PLOG(ERROR) << "Failed to faccessat " << mntTargetRoot << "/" << package;
         }
-        if (TEMP_FAILURE_RETRY(mkdirat(dfd.get(), package.c_str(), 0755)) == -1) {
+        if (TEMP_FAILURE_RETRY(mkdirat(dfd.get(), package.c_str(), 0755)) == -1 && errno != EEXIST) {
             PLOG(ERROR) << "Failed to mkdirat " << mntTargetRoot << "/" << package;
             return -errno;
         }
@@ -718,7 +718,8 @@ int VolumeManager::prepareSandboxTargets(userid_t userId,
             } else if (errno != ENOENT) {
                 PLOG(ERROR) << "Failed to faccessat " << pkgMountTarget << "/" << volumeLabel;
             }
-            if (TEMP_FAILURE_RETRY(mkdirat(packageFd.get(), volumeLabel.c_str(), 0755)) == -1) {
+            if (TEMP_FAILURE_RETRY(mkdirat(packageFd.get(), volumeLabel.c_str(), 0755)) == -1 &&
+                errno != EEXIST) {
                 PLOG(ERROR) << "Failed to mkdirat " << pkgMountTarget << "/" << volumeLabel;
                 return -errno;
             }
@@ -742,7 +743,8 @@ int VolumeManager::prepareSandboxTargets(userid_t userId,
         }
         if (TEMP_FAILURE_RETRY(faccessat(packageFd.get(), "self", F_OK, 0)) == -1) {
             if (errno == ENOENT) {
-                if (TEMP_FAILURE_RETRY(mkdirat(packageFd.get(), "self", 0755)) == -1) {
+                if (TEMP_FAILURE_RETRY(mkdirat(packageFd.get(), "self", 0755)) == -1 &&
+                    errno != EEXIST) {
                     PLOG(ERROR) << "Failed to mkdirat " << pkgMountTarget << "/self";
                     return -errno;
                 }
