@@ -152,8 +152,9 @@ class VolumeManager {
 
     int prepareSandboxes(userid_t userId, const std::vector<std::string>& packageNames,
                          const std::vector<std::string>& visibleVolLabels);
-    int prepareSandboxTargets(userid_t userId, const std::vector<std::string>& packageNames,
-                              const std::vector<std::string>& visibleVolLabels);
+    int prepareSandboxTargets(userid_t userId, const std::vector<std::string>& visibleVolLabels);
+    int handleMountModeInstaller(int mountMode, int obbMountDirFd, const std::string& obbMountDir,
+                                 const std::string& sandboxId);
     int mountPkgSpecificDirsForRunningProcs(userid_t userId,
                                             const std::vector<std::string>& packageNames,
                                             const std::vector<std::string>& visibleVolLabels,
