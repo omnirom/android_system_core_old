@@ -898,6 +898,19 @@ static status_t delete_dir_contents(DIR* dir) {
 }
 
 status_t DeleteDirContentsAndDir(const std::string& pathname) {
+    status_t res = DeleteDirContents(pathname);
+    if (res < 0) {
+        return res;
+    }
+    if (rmdir(pathname.c_str()) != 0) {
+        PLOG(ERROR) << "rmdir failed on " << pathname;
+        return -errno;
+    }
+    LOG(VERBOSE) << "Success: rmdir on " << pathname;
+    return OK;
+}
+
+status_t DeleteDirContents(const std::string& pathname) {
     // Shamelessly borrowed from android::installd
     std::unique_ptr<DIR, decltype(&closedir)> dirp(opendir(pathname.c_str()), closedir);
     if (!dirp) {
@@ -907,17 +920,7 @@ status_t DeleteDirContentsAndDir(const std::string& pathname) {
         PLOG(ERROR) << "Failed to opendir " << pathname;
         return -errno;
     }
-    status_t res = delete_dir_contents(dirp.get());
-    if (res < 0) {
-        return res;
-    }
-    dirp.reset(nullptr);
-    if (rmdir(pathname.c_str()) != 0) {
-        PLOG(ERROR) << "rmdir failed on " << pathname;
-        return -errno;
-    }
-    LOG(VERBOSE) << "Success: rmdir on " << pathname;
-    return OK;
+    return delete_dir_contents(dirp.get());
 }
 
 // TODO(118708649): fix duplication with init/util.h

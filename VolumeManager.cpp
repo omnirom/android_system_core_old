@@ -76,6 +76,7 @@ using android::base::StringPrintf;
 using android::base::unique_fd;
 using android::vold::BindMount;
 using android::vold::CreateDir;
+using android::vold::DeleteDirContents;
 using android::vold::DeleteDirContentsAndDir;
 using android::vold::Symlink;
 using android::vold::Unlink;
@@ -1234,7 +1235,7 @@ int VolumeManager::reset() {
     mVisibleVolumeIds.clear();
 
     for (userid_t userId : mStartedUsers) {
-        DeleteDirContentsAndDir(StringPrintf("/mnt/user/%d/package", userId));
+        DeleteDirContents(StringPrintf("/mnt/user/%d/package", userId));
     }
     mStartedUsers.clear();
     return 0;

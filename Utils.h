@@ -140,6 +140,7 @@ status_t UnmountTreeWithPrefix(const std::string& prefix);
 status_t UnmountTree(const std::string& mountPoint);
 
 status_t DeleteDirContentsAndDir(const std::string& pathname);
+status_t DeleteDirContents(const std::string& pathname);
 
 status_t WaitForFile(const char* filename, std::chrono::nanoseconds timeout);
 
