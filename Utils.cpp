@@ -902,7 +902,7 @@ status_t DeleteDirContentsAndDir(const std::string& pathname) {
     if (res < 0) {
         return res;
     }
-    if (rmdir(pathname.c_str()) != 0) {
+    if (TEMP_FAILURE_RETRY(rmdir(pathname.c_str())) < 0 && errno != ENOENT) {
         PLOG(ERROR) << "rmdir failed on " << pathname;
         return -errno;
     }
