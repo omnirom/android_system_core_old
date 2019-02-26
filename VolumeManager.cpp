@@ -401,9 +401,6 @@ int VolumeManager::mountPkgSpecificDir(const std::string& mntSourceRoot,
 int VolumeManager::mountPkgSpecificDirsForRunningProcs(
     userid_t userId, const std::vector<std::string>& packageNames,
     const std::vector<std::string>& visibleVolLabels, int remountMode) {
-    // TODO: New processes could be started while traversing over the existing
-    // processes which would end up not having the necessary bind mounts. This
-    // issue needs to be fixed, may be by doing multiple passes here?
     std::unique_ptr<DIR, decltype(&closedir)> dirp(opendir("/proc"), closedir);
     if (!dirp) {
         PLOG(ERROR) << "Failed to opendir /proc";
@@ -664,8 +661,6 @@ int VolumeManager::handleMountModeInstaller(int mountMode, int obbMountDirFd,
 
 int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::string>& packageNames,
                                     const std::vector<std::string>& visibleVolLabels) {
-    prepareSandboxTargets(userId, visibleVolLabels);
-
     if (visibleVolLabels.empty()) {
         return 0;
     }
@@ -685,6 +680,11 @@ int VolumeManager::prepareSandboxes(userid_t userId, const std::vector<std::stri
             return -errno;
         }
     }
+
+    if (prepareSandboxTargets(userId, visibleVolLabels) < 0) {
+        return -errno;
+    }
+
     if (mountPkgSpecificDirsForRunningProcs(userId, packageNames, visibleVolLabels, -1) < 0) {
         PLOG(ERROR) << "Failed to setup sandboxes for already running processes";
         return -errno;
@@ -706,7 +706,6 @@ int VolumeManager::prepareSandboxTargets(userid_t userId,
         return -errno;
     }
 
-    uid_t uid = multiuser_get_uid(userId, AID_EVERYBODY);
     for (auto& volumeLabel : visibleVolLabels) {
         std::string sandboxTarget =
             StringPrintf("%s/%s", mntTargetRoot.c_str(), volumeLabel.c_str());
