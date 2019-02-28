@@ -866,6 +866,12 @@ int VolumeManager::prepareSandboxForApp(const std::string& packageName, appid_t 
         // be created when the user starts.
         return 0;
     }
+
+    auto& userPackages = mUserPackages[userId];
+    if (std::find(userPackages.begin(), userPackages.end(), packageName) != userPackages.end()) {
+        return 0;
+    }
+
     LOG(VERBOSE) << "prepareSandboxForApp: " << packageName << ", appId=" << appId
                  << ", sandboxId=" << sandboxId << ", userId=" << userId;
     mUserPackages[userId].push_back(packageName);
