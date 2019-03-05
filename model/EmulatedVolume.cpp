@@ -91,6 +91,7 @@ status_t EmulatedVolume::doMount() {
                 "-w",
                 "-G",
                 "-i",
+                "-o",
                 mRawPath.c_str(),
                 label.c_str(),
                 NULL)) {
