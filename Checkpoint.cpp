@@ -349,21 +349,21 @@ void relocate(Relocations& relocations, sector_t dest, sector_t source, int coun
 
 // Read from the device
 // If we are validating, the read occurs as though the relocations had happened
-std::vector<char> relocatedRead(std::fstream& device, Relocations const& relocations,
-                                bool validating, sector_t sector, uint32_t size,
-                                uint32_t block_size) {
+std::vector<char> relocatedRead(int device_fd, Relocations const& relocations, bool validating,
+                                sector_t sector, uint32_t size, uint32_t block_size) {
     if (!validating) {
         std::vector<char> buffer(size);
-        device.seekg(sector * kSectorSize);
-        device.read(&buffer[0], size);
+        lseek64(device_fd, sector * kSectorSize, SEEK_SET);
+        read(device_fd, &buffer[0], size);
         return buffer;
     }
 
     std::vector<char> buffer(size);
     for (uint32_t i = 0; i < size; i += block_size, sector += block_size / kSectorSize) {
         auto relocation = --relocations.upper_bound(sector);
-        device.seekg((sector + relocation->second - relocation->first) * kSectorSize);
-        device.read(&buffer[i], block_size);
+        lseek64(device_fd, (sector + relocation->second - relocation->first) * kSectorSize,
+                SEEK_SET);
+        read(device_fd, &buffer[i], block_size);
     }
 
     return buffer;
@@ -381,14 +381,14 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
         Status status = Status::ok();
 
         LOG(INFO) << action << " checkpoint on " << blockDevice;
-        std::fstream device(blockDevice, std::ios::binary | std::ios::in | std::ios::out);
-        if (!device) {
+        base::unique_fd device_fd(open(blockDevice.c_str(), O_RDWR));
+        if (device_fd < 0) {
             PLOG(ERROR) << "Cannot open " << blockDevice;
             return Status::fromExceptionCode(errno, ("Cannot open " + blockDevice).c_str());
         }
 
         log_sector_v1_0 original_ls;
-        device.read(reinterpret_cast<char*>(&original_ls), sizeof(original_ls));
+        read(device_fd, reinterpret_cast<char*>(&original_ls), sizeof(original_ls));
         if (original_ls.magic != kMagic) {
             LOG(ERROR) << "No magic";
             return Status::fromExceptionCode(EINVAL, "No magic");
@@ -397,8 +397,8 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
         LOG(INFO) << action << " " << original_ls.sequence << " log sectors";
 
         for (int sequence = original_ls.sequence; sequence >= 0 && status.isOk(); sequence--) {
-            auto buffer = relocatedRead(device, relocations, validating, 0, original_ls.block_size,
-                                        original_ls.block_size);
+            auto buffer = relocatedRead(device_fd, relocations, validating, 0,
+                                        original_ls.block_size, original_ls.block_size);
             log_sector_v1_0 const& ls = *reinterpret_cast<log_sector_v1_0*>(&buffer[0]);
             if (ls.magic != kMagic) {
                 LOG(ERROR) << "No magic!";
@@ -431,7 +431,7 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
                              << " to " << le->source << " with checksum " << std::hex
                              << le->checksum;
 
-                auto buffer = relocatedRead(device, relocations, validating, le->dest, le->size,
+                auto buffer = relocatedRead(device_fd, relocations, validating, le->dest, le->size,
                                             ls.block_size);
                 uint32_t checksum = le->source / (ls.block_size / kSectorSize);
                 for (size_t i = 0; i < le->size; i += ls.block_size) {
@@ -447,8 +447,8 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
                 if (validating) {
                     relocate(relocations, le->source, le->dest, le->size / kSectorSize);
                 } else {
-                    device.seekg(le->source * kSectorSize);
-                    device.write(&buffer[0], le->size);
+                    lseek64(device_fd, le->source * kSectorSize, SEEK_SET);
+                    write(device_fd, &buffer[0], le->size);
                 }
             }
         }
@@ -460,10 +460,10 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
             }
 
             LOG(WARNING) << "Checkpoint validation failed - attempting to roll forward";
-            auto buffer = relocatedRead(device, relocations, false, original_ls.sector0,
+            auto buffer = relocatedRead(device_fd, relocations, false, original_ls.sector0,
                                         original_ls.block_size, original_ls.block_size);
-            device.seekg(0);
-            device.write(&buffer[0], original_ls.block_size);
+            lseek64(device_fd, 0, SEEK_SET);
+            write(device_fd, &buffer[0], original_ls.block_size);
             return Status::ok();
         }
 
