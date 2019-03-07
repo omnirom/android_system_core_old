@@ -103,6 +103,7 @@ interface IVold {
     void commitChanges();
     void prepareCheckpoint();
     void restoreCheckpoint(@utf8InCpp String device);
+    void restoreCheckpointPart(@utf8InCpp String device, int count);
     void markBootAttempt();
     boolean supportsCheckpoint();
 

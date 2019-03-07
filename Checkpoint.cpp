@@ -371,9 +371,10 @@ std::vector<char> relocatedRead(int device_fd, Relocations const& relocations, b
 
 }  // namespace
 
-Status cp_restoreCheckpoint(const std::string& blockDevice) {
+Status cp_restoreCheckpoint(const std::string& blockDevice, int restore_limit) {
     bool validating = true;
     std::string action = "Validating";
+    int restore_count = 0;
 
     for (;;) {
         Relocations relocations;
@@ -449,6 +450,12 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
                 } else {
                     lseek64(device_fd, le->source * kSectorSize, SEEK_SET);
                     write(device_fd, &buffer[0], le->size);
+                    restore_count++;
+                    if (restore_limit && restore_count >= restore_limit) {
+                        LOG(WARNING) << "Hit the test limit";
+                        status = Status::fromExceptionCode(EAGAIN, "Hit the test limit");
+                        break;
+                    }
                 }
             }
         }
