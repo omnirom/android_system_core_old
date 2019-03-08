@@ -127,6 +127,10 @@ int main(int argc, char** argv) {
         checkStatus(vold->prepareCheckpoint());
     } else if (args[0] == "checkpoint" && args[1] == "restoreCheckpoint" && args.size() == 3) {
         checkStatus(vold->restoreCheckpoint(args[2]));
+    } else if (args[0] == "checkpoint" && args[1] == "restoreCheckpointPart" && args.size() == 4) {
+        int count;
+        if (!android::base::ParseInt(args[3], &count)) exit(EINVAL);
+        checkStatus(vold->restoreCheckpointPart(args[2], count));
     } else if (args[0] == "checkpoint" && args[1] == "markBootAttempt" && args.size() == 2) {
         checkStatus(vold->markBootAttempt());
     } else if (args[0] == "checkpoint" && args[1] == "abortChanges" && args.size() == 2) {
