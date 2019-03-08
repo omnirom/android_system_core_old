@@ -850,6 +850,14 @@ binder::Status VoldNativeService::restoreCheckpoint(const std::string& mountPoin
     return cp_restoreCheckpoint(mountPoint);
 }
 
+binder::Status VoldNativeService::restoreCheckpointPart(const std::string& mountPoint, int count) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PATH(mountPoint);
+    ACQUIRE_LOCK;
+
+    return cp_restoreCheckpoint(mountPoint, count);
+}
+
 binder::Status VoldNativeService::markBootAttempt() {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
