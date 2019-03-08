@@ -37,7 +37,7 @@ bool cp_needsCheckpoint();
 
 android::binder::Status cp_prepareCheckpoint();
 
-android::binder::Status cp_restoreCheckpoint(const std::string& mountPoint);
+android::binder::Status cp_restoreCheckpoint(const std::string& mountPoint, int count = 0);
 
 android::binder::Status cp_markBootAttempt();
 

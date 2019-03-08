@@ -260,6 +260,8 @@ struct log_sector_v1_0 {
 
 // MAGIC is BOW in ascii
 const int kMagic = 0x00574f42;
+// Partially restored MAGIC is WOB in ascii
+const int kPartialRestoreMagic = 0x00424f57;
 
 void crc32(const void* data, size_t n_bytes, uint32_t* crc) {
     static uint32_t table[0x100] = {
@@ -347,6 +349,79 @@ void relocate(Relocations& relocations, sector_t dest, sector_t source, int coun
     relocations.insert(slice.begin(), slice.end());
 }
 
+// A map of sectors that have been written to.
+// The final entry must always be False.
+// When we restart the restore after an interruption, we must take care that
+// when we copy from dest to source, that the block we copy to was not
+// previously copied from.
+// i e. A->B C->A; If we replay this sequence, we end up copying C->B
+// We must save our partial result whenever we finish a page, or when we copy
+// to a location that was copied from earlier (our source is an earlier dest)
+typedef std::map<sector_t, bool> Used_Sectors;
+
+bool checkCollision(Used_Sectors& used_sectors, sector_t start, sector_t end) {
+    auto second_overlap = used_sectors.upper_bound(start);
+    auto first_overlap = --second_overlap;
+
+    if (first_overlap->second) {
+        return true;
+    } else if (second_overlap != used_sectors.end() && second_overlap->first < end) {
+        return true;
+    }
+    return false;
+}
+
+void markUsed(Used_Sectors& used_sectors, sector_t start, sector_t end) {
+    auto start_pos = used_sectors.insert_or_assign(start, true).first;
+    auto end_pos = used_sectors.insert_or_assign(end, false).first;
+
+    if (start_pos == used_sectors.begin() || !std::prev(start_pos)->second) {
+        start_pos++;
+    }
+    if (std::next(end_pos) != used_sectors.end() && !std::next(end_pos)->second) {
+        end_pos++;
+    }
+    if (start_pos->first < end_pos->first) {
+        used_sectors.erase(start_pos, end_pos);
+    }
+}
+
+// Restores the given log_entry's data from dest -> source
+// If that entry is a log sector, set the magic to kPartialRestoreMagic and flush.
+void restoreSector(int device_fd, Used_Sectors& used_sectors, std::vector<char>& ls_buffer,
+                   log_entry* le, std::vector<char>& buffer) {
+    log_sector_v1_0& ls = *reinterpret_cast<log_sector_v1_0*>(&ls_buffer[0]);
+    uint32_t index = le - ((log_entry*)&ls_buffer[ls.header_size]);
+    int count = (le->size - 1) / kSectorSize + 1;
+
+    if (checkCollision(used_sectors, le->source, le->source + count)) {
+        fsync(device_fd);
+        lseek64(device_fd, 0, SEEK_SET);
+        ls.count = index + 1;
+        ls.magic = kPartialRestoreMagic;
+        write(device_fd, &ls_buffer[0], ls.block_size);
+        fsync(device_fd);
+        used_sectors.clear();
+        used_sectors[0] = false;
+    }
+
+    markUsed(used_sectors, le->dest, le->dest + count);
+
+    if (index == 0 && ls.sequence != 0) {
+        log_sector_v1_0* next = reinterpret_cast<log_sector_v1_0*>(&buffer[0]);
+        if (next->magic == kMagic) {
+            next->magic = kPartialRestoreMagic;
+        }
+    }
+
+    lseek64(device_fd, le->source * kSectorSize, SEEK_SET);
+    write(device_fd, &buffer[0], le->size);
+
+    if (index == 0) {
+        fsync(device_fd);
+    }
+}
+
 // Read from the device
 // If we are validating, the read occurs as though the relocations had happened
 std::vector<char> relocatedRead(int device_fd, Relocations const& relocations, bool validating,
@@ -371,9 +446,10 @@ std::vector<char> relocatedRead(int device_fd, Relocations const& relocations, b
 
 }  // namespace
 
-Status cp_restoreCheckpoint(const std::string& blockDevice) {
+Status cp_restoreCheckpoint(const std::string& blockDevice, int restore_limit) {
     bool validating = true;
     std::string action = "Validating";
+    int restore_count = 0;
 
     for (;;) {
         Relocations relocations;
@@ -389,7 +465,10 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
 
         log_sector_v1_0 original_ls;
         read(device_fd, reinterpret_cast<char*>(&original_ls), sizeof(original_ls));
-        if (original_ls.magic != kMagic) {
+        if (original_ls.magic == kPartialRestoreMagic) {
+            validating = false;
+            action = "Restoring";
+        } else if (original_ls.magic != kMagic) {
             LOG(ERROR) << "No magic";
             return Status::fromExceptionCode(EINVAL, "No magic");
         }
@@ -397,10 +476,14 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
         LOG(INFO) << action << " " << original_ls.sequence << " log sectors";
 
         for (int sequence = original_ls.sequence; sequence >= 0 && status.isOk(); sequence--) {
-            auto buffer = relocatedRead(device_fd, relocations, validating, 0,
-                                        original_ls.block_size, original_ls.block_size);
-            log_sector_v1_0 const& ls = *reinterpret_cast<log_sector_v1_0*>(&buffer[0]);
-            if (ls.magic != kMagic) {
+            auto ls_buffer = relocatedRead(device_fd, relocations, validating, 0,
+                                           original_ls.block_size, original_ls.block_size);
+            log_sector_v1_0& ls = *reinterpret_cast<log_sector_v1_0*>(&ls_buffer[0]);
+
+            Used_Sectors used_sectors;
+            used_sectors[0] = false;
+
+            if (ls.magic != kMagic && (ls.magic != kPartialRestoreMagic || validating)) {
                 LOG(ERROR) << "No magic!";
                 status = Status::fromExceptionCode(EINVAL, "No magic");
                 break;
@@ -422,10 +505,9 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
             }
 
             LOG(INFO) << action << " from log sector " << ls.sequence;
-
             for (log_entry* le =
-                     reinterpret_cast<log_entry*>(&buffer[ls.header_size]) + ls.count - 1;
-                 le >= reinterpret_cast<log_entry*>(&buffer[ls.header_size]); --le) {
+                     reinterpret_cast<log_entry*>(&ls_buffer[ls.header_size]) + ls.count - 1;
+                 le >= reinterpret_cast<log_entry*>(&ls_buffer[ls.header_size]); --le) {
                 // This is very noisy - limit to DEBUG only
                 LOG(VERBOSE) << action << " " << le->size << " bytes from sector " << le->dest
                              << " to " << le->source << " with checksum " << std::hex
@@ -445,10 +527,15 @@ Status cp_restoreCheckpoint(const std::string& blockDevice) {
                 }
 
                 if (validating) {
-                    relocate(relocations, le->source, le->dest, le->size / kSectorSize);
+                    relocate(relocations, le->source, le->dest, (le->size - 1) / kSectorSize + 1);
                 } else {
-                    lseek64(device_fd, le->source * kSectorSize, SEEK_SET);
-                    write(device_fd, &buffer[0], le->size);
+                    restoreSector(device_fd, used_sectors, ls_buffer, le, buffer);
+                    restore_count++;
+                    if (restore_limit && restore_count >= restore_limit) {
+                        LOG(WARNING) << "Hit the test limit";
+                        status = Status::fromExceptionCode(EAGAIN, "Hit the test limit");
+                        break;
+                    }
                 }
             }
         }
