@@ -109,6 +109,14 @@ int main(int argc, char** argv) {
         bool supported = false;
         checkStatus(vold->supportsCheckpoint(&supported));
         return supported ? 1 : 0;
+    } else if (args[0] == "checkpoint" && args[1] == "supportsBlockCheckpoint" && args.size() == 2) {
+        bool supported = false;
+        checkStatus(vold->supportsBlockCheckpoint(&supported));
+        return supported ? 1 : 0;
+    } else if (args[0] == "checkpoint" && args[1] == "supportsFileCheckpoint" && args.size() == 2) {
+        bool supported = false;
+        checkStatus(vold->supportsFileCheckpoint(&supported));
+        return supported ? 1 : 0;
     } else if (args[0] == "checkpoint" && args[1] == "startCheckpoint" && args.size() == 3) {
         int retry;
         if (!android::base::ParseInt(args[2], &retry)) exit(EINVAL);

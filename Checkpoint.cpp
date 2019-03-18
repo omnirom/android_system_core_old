@@ -84,6 +84,30 @@ Status cp_supportsCheckpoint(bool& result) {
     return Status::ok();
 }
 
+Status cp_supportsBlockCheckpoint(bool& result) {
+    result = false;
+
+    for (const auto& entry : fstab_default) {
+        if (entry.fs_mgr_flags.checkpoint_blk) {
+            result = true;
+            return Status::ok();
+        }
+    }
+    return Status::ok();
+}
+
+Status cp_supportsFileCheckpoint(bool& result) {
+    result = false;
+
+    for (const auto& entry : fstab_default) {
+        if (entry.fs_mgr_flags.checkpoint_fs) {
+            result = true;
+            return Status::ok();
+        }
+    }
+    return Status::ok();
+}
+
 Status cp_startCheckpoint(int retry) {
     if (retry < -1) return Status::fromExceptionCode(EINVAL, "Retry count must be more than -1");
     std::string content = std::to_string(retry + 1);
