@@ -115,6 +115,8 @@ interface IVold {
     void restoreCheckpointPart(@utf8InCpp String device, int count);
     void markBootAttempt();
     boolean supportsCheckpoint();
+    boolean supportsBlockCheckpoint();
+    boolean supportsFileCheckpoint();
 
     @utf8InCpp String createStubVolume(@utf8InCpp String sourcePath,
             @utf8InCpp String mountPath, @utf8InCpp String fsType,

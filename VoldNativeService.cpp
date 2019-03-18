@@ -1011,5 +1011,19 @@ binder::Status VoldNativeService::supportsCheckpoint(bool* _aidl_return) {
     return cp_supportsCheckpoint(*_aidl_return);
 }
 
+binder::Status VoldNativeService::supportsBlockCheckpoint(bool* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return cp_supportsBlockCheckpoint(*_aidl_return);
+}
+
+binder::Status VoldNativeService::supportsFileCheckpoint(bool* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    return cp_supportsFileCheckpoint(*_aidl_return);
+}
+
 }  // namespace vold
 }  // namespace android
