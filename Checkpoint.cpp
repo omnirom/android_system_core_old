@@ -212,6 +212,8 @@ bool cp_needsCheckpoint() {
     std::string content;
     sp<IBootControl> module = IBootControl::getService();
 
+    if (isCheckpointing) return isCheckpointing;
+
     if (module && module->isSlotMarkedSuccessful(module->getCurrentSlot()) == BoolResult::FALSE) {
         isCheckpointing = true;
         return true;
