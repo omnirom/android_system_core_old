@@ -56,27 +56,27 @@ static void notifyProgress(int progress,
     }
 }
 
-static status_t pushBackContents(const std::string& path, std::vector<std::string>& cmd,
-                                 bool addWildcard) {
-    DIR* dir = opendir(path.c_str());
-    if (dir == NULL) {
-        return -1;
+static bool pushBackContents(const std::string& path, std::vector<std::string>& cmd,
+                             int searchLevels) {
+    if (searchLevels == 0) {
+        cmd.emplace_back(path);
+        return true;
+    }
+    auto dirp = std::unique_ptr<DIR, int (*)(DIR*)>(opendir(path.c_str()), closedir);
+    if (!dirp) {
+        PLOG(ERROR) << "Unable to open directory: " << path;
+        return false;
     }
     bool found = false;
     struct dirent* ent;
-    while ((ent = readdir(dir)) != NULL) {
+    while ((ent = readdir(dirp.get())) != NULL) {
         if ((!strcmp(ent->d_name, ".")) || (!strcmp(ent->d_name, ".."))) {
             continue;
         }
-        if (addWildcard) {
-            cmd.push_back(StringPrintf("%s/%s/*", path.c_str(), ent->d_name));
-        } else {
-            cmd.push_back(StringPrintf("%s/%s", path.c_str(), ent->d_name));
-        }
-        found = true;
+        auto subdir = path + "/" + ent->d_name;
+        found |= pushBackContents(subdir, cmd, searchLevels - 1);
     }
-    closedir(dir);
-    return found ? OK : -1;
+    return found;
 }
 
 static status_t execRm(const std::string& path, int startProgress, int stepProgress,
@@ -90,7 +90,7 @@ static status_t execRm(const std::string& path, int startProgress, int stepProgr
     cmd.push_back(kRmPath);
     cmd.push_back("-f"); /* force: remove without confirmation, no error if it doesn't exist */
     cmd.push_back("-R"); /* recursive: remove directory contents */
-    if (pushBackContents(path, cmd, true) != OK) {
+    if (!pushBackContents(path, cmd, 2)) {
         LOG(WARNING) << "No contents in " << path;
         return OK;
     }
@@ -143,7 +143,7 @@ static status_t execCp(const std::string& fromPath, const std::string& toPath, i
     cmd.push_back("-R"); /* recurse into subdirectories (DEST must be a directory) */
     cmd.push_back("-P"); /* Do not follow symlinks [default] */
     cmd.push_back("-d"); /* don't dereference symlinks */
-    if (pushBackContents(fromPath, cmd, false) != OK) {
+    if (!pushBackContents(fromPath, cmd, 1)) {
         LOG(WARNING) << "No contents in " << fromPath;
         return OK;
     }
