@@ -94,7 +94,6 @@ int main(int argc, const char* const argv[]) {
         }
         set = 0;
         ioctl(fd, F2FS_IOC_SET_PIN_FILE, &set);
-        LOG(DEBUG) << "Discarded: " << target;
     }
     return 0;
 }
@@ -143,9 +142,8 @@ bool secdiscard_path(const std::string& path) {
         range[0] = fiemap->fm_extents[i].fe_physical;
         range[1] = fiemap->fm_extents[i].fe_length;
         if (ioctl(fs_fd.get(), BLKSECDISCARD, range) == -1) {
-            PLOG(ERROR) << "Unable to BLKSECDISCARD " << path;
+            // Use zero overwrite as a fallback for BLKSECDISCARD
             if (!overwrite_with_zeros(fs_fd.get(), range[0], range[1])) return false;
-            LOG(DEBUG) << "Used zero overwrite";
         }
     }
     return true;
