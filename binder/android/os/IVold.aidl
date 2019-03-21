@@ -99,7 +99,7 @@ interface IVold {
     void startCheckpoint(int retry);
     boolean needsCheckpoint();
     boolean needsRollback();
-    void abortChanges();
+    void abortChanges(in @utf8InCpp String device, boolean retry);
     void commitChanges();
     void prepareCheckpoint();
     void restoreCheckpoint(@utf8InCpp String device);
