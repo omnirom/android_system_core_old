@@ -180,9 +180,37 @@ Status cp_commitChanges() {
     return Status::ok();
 }
 
-Status cp_abortChanges() {
-    android_reboot(ANDROID_RB_RESTART2, 0, nullptr);
-    return Status::ok();
+namespace {
+void abort_metadata_file() {
+    std::string oldContent, newContent;
+    int retry = 0;
+    struct stat st;
+    int result = stat(kMetadataCPFile.c_str(), &st);
+
+    // If the file doesn't exist, we aren't managing a checkpoint retry counter
+    if (result != 0) return;
+    if (!android::base::ReadFileToString(kMetadataCPFile, &oldContent)) {
+        PLOG(ERROR) << "Failed to read checkpoint file";
+        return;
+    }
+    std::string retryContent = oldContent.substr(0, oldContent.find_first_of(" "));
+
+    if (!android::base::ParseInt(retryContent, &retry)) {
+        PLOG(ERROR) << "Could not parse retry count";
+        return;
+    }
+    if (retry > 0) {
+        newContent = "0";
+        if (!android::base::WriteStringToFile(newContent, kMetadataCPFile))
+            PLOG(ERROR) << "Could not write checkpoint file";
+    }
+}
+}  // namespace
+
+void cp_abortChanges(const std::string& message, bool retry) {
+    if (!cp_needsCheckpoint()) return;
+    if (!retry) abort_metadata_file();
+    android_reboot(ANDROID_RB_RESTART2, 0, message.c_str());
 }
 
 bool cp_needsRollback() {
