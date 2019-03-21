@@ -129,7 +129,7 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status restoreCheckpoint(const std::string& mountPoint);
     binder::Status restoreCheckpointPart(const std::string& mountPoint, int count);
     binder::Status markBootAttempt();
-    binder::Status abortChanges();
+    binder::Status abortChanges(const std::string& message, bool retry);
     binder::Status supportsCheckpoint(bool* _aidl_return);
     binder::Status supportsBlockCheckpoint(bool* _aidl_return);
     binder::Status supportsFileCheckpoint(bool* _aidl_return);
