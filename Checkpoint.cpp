@@ -22,6 +22,7 @@
 #include <list>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <android-base/file.h>
@@ -37,7 +38,11 @@
 #include <mntent.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <unistd.h>
 
+using android::base::GetBoolProperty;
+using android::base::GetUintProperty;
 using android::base::SetProperty;
 using android::binder::Status;
 using android::fs_mgr::Fstab;
@@ -126,7 +131,7 @@ Status cp_startCheckpoint(int retry) {
 
 namespace {
 
-bool isCheckpointing = false;
+volatile bool isCheckpointing = false;
 }
 
 Status cp_commitChanges() {
@@ -180,9 +185,37 @@ Status cp_commitChanges() {
     return Status::ok();
 }
 
-Status cp_abortChanges() {
-    android_reboot(ANDROID_RB_RESTART2, 0, nullptr);
-    return Status::ok();
+namespace {
+void abort_metadata_file() {
+    std::string oldContent, newContent;
+    int retry = 0;
+    struct stat st;
+    int result = stat(kMetadataCPFile.c_str(), &st);
+
+    // If the file doesn't exist, we aren't managing a checkpoint retry counter
+    if (result != 0) return;
+    if (!android::base::ReadFileToString(kMetadataCPFile, &oldContent)) {
+        PLOG(ERROR) << "Failed to read checkpoint file";
+        return;
+    }
+    std::string retryContent = oldContent.substr(0, oldContent.find_first_of(" "));
+
+    if (!android::base::ParseInt(retryContent, &retry)) {
+        PLOG(ERROR) << "Could not parse retry count";
+        return;
+    }
+    if (retry > 0) {
+        newContent = "0";
+        if (!android::base::WriteStringToFile(newContent, kMetadataCPFile))
+            PLOG(ERROR) << "Could not write checkpoint file";
+    }
+}
+}  // namespace
+
+void cp_abortChanges(const std::string& message, bool retry) {
+    if (!cp_needsCheckpoint()) return;
+    if (!retry) abort_metadata_file();
+    android_reboot(ANDROID_RB_RESTART2, 0, message.c_str());
 }
 
 bool cp_needsRollback() {
@@ -212,6 +245,8 @@ bool cp_needsCheckpoint() {
     std::string content;
     sp<IBootControl> module = IBootControl::getService();
 
+    if (isCheckpointing) return isCheckpointing;
+
     if (module && module->isSlotMarkedSuccessful(module->getCurrentSlot()) == BoolResult::FALSE) {
         isCheckpointing = true;
         return true;
@@ -224,6 +259,53 @@ bool cp_needsCheckpoint() {
     }
     return false;
 }
+
+namespace {
+const std::string kSleepTimeProp = "ro.sys.cp_usleeptime";
+const uint32_t usleeptime_default = 1000;  // 1 s
+
+const std::string kMinFreeBytesProp = "ro.sys.cp_min_free_bytes";
+const uint64_t min_free_bytes_default = 100 * (1 << 20);  // 100 MiB
+
+const std::string kCommitOnFullProp = "ro.sys.cp_commit_on_full";
+const bool commit_on_full_default = true;
+
+static void cp_healthDaemon(std::string mnt_pnt, std::string blk_device, bool is_fs_cp) {
+    struct statvfs data;
+    uint64_t free_bytes = 0;
+    uint32_t usleeptime = GetUintProperty(kSleepTimeProp, usleeptime_default, (uint32_t)-1);
+    uint64_t min_free_bytes = GetUintProperty(kSleepTimeProp, min_free_bytes_default, (uint64_t)-1);
+    bool commit_on_full = GetBoolProperty(kCommitOnFullProp, commit_on_full_default);
+
+    while (isCheckpointing) {
+        if (is_fs_cp) {
+            statvfs(mnt_pnt.c_str(), &data);
+            free_bytes = data.f_bavail * data.f_frsize;
+        } else {
+            int ret;
+            std::string size_filename = std::string("/sys/") + blk_device.substr(5) + "/bow/free";
+            std::string content;
+            ret = android::base::ReadFileToString(kMetadataCPFile, &content);
+            if (ret) {
+                free_bytes = std::strtoul(content.c_str(), NULL, 10);
+            }
+        }
+        if (free_bytes < min_free_bytes) {
+            if (commit_on_full) {
+                LOG(INFO) << "Low space for checkpointing. Commiting changes";
+                cp_commitChanges();
+                break;
+            } else {
+                LOG(INFO) << "Low space for checkpointing. Rebooting";
+                cp_abortChanges("checkpoint,low_space", false);
+                break;
+            }
+        }
+        usleep(usleeptime);
+    }
+}
+
+}  // namespace
 
 Status cp_prepareCheckpoint() {
     if (!isCheckpointing) {
@@ -255,6 +337,12 @@ Status cp_prepareCheckpoint() {
             }
 
             setBowState(mount_rec.blk_device, "1");
+        }
+        if (fstab_rec->fs_mgr_flags.checkpoint_blk || fstab_rec->fs_mgr_flags.checkpoint_fs) {
+            std::thread(cp_healthDaemon, std::string(mount_rec.mount_point),
+                        std::string(mount_rec.mount_point),
+                        fstab_rec->fs_mgr_flags.checkpoint_fs == 1)
+                .detach();
         }
     }
     return Status::ok();
