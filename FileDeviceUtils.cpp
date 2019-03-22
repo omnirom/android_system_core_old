@@ -61,7 +61,6 @@ std::string BlockDeviceForPath(const std::string& path) {
         LOG(ERROR) << "Didn't find a mountpoint to match path " << path;
         return "";
     }
-    LOG(DEBUG) << "For path " << path << " block device is " << result;
     return result;
 }
 
