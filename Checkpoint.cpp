@@ -262,7 +262,7 @@ bool cp_needsCheckpoint() {
 
 namespace {
 const std::string kSleepTimeProp = "ro.sys.cp_usleeptime";
-const uint32_t usleeptime_default = 1000;  // 1 s
+const uint32_t usleeptime_default = 1000000;  // 1 s
 
 const std::string kMinFreeBytesProp = "ro.sys.cp_min_free_bytes";
 const uint64_t min_free_bytes_default = 100 * (1 << 20);  // 100 MiB
@@ -274,7 +274,8 @@ static void cp_healthDaemon(std::string mnt_pnt, std::string blk_device, bool is
     struct statvfs data;
     uint64_t free_bytes = 0;
     uint32_t usleeptime = GetUintProperty(kSleepTimeProp, usleeptime_default, (uint32_t)-1);
-    uint64_t min_free_bytes = GetUintProperty(kSleepTimeProp, min_free_bytes_default, (uint64_t)-1);
+    uint64_t min_free_bytes =
+        GetUintProperty(kMinFreeBytesProp, min_free_bytes_default, (uint64_t)-1);
     bool commit_on_full = GetBoolProperty(kCommitOnFullProp, commit_on_full_default);
 
     while (isCheckpointing) {
