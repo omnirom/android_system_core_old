@@ -134,6 +134,7 @@ status_t WaitForFile(const char* filename, std::chrono::nanoseconds timeout);
 
 bool FsyncDirectory(const std::string& dirname);
 
+bool writeStringToFile(const std::string& payload, const std::string& filename);
 }  // namespace vold
 }  // namespace android
 
