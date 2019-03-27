@@ -46,18 +46,27 @@ namespace vold {
 
 static bool checkMaps(const std::string& path, const std::string& prefix) {
     bool found = false;
-    std::ifstream infile(path);
-    std::string line;
-    while (std::getline(infile, line)) {
+    auto file = std::unique_ptr<FILE, decltype(&fclose)>{fopen(path.c_str(), "re"), fclose};
+    if (!file) {
+        return false;
+    }
+
+    char* buf = nullptr;
+    size_t len = 0;
+    while (getline(&buf, &len, file.get()) != -1) {
+        std::string line(buf);
         std::string::size_type pos = line.find('/');
         if (pos != std::string::npos) {
             line = line.substr(pos);
             if (android::base::StartsWith(line, prefix)) {
                 LOG(WARNING) << "Found map " << path << " referencing " << line;
                 found = true;
+                break;
             }
         }
     }
+    free(buf);
+
     return found;
 }
 
