@@ -330,7 +330,7 @@ Status cp_prepareCheckpoint() {
         if (fstab_rec->fs_mgr_flags.checkpoint_blk) {
             android::base::unique_fd fd(
                 TEMP_FAILURE_RETRY(open(mount_rec.mount_point.c_str(), O_RDONLY | O_CLOEXEC)));
-            if (!fd) {
+            if (fd == -1) {
                 PLOG(ERROR) << "Failed to open mount point" << mount_rec.mount_point;
                 continue;
             }
