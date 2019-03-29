@@ -141,8 +141,10 @@ int main(int argc, char** argv) {
         checkStatus(vold->restoreCheckpointPart(args[2], count));
     } else if (args[0] == "checkpoint" && args[1] == "markBootAttempt" && args.size() == 2) {
         checkStatus(vold->markBootAttempt());
-    } else if (args[0] == "checkpoint" && args[1] == "abortChanges" && args.size() == 2) {
-        checkStatus(vold->abortChanges());
+    } else if (args[0] == "checkpoint" && args[1] == "abortChanges" && args.size() == 4) {
+        int retry;
+        if (!android::base::ParseInt(args[2], &retry)) exit(EINVAL);
+        checkStatus(vold->abortChanges(args[2], retry != 0));
     } else {
         LOG(ERROR) << "Raw commands are no longer supported";
         exit(EINVAL);

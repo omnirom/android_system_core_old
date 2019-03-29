@@ -997,11 +997,12 @@ binder::Status VoldNativeService::markBootAttempt() {
     return cp_markBootAttempt();
 }
 
-binder::Status VoldNativeService::abortChanges() {
+binder::Status VoldNativeService::abortChanges(const std::string& message, bool retry) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    return cp_abortChanges();
+    cp_abortChanges(message, retry);
+    return ok();
 }
 
 binder::Status VoldNativeService::supportsCheckpoint(bool* _aidl_return) {

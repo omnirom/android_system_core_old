@@ -33,7 +33,7 @@ android::binder::Status cp_startCheckpoint(int retry);
 
 android::binder::Status cp_commitChanges();
 
-android::binder::Status cp_abortChanges();
+void cp_abortChanges(const std::string& message, bool retry);
 
 bool cp_needsRollback();
 
