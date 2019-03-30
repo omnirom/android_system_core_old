@@ -123,7 +123,8 @@ int MountAppFuse(uid_t uid, int mountId, android::base::unique_fd* device_fd) {
     }
 
     // Open device FD.
-    device_fd->reset(open("/dev/fuse", O_RDWR));  // not O_CLOEXEC
+    // NOLINTNEXTLINE(android-cloexec-open): Deliberately not O_CLOEXEC
+    device_fd->reset(open("/dev/fuse", O_RDWR));
     if (device_fd->get() == -1) {
         PLOG(ERROR) << "Failed to open /dev/fuse";
         return -1;
