@@ -575,7 +575,7 @@ Status cp_restoreCheckpoint(const std::string& blockDevice, int restore_limit) {
         Status status = Status::ok();
 
         LOG(INFO) << action << " checkpoint on " << blockDevice;
-        base::unique_fd device_fd(open(blockDevice.c_str(), O_RDWR));
+        base::unique_fd device_fd(open(blockDevice.c_str(), O_RDWR | O_CLOEXEC));
         if (device_fd < 0) {
             PLOG(ERROR) << "Cannot open " << blockDevice;
             return Status::fromExceptionCode(errno, ("Cannot open " + blockDevice).c_str());
