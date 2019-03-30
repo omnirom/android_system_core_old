@@ -500,7 +500,8 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
         }
 
         // We purposefully leave the namespace open across the fork
-        nsFd = openat(pidFd, "ns/mnt", O_RDONLY);  // not O_CLOEXEC
+        // NOLINTNEXTLINE(android-cloexec-open): Deliberately not O_CLOEXEC
+        nsFd = openat(pidFd, "ns/mnt", O_RDONLY);
         if (nsFd < 0) {
             PLOG(WARNING) << "Failed to open namespace for " << de->d_name;
             goto next;
