@@ -291,7 +291,7 @@ static void cp_healthDaemon(std::string mnt_pnt, std::string blk_device, bool is
             int ret;
             std::string size_filename = std::string("/sys/") + blk_device.substr(5) + "/bow/free";
             std::string content;
-            ret = android::base::ReadFileToString(kMetadataCPFile, &content);
+            ret = android::base::ReadFileToString(size_filename, &content);
             if (ret) {
                 free_bytes = std::strtoul(content.c_str(), NULL, 10);
             }
@@ -346,7 +346,7 @@ Status cp_prepareCheckpoint() {
         }
         if (fstab_rec->fs_mgr_flags.checkpoint_blk || fstab_rec->fs_mgr_flags.checkpoint_fs) {
             std::thread(cp_healthDaemon, std::string(mount_rec.mount_point),
-                        std::string(mount_rec.mount_point),
+                        std::string(mount_rec.blk_device),
                         fstab_rec->fs_mgr_flags.checkpoint_fs == 1)
                 .detach();
         }
