@@ -499,7 +499,8 @@ int VolumeManager::mountPkgSpecificDirsForRunningProcs(
         const std::string& sandboxId = mSandboxIds[appId];
 
         // We purposefully leave the namespace open across the fork
-        unique_fd nsFd(openat(pidFd.get(), "ns/mnt", O_RDONLY));  // not O_CLOEXEC
+        // NOLINTNEXTLINE(android-cloexec-open): Deliberately not O_CLOEXEC
+        unique_fd nsFd(openat(pidFd.get(), "ns/mnt", O_RDONLY));
         if (nsFd.get() < 0) {
             PLOG(WARNING) << "Failed to open namespace for " << de->d_name;
             continue;
@@ -640,8 +641,8 @@ int VolumeManager::handleMountModeInstaller(int mountMode, int obbMountDirFd,
             PLOG(ERROR) << "Failed to access " << obbMountDir << "/" << sandboxId;
             return -errno;
         }
-        const unique_fd fd(
-            TEMP_FAILURE_RETRY(openat(obbMountDirFd, sandboxId.c_str(), O_RDWR | O_CREAT, 0600)));
+        const unique_fd fd(TEMP_FAILURE_RETRY(
+            openat(obbMountDirFd, sandboxId.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600)));
         if (fd.get() < 0) {
             PLOG(ERROR) << "Failed to create " << obbMountDir << "/" << sandboxId;
             return -errno;
