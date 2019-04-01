@@ -45,6 +45,7 @@ using android::base::StringPrintf;
 using android::base::unique_fd;
 
 static const char* kVoldPrefix = "vold:";
+static constexpr size_t kLoopDeviceRetryAttempts = 3u;
 
 int Loop::create(const std::string& target, std::string& out_device) {
     unique_fd ctl_fd(open("/dev/loop-control", O_RDWR | O_CLOEXEC));
@@ -61,7 +62,14 @@ int Loop::create(const std::string& target, std::string& out_device) {
 
     out_device = StringPrintf("/dev/block/loop%d", num);
 
-    unique_fd target_fd(open(target.c_str(), O_RDWR | O_CLOEXEC));
+    unique_fd target_fd;
+    for (size_t i = 0; i != kLoopDeviceRetryAttempts; ++i) {
+        target_fd.reset(open(target.c_str(), O_RDWR | O_CLOEXEC));
+        if (target_fd.get() != -1) {
+            break;
+        }
+        usleep(50000);
+    }
     if (target_fd.get() == -1) {
         PLOG(ERROR) << "Failed to open " << target;
         return -errno;
