@@ -152,6 +152,7 @@ static void parse_args(int argc, char** argv) {
         {"blkid_untrusted_context", required_argument, 0, 'B'},
         {"fsck_context", required_argument, 0, 'f'},
         {"fsck_untrusted_context", required_argument, 0, 'F'},
+        {nullptr, 0, nullptr, 0},
     };
 
     int c;
