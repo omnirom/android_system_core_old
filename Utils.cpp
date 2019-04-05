@@ -42,6 +42,7 @@
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 #include <list>
 #include <mutex>
@@ -834,6 +835,33 @@ bool FsyncDirectory(const std::string& dirname) {
                           << " on a file system does not support synchronization";
         } else {
             PLOG(ERROR) << "Failed to fsync " << dirname;
+            return false;
+        }
+    }
+    return true;
+}
+
+bool writeStringToFile(const std::string& payload, const std::string& filename) {
+    android::base::unique_fd fd(TEMP_FAILURE_RETRY(
+        open(filename.c_str(), O_WRONLY | O_CREAT | O_NOFOLLOW | O_TRUNC | O_CLOEXEC, 0666)));
+    if (fd == -1) {
+        PLOG(ERROR) << "Failed to open " << filename;
+        return false;
+    }
+    if (!android::base::WriteStringToFd(payload, fd)) {
+        PLOG(ERROR) << "Failed to write to " << filename;
+        unlink(filename.c_str());
+        return false;
+    }
+    // fsync as close won't guarantee flush data
+    // see close(2), fsync(2) and b/68901441
+    if (fsync(fd) == -1) {
+        if (errno == EROFS || errno == EINVAL) {
+            PLOG(WARNING) << "Skip fsync " << filename
+                          << " on a file system does not support synchronization";
+        } else {
+            PLOG(ERROR) << "Failed to fsync " << filename;
+            unlink(filename.c_str());
             return false;
         }
     }
