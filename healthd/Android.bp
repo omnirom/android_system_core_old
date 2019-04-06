@@ -73,7 +73,10 @@ cc_library_headers {
 
 cc_library_static {
     name: "libbatterymonitor",
-    defaults: ["libbatterymonitor_defaults"],
+    defaults: [
+        "libbatterymonitor_defaults",
+        "use_battery_info_defaults",
+    ],
     srcs: ["BatteryMonitor.cpp"],
     static_libs: [
         "android.hardware.health-V3-ndk",
@@ -88,7 +91,10 @@ cc_library_static {
 // TODO(b/251425963): remove when android.hardware.health is upgraded to V2.
 cc_library_static {
     name: "libbatterymonitor-V1",
-    defaults: ["libbatterymonitor_defaults"],
+    defaults: [
+        "libbatterymonitor_defaults",
+        "use_battery_info_defaults",
+    ],
     srcs: ["BatteryMonitor_v1.cpp"],
     static_libs: [
         "android.hardware.health-V1-ndk",
