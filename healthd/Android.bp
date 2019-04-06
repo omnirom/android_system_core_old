@@ -24,6 +24,14 @@ cc_library_static {
     ],
     header_libs: ["libhealthd_headers"],
     export_header_lib_headers: ["libhealthd_headers"],
+
+    product_variables: {
+        omnirom: {
+            healthd_use_battery_info: {
+                cflags: ["-DHEALTHD_USE_BATTERY_INFO"],
+            },
+        },
+    },
 }
 
 cc_defaults {
