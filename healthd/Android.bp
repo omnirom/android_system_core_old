@@ -30,6 +30,9 @@ cc_library_static {
             healthd_enable_op_fastchg: {
                 cflags: ["-DHEALTHD_ENABLE_OP_FASTCHG_CHECK"],
             },
+            healthd_use_battery_info: {
+                cflags: ["-DHEALTHD_USE_BATTERY_INFO"],
+            },
         },
     },
 }
