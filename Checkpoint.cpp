@@ -17,6 +17,7 @@
 #define LOG_TAG "Checkpoint"
 #include "Checkpoint.h"
 #include "VoldUtil.h"
+#include "VolumeManager.h"
 
 #include <fstream>
 #include <list>
@@ -337,10 +338,14 @@ Status cp_prepareCheckpoint() {
 
             struct fstrim_range range = {};
             range.len = ULLONG_MAX;
+            nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
             if (ioctl(fd, FITRIM, &range)) {
                 PLOG(ERROR) << "Failed to trim " << mount_rec.mount_point;
                 continue;
             }
+            nsecs_t time = systemTime(SYSTEM_TIME_BOOTTIME) - start;
+            LOG(INFO) << "Trimmed " << range.len << " bytes on " << mount_rec.mount_point << " in "
+                      << nanoseconds_to_milliseconds(time) << "ms for checkpoint";
 
             setBowState(mount_rec.blk_device, "1");
         }
