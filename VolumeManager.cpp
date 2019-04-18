@@ -1103,6 +1103,9 @@ int VolumeManager::remountUidLegacy(uid_t uid, int32_t mountMode) {
         case VoldNativeService::REMOUNT_MODE_INSTALLER:
             mode = "write";
             break;
+        case VoldNativeService::REMOUNT_MODE_FULL:
+            mode = "full";
+            break;
         default:
             PLOG(ERROR) << "Unknown mode " << std::to_string(mountMode);
             return -1;
