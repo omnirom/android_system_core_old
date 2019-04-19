@@ -2253,6 +2253,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
          * /data, set a property saying we're doing inplace encryption,
          * and restart the framework.
          */
+        wait_and_unmount(DATA_MNT_POINT, true);
         if (fs_mgr_do_tmpfs_mount(DATA_MNT_POINT)) {
             goto error_shutting_down;
         }
