@@ -153,6 +153,11 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
                              system_ce_path + "/backup_stage")) {
                 return false;
             }
+            auto vendor_ce_path = android::vold::BuildDataVendorCePath(user_id);
+            auto facedata_path = vendor_ce_path + "/facedata";
+            if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM, facedata_path)) {
+                return false;
+            }
         }
     }
     return true;
