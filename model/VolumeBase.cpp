@@ -143,16 +143,6 @@ status_t VolumeBase::setInternalPath(const std::string& internalPath) {
     return OK;
 }
 
-status_t VolumeBase::setLabel(const std::string& label) {
-    if (mState != State::kChecking) {
-        LOG(WARNING) << getId() << " label change requires state checking";
-        return -EBUSY;
-    }
-
-    mLabel = label;
-    return OK;
-}
-
 android::sp<android::os::IVoldListener> VolumeBase::getListener() const {
     if (mSilent) {
         return nullptr;
@@ -229,9 +219,6 @@ status_t VolumeBase::mount() {
 
     setState(State::kChecking);
     status_t res = doMount();
-    if (res == OK) {
-        res = VolumeManager::Instance()->onVolumeMounted(this);
-    }
     setState(res == OK ? State::kMounted : State::kUnmountable);
 
     return res;
@@ -251,11 +238,8 @@ status_t VolumeBase::unmount() {
     }
     mVolumes.clear();
 
-    status_t res = VolumeManager::Instance()->onVolumeUnmounted(this);
-    if (res == OK) {
-        res = doUnmount();
-        setState(State::kUnmounted);
-    }
+    status_t res = doUnmount();
+    setState(State::kUnmounted);
     return res;
 }
 
@@ -280,8 +264,8 @@ status_t VolumeBase::doFormat(const std::string& fsType) {
 }
 
 std::ostream& VolumeBase::operator<<(std::ostream& stream) const {
-    return stream << " VolumeBase{id=" << mId << ",label=" << mLabel
-                  << ",mountFlags=" << mMountFlags << ",mountUserId=" << mMountUserId << "}";
+    return stream << " VolumeBase{id=" << mId << ",mountFlags=" << mMountFlags
+                  << ",mountUserId=" << mMountUserId << "}";
 }
 
 }  // namespace vold

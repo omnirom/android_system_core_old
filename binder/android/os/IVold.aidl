@@ -29,8 +29,7 @@ interface IVold {
 
     void onUserAdded(int userId, int userSerial);
     void onUserRemoved(int userId);
-    void onUserStarted(int userId, in @utf8InCpp String[] packageNames, in int[] appIds,
-            in @utf8InCpp String[] sandboxIds);
+    void onUserStarted(int userId);
     void onUserStopped(int userId);
 
     void addAppIds(in @utf8InCpp String[] packageNames, in int[] appIds);
