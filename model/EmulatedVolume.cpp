@@ -70,7 +70,6 @@ status_t EmulatedVolume::doMount() {
 
     setInternalPath(mRawPath);
     setPath(StringPrintf("/storage/%s", label.c_str()));
-    setLabel(label);
 
     if (fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
         fs_prepare_dir(mFuseRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||

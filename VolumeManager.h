@@ -88,27 +88,14 @@ class VolumeManager {
 
     int onUserAdded(userid_t userId, int userSerialNumber);
     int onUserRemoved(userid_t userId);
-    int onUserStarted(userid_t userId, const std::vector<std::string>& packageNames,
-                      const std::vector<int>& appIds, const std::vector<std::string>& sandboxIds);
+    int onUserStarted(userid_t userId);
     int onUserStopped(userid_t userId);
-
-    int addAppIds(const std::vector<std::string>& packageNames, const std::vector<int32_t>& appIds);
-    int addSandboxIds(const std::vector<int32_t>& appIds,
-                      const std::vector<std::string>& sandboxIds);
-    int prepareSandboxForApp(const std::string& packageName, appid_t appId,
-                             const std::string& sandboxId, userid_t userId);
-    int destroySandboxForApp(const std::string& packageName, const std::string& sandboxId,
-                             userid_t userId);
-
-    int onVolumeMounted(android::vold::VolumeBase* vol);
-    int onVolumeUnmounted(android::vold::VolumeBase* vol);
 
     int onSecureKeyguardStateChanged(bool isShowing);
 
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
 
     int remountUid(uid_t uid, int32_t remountMode);
-    int remountUidLegacy(uid_t uid, int32_t remountMode);
 
     /* Reset all internal state, typically during framework boot */
     int reset();
@@ -150,26 +137,6 @@ class VolumeManager {
 
     int linkPrimary(userid_t userId);
 
-    int prepareSandboxes(userid_t userId, const std::vector<std::string>& packageNames,
-                         const std::vector<std::string>& visibleVolLabels);
-    int prepareSandboxTargets(userid_t userId, const std::vector<std::string>& visibleVolLabels);
-    int handleMountModeInstaller(int mountMode, int obbMountDirFd, const std::string& obbMountDir,
-                                 const std::string& sandboxId);
-    int mountPkgSpecificDirsForRunningProcs(userid_t userId,
-                                            const std::vector<std::string>& packageNames,
-                                            const std::vector<std::string>& visibleVolLabels,
-                                            int remountMode);
-    int destroySandboxesForVol(android::vold::VolumeBase* vol, userid_t userId);
-    std::string prepareSubDirs(const std::string& pathPrefix, const std::string& subDirs,
-                               mode_t mode, uid_t uid, gid_t gid);
-    bool createPkgSpecificDirRoots(const std::string& volumeRoot);
-    int mountPkgSpecificDir(const std::string& mntSourceRoot, const std::string& mntTargetRoot,
-                            const std::string& packageName, const char* dirName);
-    int destroySandboxForAppOnVol(const std::string& packageName, const std::string& sandboxId,
-                                  userid_t userId, const std::string& volLabel);
-    int getMountModeForRunningProc(const std::vector<std::string>& packagesForUid, userid_t userId,
-                                   struct stat& mntWriteStat, struct stat& mntFullStat);
-
     void handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk);
     void handleDiskChanged(dev_t device);
     void handleDiskRemoved(dev_t device);
@@ -192,11 +159,6 @@ class VolumeManager {
     std::shared_ptr<android::vold::Disk> mVirtualDisk;
     std::shared_ptr<android::vold::VolumeBase> mInternalEmulated;
     std::shared_ptr<android::vold::VolumeBase> mPrimary;
-
-    std::unordered_map<std::string, appid_t> mAppIds;
-    std::unordered_map<appid_t, std::string> mSandboxIds;
-    std::unordered_map<userid_t, std::vector<std::string>> mUserPackages;
-    std::unordered_set<std::string> mVisibleVolumeIds;
 
     int mNextObbId;
     int mNextStubVolumeId;
