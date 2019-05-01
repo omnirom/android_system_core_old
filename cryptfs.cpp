@@ -1569,12 +1569,23 @@ static int cryptfs_restart_internal(int restart_main) {
 
     if (restart_main) {
         /* Here is where we shut down the framework.  The init scripts
-         * start all services in one of three classes: core, main or late_start.
-         * On boot, we start core and main.  Now, we stop main, but not core,
-         * as core includes vold and a few other really important things that
-         * we need to keep running.  Once main has stopped, we should be able
+         * start all services in one of these classes: core, early_hal, hal,
+         * main and late_start. To get to the minimal UI for PIN entry, we
+         * need to start core, early_hal, hal and main. When we want to
+         * shutdown the framework again, we need to stop most of the services in
+         * these classes, but only those services that were started after
+         * /data was mounted. This excludes critical services like vold and
+         * ueventd, which need to keep running. We could possible stop
+         * even fewer services, but because we want services to pick up APEX
+         * libraries from the real /data, restarting is better, as it makes
+         * these devices consistent with FBE devices and lets them use the
+         * most recent code.
+         *
+         * Once these services have stopped, we should be able
          * to umount the tmpfs /data, then mount the encrypted /data.
-         * We then restart the class main, and also the class late_start.
+         * We then restart the class core, hal, main, and also the class
+         * late_start.
+         *
          * At the moment, I've only put a few things in late_start that I know
          * are not needed to bring up the framework, and that also cause problems
          * with unmounting the tmpfs /data, but I hope to add add more services
@@ -1582,10 +1593,10 @@ static int cryptfs_restart_internal(int restart_main) {
          * till the user is asked for the password to the filesystem.
          */
 
-        /* The init files are setup to stop the class main when vold.decrypt is
-         * set to trigger_reset_main.
+        /* The init files are setup to stop the right set of services when
+         * vold.decrypt is set to trigger_shutdown_framework.
          */
-        property_set("vold.decrypt", "trigger_reset_main");
+        property_set("vold.decrypt", "trigger_shutdown_framework");
         SLOGD("Just asked init to shut down class main\n");
 
         /* Ugh, shutting down the framework is not synchronous, so until it
