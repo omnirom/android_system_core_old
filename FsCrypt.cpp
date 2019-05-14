@@ -735,6 +735,7 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             // over these paths
             // NOTE: these paths need to be kept in sync with libselinux
             android::vold::RestoreconRecursive(system_ce_path);
+            android::vold::RestoreconRecursive(vendor_ce_path);
             android::vold::RestoreconRecursive(misc_ce_path);
         }
     }
