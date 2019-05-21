@@ -23,12 +23,9 @@
 #include <vector>
 
 #include <fcntl.h>
-#include <sys/ioctl.h>
 #include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-
-#include <linux/dm-ioctl.h>
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
@@ -36,6 +33,7 @@
 #include <android-base/unique_fd.h>
 #include <cutils/fs.h>
 #include <fs_mgr.h>
+#include <libdm/dm.h>
 
 #include "Checkpoint.h"
 #include "EncryptInplace.h"
@@ -45,13 +43,12 @@
 #include "Utils.h"
 #include "VoldUtil.h"
 
-#define DM_CRYPT_BUF_SIZE 4096
 #define TABLE_LOAD_RETRIES 10
-#define DEFAULT_KEY_TARGET_TYPE "default-key"
 
 using android::fs_mgr::FstabEntry;
 using android::fs_mgr::GetEntryForMountPoint;
 using android::vold::KeyBuffer;
+using namespace android::dm;
 
 static const std::string kDmNameUserdata = "userdata";
 
@@ -146,16 +143,6 @@ static bool read_key(const FstabEntry& data_rec, bool create_if_absent, KeyBuffe
 }  // namespace vold
 }  // namespace android
 
-static KeyBuffer default_key_params(const std::string& real_blkdev, const KeyBuffer& key) {
-    KeyBuffer hex_key;
-    if (android::vold::StrToHex(key, hex_key) != android::OK) {
-        LOG(ERROR) << "Failed to turn key to hex";
-        return KeyBuffer();
-    }
-    auto res = KeyBuffer() + "AES-256-XTS " + hex_key + " " + real_blkdev.c_str() + " 0";
-    return res;
-}
-
 static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_sec) {
     if (android::vold::GetBlockDev512Sectors(real_blkdev, nr_sec) != android::OK) {
         PLOG(ERROR) << "Unable to measure size of " << real_blkdev;
@@ -164,86 +151,35 @@ static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_s
     return true;
 }
 
-static struct dm_ioctl* dm_ioctl_init(char* buffer, size_t buffer_size, const std::string& dm_name) {
-    if (buffer_size < sizeof(dm_ioctl)) {
-        LOG(ERROR) << "dm_ioctl buffer too small";
-        return nullptr;
-    }
-
-    memset(buffer, 0, buffer_size);
-    struct dm_ioctl* io = (struct dm_ioctl*)buffer;
-    io->data_size = buffer_size;
-    io->data_start = sizeof(struct dm_ioctl);
-    io->version[0] = 4;
-    io->version[1] = 0;
-    io->version[2] = 0;
-    io->flags = 0;
-    dm_name.copy(io->name, sizeof(io->name));
-    return io;
-}
-
 static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
-                                  const std::string& target_type, const KeyBuffer& crypt_params,
+                                  const std::string& real_blkdev, const KeyBuffer& key,
                                   std::string* crypto_blkdev) {
-    android::base::unique_fd dm_fd(
-        TEMP_FAILURE_RETRY(open("/dev/device-mapper", O_RDWR | O_CLOEXEC, 0)));
-    if (dm_fd == -1) {
-        PLOG(ERROR) << "Cannot open device-mapper";
+    auto& dm = DeviceMapper::Instance();
+
+    KeyBuffer hex_key_buffer;
+    if (android::vold::StrToHex(key, hex_key_buffer) != android::OK) {
+        LOG(ERROR) << "Failed to turn key to hex";
         return false;
     }
-    alignas(struct dm_ioctl) char buffer[DM_CRYPT_BUF_SIZE];
-    auto io = dm_ioctl_init(buffer, sizeof(buffer), dm_name);
-    if (!io || ioctl(dm_fd.get(), DM_DEV_CREATE, io) != 0) {
-        PLOG(ERROR) << "Cannot create dm-crypt device " << dm_name;
-        return false;
-    }
+    std::string hex_key(hex_key_buffer.data(), hex_key_buffer.size());
 
-    // Get the device status, in particular, the name of its device file
-    io = dm_ioctl_init(buffer, sizeof(buffer), dm_name);
-    if (ioctl(dm_fd.get(), DM_DEV_STATUS, io) != 0) {
-        PLOG(ERROR) << "Cannot retrieve dm-crypt device status " << dm_name;
-        return false;
-    }
-    *crypto_blkdev = std::string() + "/dev/block/dm-" +
-                     std::to_string((io->dev & 0xff) | ((io->dev >> 12) & 0xfff00));
-
-    io = dm_ioctl_init(buffer, sizeof(buffer), dm_name);
-    size_t paramix = io->data_start + sizeof(struct dm_target_spec);
-    size_t nullix = paramix + crypt_params.size();
-    size_t endix = (nullix + 1 + 7) & 8;  // Add room for \0 and align to 8 byte boundary
-
-    if (endix > sizeof(buffer)) {
-        LOG(ERROR) << "crypt_params too big for DM_CRYPT_BUF_SIZE";
-        return false;
-    }
-
-    io->target_count = 1;
-    auto tgt = (struct dm_target_spec*)(buffer + io->data_start);
-    tgt->status = 0;
-    tgt->sector_start = 0;
-    tgt->length = nr_sec;
-    target_type.copy(tgt->target_type, sizeof(tgt->target_type));
-    memcpy(buffer + paramix, crypt_params.data(),
-           std::min(crypt_params.size(), sizeof(buffer) - paramix));
-    buffer[nullix] = '\0';
-    tgt->next = endix;
+    DmTable table;
+    table.Emplace<DmTargetDefaultKey>(0, nr_sec, "AES-256-XTS", hex_key, real_blkdev, 0);
 
     for (int i = 0;; i++) {
-        if (ioctl(dm_fd.get(), DM_TABLE_LOAD, io) == 0) {
+        if (dm.CreateDevice(dm_name, table)) {
             break;
         }
         if (i + 1 >= TABLE_LOAD_RETRIES) {
-            PLOG(ERROR) << "DM_TABLE_LOAD ioctl failed";
+            LOG(ERROR) << "Could not create default-key device " << dm_name;
             return false;
         }
-        PLOG(INFO) << "DM_TABLE_LOAD ioctl failed, retrying";
+        PLOG(INFO) << "Could not create default-key device, retrying";
         usleep(500000);
     }
 
-    // Resume this device to activate it
-    io = dm_ioctl_init(buffer, sizeof(buffer), dm_name);
-    if (ioctl(dm_fd.get(), DM_DEV_SUSPEND, io)) {
-        PLOG(ERROR) << "Cannot resume dm-crypt device " << dm_name;
+    if (!dm.GetDmDevicePathByName(dm_name, crypto_blkdev)) {
+        LOG(ERROR) << "Cannot retrieve default-key device status " << dm_name;
         return false;
     }
     return true;
@@ -267,8 +203,7 @@ bool fscrypt_mount_metadata_encrypted(const std::string& mount_point, bool needs
     uint64_t nr_sec;
     if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
     std::string crypto_blkdev;
-    if (!create_crypto_blk_dev(kDmNameUserdata, nr_sec, DEFAULT_KEY_TARGET_TYPE,
-                               default_key_params(data_rec->blk_device, key), &crypto_blkdev))
+    if (!create_crypto_blk_dev(kDmNameUserdata, nr_sec, data_rec->blk_device, key, &crypto_blkdev))
         return false;
     // FIXME handle the corrupt case
     if (needs_encrypt) {
