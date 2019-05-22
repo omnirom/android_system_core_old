@@ -30,6 +30,7 @@ cc_defaults {
     static_libs: [
         "libavb",
         "libbootloader_message",
+        "libdm",
         "libfec",
         "libfec_rs",
         "libfs_avb",
