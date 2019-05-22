@@ -26,10 +26,6 @@ class Devmapper {
                       unsigned long numSectors, char* buffer, size_t len);
     static int destroy(const char* name);
     static int destroyAll();
-
-  private:
-    static void* _align(void* ptr, unsigned int a);
-    static void ioctlInit(struct dm_ioctl* io, size_t data_size, const char* name, unsigned flags);
 };
 
 #endif
