@@ -554,6 +554,8 @@ int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
                 storageSource = "/mnt/runtime/read";
             } else if (mode == "write") {
                 storageSource = "/mnt/runtime/write";
+            } else if (mode == "full") {
+                storageSource = "/mnt/runtime/full";
             } else {
                 // Sane default of no storage visible
                 _exit(0);
