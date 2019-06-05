@@ -223,6 +223,10 @@ static KeymasterOperation begin(Keymaster& keymaster, const std::string& dir,
             PLOG(ERROR) << "Unable to move upgraded key to location: " << kmKeyPath;
             return KeymasterOperation();
         }
+        if (!android::vold::FsyncDirectory(dir)) {
+            LOG(ERROR) << "Key dir sync failed: " << dir;
+            return KeymasterOperation();
+        }
         if (!keymaster.deleteKey(kmKey)) {
             LOG(ERROR) << "Key deletion failed during upgrade, continuing anyway: " << dir;
         }
@@ -480,6 +484,7 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBu
         if (!encryptWithoutKeymaster(appId, key, &encryptedKey)) return false;
     }
     if (!writeStringToFile(encryptedKey, dir + "/" + kFn_encrypted_key)) return false;
+    if (!FsyncDirectory(dir)) return false;
     return true;
 }
 
