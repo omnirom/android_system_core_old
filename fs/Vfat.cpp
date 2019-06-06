@@ -64,6 +64,7 @@ status_t Check(const std::string& source) {
         cmd.push_back(kFsckPath);
         cmd.push_back("-p");
         cmd.push_back("-f");
+        cmd.push_back("-y");
         cmd.push_back(source);
 
         // Fat devices are currently always untrusted
