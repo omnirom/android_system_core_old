@@ -16,10 +16,10 @@
 
 #include "KeyStorage.h"
 
+#include "Checkpoint.h"
 #include "Keymaster.h"
 #include "ScryptParameters.h"
 #include "Utils.h"
-#include "Checkpoint.h"
 
 #include <thread>
 #include <vector>
@@ -37,8 +37,8 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
-#include <android-base/unique_fd.h>
 #include <android-base/properties.h>
+#include <android-base/unique_fd.h>
 
 #include <cutils/properties.h>
 
