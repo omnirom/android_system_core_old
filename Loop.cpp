@@ -31,6 +31,9 @@
 
 #include <linux/kdev_t.h>
 
+#include <chrono>
+#include <thread>
+
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
@@ -41,11 +44,28 @@
 #include "VoldUtil.h"
 #include "sehandle.h"
 
+using namespace std::literals;
 using android::base::StringPrintf;
 using android::base::unique_fd;
 
 static const char* kVoldPrefix = "vold:";
 static constexpr size_t kLoopDeviceRetryAttempts = 3u;
+
+static bool wait_for_file(const std::string& filename,
+                          const std::chrono::milliseconds relative_timeout) {
+    auto start_time = std::chrono::steady_clock::now();
+
+    while (true) {
+        int rv = access(filename.c_str(), F_OK);
+        if (!rv || errno != ENOENT) return true;
+
+        std::this_thread::sleep_for(50ms);
+
+        auto now = std::chrono::steady_clock::now();
+        auto time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time);
+        if (time_elapsed > relative_timeout) return false;
+    }
+}
 
 int Loop::create(const std::string& target, std::string& out_device) {
     unique_fd ctl_fd(open("/dev/loop-control", O_RDWR | O_CLOEXEC));
@@ -74,6 +94,12 @@ int Loop::create(const std::string& target, std::string& out_device) {
         PLOG(ERROR) << "Failed to open " << target;
         return -errno;
     }
+
+    if (!wait_for_file(out_device, 2s)) {
+        LOG(ERROR) << "Failed to find " << out_device;
+        return -ENOENT;
+    }
+
     unique_fd device_fd(open(out_device.c_str(), O_RDWR | O_CLOEXEC));
     if (device_fd.get() == -1) {
         PLOG(ERROR) << "Failed to open " << out_device;
