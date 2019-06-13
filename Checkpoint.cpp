@@ -139,6 +139,11 @@ Status cp_commitChanges() {
     if (!isCheckpointing) {
         return Status::ok();
     }
+    if (android::base::GetProperty("persist.vold.dont_commit_checkpoint", "0") == "1") {
+        LOG(WARNING)
+            << "NOT COMMITTING CHECKPOINT BECAUSE persist.vold.dont_commit_checkpoint IS 1";
+        return Status::ok();
+    }
     sp<IBootControl> module = IBootControl::getService();
     if (module) {
         CommandResult cr;
