@@ -125,6 +125,10 @@ Status cp_supportsFileCheckpoint(bool& result) {
 }
 
 Status cp_startCheckpoint(int retry) {
+    bool result;
+    if (!cp_supportsCheckpoint(result).isOk() || !result)
+        return error(ENOTSUP, "Checkpoints not supported");
+
     if (retry < -1) return error(EINVAL, "Retry count must be more than -1");
     std::string content = std::to_string(retry + 1);
     if (retry == -1) {
