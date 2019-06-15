@@ -230,6 +230,7 @@ cc_binary {
         "libhidlbase",
         "libhwbinder",
         "libkeymaster4support",
+        "libutils",
     ],
 }
 
