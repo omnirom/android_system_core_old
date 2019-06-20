@@ -181,7 +181,7 @@ static status_t benchmarkInternal(const std::string& rootPath,
 void Benchmark(const std::string& path,
                const android::sp<android::os::IVoldTaskListener>& listener) {
     std::lock_guard<std::mutex> lock(kBenchmarkLock);
-    acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
+    android::power::WakeLock wl{kWakeLock};
 
     PerformanceBoost boost;
     android::os::PersistableBundle extras;
@@ -190,8 +190,6 @@ void Benchmark(const std::string& path,
     if (listener) {
         listener->onFinished(res, extras);
     }
-
-    release_wake_lock(kWakeLock);
 }
 
 }  // namespace vold
