@@ -2007,7 +2007,6 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     off64_t previously_encrypted_upto = 0;
     bool rebootEncryption = false;
     bool onlyCreateHeader = false;
-    std::unique_ptr<android::power::WakeLock> wakeLock = nullptr;
 
     if (get_crypt_ftr_and_key(&crypt_ftr) == 0) {
         if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS) {
@@ -2074,7 +2073,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
      * wants to keep the screen on, it can grab a full wakelock.
      */
     snprintf(lockid, sizeof(lockid), "enablecrypto%d", (int)getpid());
-    wakeLock = std::make_unique<android::power::WakeLock>(lockid);
+    acquire_wake_lock(PARTIAL_WAKE_LOCK, lockid);
 
     /* The init files are setup to stop the class main and late start when
      * vold sets trigger_shutdown_framework.
@@ -2255,6 +2254,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
                 /* default encryption - continue first boot sequence */
                 property_set("ro.crypto.state", "encrypted");
                 property_set("ro.crypto.type", "block");
+                release_wake_lock(lockid);
                 if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
                     // Bring up cryptkeeper that will check the password and set it
                     property_set("vold.decrypt", "trigger_shutdown_framework");
@@ -2291,6 +2291,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
         } else {
             /* set property to trigger dialog */
             property_set("vold.encrypt_progress", "error_partially_encrypted");
+            release_wake_lock(lockid);
         }
         return -1;
     }
@@ -2300,10 +2301,14 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
      * Set the property and return.  Hope the framework can deal with it.
      */
     property_set("vold.encrypt_progress", "error_reboot_failed");
+    release_wake_lock(lockid);
     return rc;
 
 error_unencrypted:
     property_set("vold.encrypt_progress", "error_not_encrypted");
+    if (lockid[0]) {
+        release_wake_lock(lockid);
+    }
     return -1;
 
 error_shutting_down:
@@ -2318,6 +2323,9 @@ error_shutting_down:
 
     /* shouldn't get here */
     property_set("vold.encrypt_progress", "error_shutting_down");
+    if (lockid[0]) {
+        release_wake_lock(lockid);
+    }
     return -1;
 }
 
