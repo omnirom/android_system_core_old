@@ -31,16 +31,20 @@
 
 #include <linux/kdev_t.h>
 
+#include <chrono>
+
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
+#include <fs_mgr/file_wait.h>
 #include <utils/Trace.h>
 
 #include "Loop.h"
 #include "VoldUtil.h"
 #include "sehandle.h"
 
+using namespace std::literals;
 using android::base::StringPrintf;
 using android::base::unique_fd;
 
@@ -73,6 +77,10 @@ int Loop::create(const std::string& target, std::string& out_device) {
     if (target_fd.get() == -1) {
         PLOG(ERROR) << "Failed to open " << target;
         return -errno;
+    }
+    if (!android::fs_mgr::WaitForFile(out_device, 2s)) {
+        LOG(ERROR) << "Failed to find " << out_device;
+        return -ENOENT;
     }
     unique_fd device_fd(open(out_device.c_str(), O_RDWR | O_CLOEXEC));
     if (device_fd.get() == -1) {
