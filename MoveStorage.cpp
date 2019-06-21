@@ -258,13 +258,15 @@ fail:
 
 void MoveStorage(const std::shared_ptr<VolumeBase>& from, const std::shared_ptr<VolumeBase>& to,
                  const android::sp<android::os::IVoldTaskListener>& listener) {
-    android::power::WakeLock wl{kWakeLock};
+    acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
 
     android::os::PersistableBundle extras;
     status_t res = moveStorageInternal(from, to, listener);
     if (listener) {
         listener->onFinished(res, extras);
     }
+
+    release_wake_lock(kWakeLock);
 }
 
 }  // namespace vold
