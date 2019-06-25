@@ -62,14 +62,11 @@ namespace {
 const std::string kMetadataCPFile = "/metadata/vold/checkpoint";
 
 bool setBowState(std::string const& block_device, std::string const& state) {
-    if (block_device.substr(0, 5) != "/dev/") {
-        LOG(ERROR) << "Expected block device, got " << block_device;
-        return false;
-    }
+    std::string bow_device = fs_mgr_find_bow_device(block_device);
+    if (bow_device.empty()) return false;
 
-    std::string state_filename = std::string("/sys/") + block_device.substr(5) + "/bow/state";
-    if (!android::base::WriteStringToFile(state, state_filename)) {
-        PLOG(ERROR) << "Failed to write to file " << state_filename;
+    if (!android::base::WriteStringToFile(state, bow_device + "/bow/state")) {
+        PLOG(ERROR) << "Failed to write to file " << bow_device + "/bow/state";
         return false;
     }
 
@@ -279,7 +276,6 @@ const bool commit_on_full_default = true;
 
 static void cp_healthDaemon(std::string mnt_pnt, std::string blk_device, bool is_fs_cp) {
     struct statvfs data;
-    uint64_t free_bytes = 0;
     uint32_t msleeptime = GetUintProperty(kSleepTimeProp, msleeptime_default, max_msleeptime);
     uint64_t min_free_bytes =
         GetUintProperty(kMinFreeBytesProp, min_free_bytes_default, (uint64_t)-1);
@@ -290,16 +286,17 @@ static void cp_healthDaemon(std::string mnt_pnt, std::string blk_device, bool is
     msleeptime %= 1000;
     req.tv_nsec = msleeptime * 1000000;
     while (isCheckpointing) {
+        uint64_t free_bytes = 0;
         if (is_fs_cp) {
             statvfs(mnt_pnt.c_str(), &data);
             free_bytes = data.f_bavail * data.f_frsize;
         } else {
-            int ret;
-            std::string size_filename = std::string("/sys/") + blk_device.substr(5) + "/bow/free";
-            std::string content;
-            ret = android::base::ReadFileToString(size_filename, &content);
-            if (ret) {
-                free_bytes = std::strtoul(content.c_str(), NULL, 10);
+            std::string bow_device = fs_mgr_find_bow_device(blk_device);
+            if (!bow_device.empty()) {
+                std::string content;
+                if (android::base::ReadFileToString(bow_device + "/bow/free", &content)) {
+                    free_bytes = std::strtoul(content.c_str(), NULL, 10);
+                }
             }
         }
         if (free_bytes < min_free_bytes) {

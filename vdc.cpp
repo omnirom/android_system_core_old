@@ -101,10 +101,10 @@ int main(int argc, char** argv) {
         checkStatus(vold->shutdown());
     } else if (args[0] == "cryptfs" && args[1] == "checkEncryption" && args.size() == 3) {
         checkStatus(vold->checkEncryption(args[2]));
-    } else if (args[0] == "cryptfs" && args[1] == "mountFstab" && args.size() == 3) {
-        checkStatus(vold->mountFstab(args[2]));
-    } else if (args[0] == "cryptfs" && args[1] == "encryptFstab" && args.size() == 3) {
-        checkStatus(vold->encryptFstab(args[2]));
+    } else if (args[0] == "cryptfs" && args[1] == "mountFstab" && args.size() == 4) {
+        checkStatus(vold->mountFstab(args[2], args[3]));
+    } else if (args[0] == "cryptfs" && args[1] == "encryptFstab" && args.size() == 4) {
+        checkStatus(vold->encryptFstab(args[2], args[3]));
     } else if (args[0] == "checkpoint" && args[1] == "supportsCheckpoint" && args.size() == 2) {
         bool supported = false;
         checkStatus(vold->supportsCheckpoint(&supported));

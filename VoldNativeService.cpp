@@ -721,18 +721,20 @@ binder::Status VoldNativeService::isConvertibleToFbe(bool* _aidl_return) {
     return ok();
 }
 
-binder::Status VoldNativeService::mountFstab(const std::string& mountPoint) {
+binder::Status VoldNativeService::mountFstab(const std::string& blkDevice,
+                                             const std::string& mountPoint) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    return translateBool(fscrypt_mount_metadata_encrypted(mountPoint, false));
+    return translateBool(fscrypt_mount_metadata_encrypted(blkDevice, mountPoint, false));
 }
 
-binder::Status VoldNativeService::encryptFstab(const std::string& mountPoint) {
+binder::Status VoldNativeService::encryptFstab(const std::string& blkDevice,
+                                               const std::string& mountPoint) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    return translateBool(fscrypt_mount_metadata_encrypted(mountPoint, true));
+    return translateBool(fscrypt_mount_metadata_encrypted(blkDevice, mountPoint, true));
 }
 
 binder::Status VoldNativeService::createUserKey(int32_t userId, int32_t userSerial, bool ephemeral) {
