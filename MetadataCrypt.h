@@ -19,6 +19,7 @@
 
 #include <string>
 
-bool fscrypt_mount_metadata_encrypted(const std::string& mount_point, bool needs_encrypt);
+bool fscrypt_mount_metadata_encrypted(const std::string& block_device,
+                                      const std::string& mount_point, bool needs_encrypt);
 
 #endif
