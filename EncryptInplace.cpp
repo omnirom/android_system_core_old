@@ -62,7 +62,8 @@ struct encryptGroupsData {
     off64_t one_pct, cur_pct, new_pct;
     off64_t blocks_already_done, tot_numblocks;
     off64_t used_blocks_already_done, tot_used_blocks;
-    char *real_blkdev, *crypto_blkdev;
+    const char* real_blkdev;
+    const char* crypto_blkdev;
     int count;
     off64_t offset;
     char* buffer;
@@ -244,8 +245,8 @@ errout:
     return rc;
 }
 
-static int cryptfs_enable_inplace_ext4(char* crypto_blkdev, char* real_blkdev, off64_t size,
-                                       off64_t* size_already_done, off64_t tot_size,
+static int cryptfs_enable_inplace_ext4(const char* crypto_blkdev, const char* real_blkdev,
+                                       off64_t size, off64_t* size_already_done, off64_t tot_size,
                                        off64_t previously_encrypted_upto,
                                        bool set_progress_properties) {
     u32 i;
@@ -383,8 +384,8 @@ static int encrypt_one_block_f2fs(u64 pos, void* data) {
     return 0;
 }
 
-static int cryptfs_enable_inplace_f2fs(char* crypto_blkdev, char* real_blkdev, off64_t size,
-                                       off64_t* size_already_done, off64_t tot_size,
+static int cryptfs_enable_inplace_f2fs(const char* crypto_blkdev, const char* real_blkdev,
+                                       off64_t size, off64_t* size_already_done, off64_t tot_size,
                                        off64_t previously_encrypted_upto,
                                        bool set_progress_properties) {
     struct encryptGroupsData data;
@@ -457,8 +458,8 @@ errout:
     return rc;
 }
 
-static int cryptfs_enable_inplace_full(char* crypto_blkdev, char* real_blkdev, off64_t size,
-                                       off64_t* size_already_done, off64_t tot_size,
+static int cryptfs_enable_inplace_full(const char* crypto_blkdev, const char* real_blkdev,
+                                       off64_t size, off64_t* size_already_done, off64_t tot_size,
                                        off64_t previously_encrypted_upto,
                                        bool set_progress_properties) {
     int realfd, cryptofd;
@@ -570,7 +571,7 @@ errout:
 }
 
 /* returns on of the ENABLE_INPLACE_* return codes */
-int cryptfs_enable_inplace(char* crypto_blkdev, char* real_blkdev, off64_t size,
+int cryptfs_enable_inplace(const char* crypto_blkdev, const char* real_blkdev, off64_t size,
                            off64_t* size_already_done, off64_t tot_size,
                            off64_t previously_encrypted_upto, bool set_progress_properties) {
     int rc_ext4, rc_f2fs, rc_full;
