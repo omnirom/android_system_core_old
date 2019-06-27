@@ -81,8 +81,8 @@ interface IVold {
     void mountDefaultEncrypted();
     void initUser0();
     boolean isConvertibleToFbe();
-    void mountFstab(@utf8InCpp String mountPoint);
-    void encryptFstab(@utf8InCpp String mountPoint);
+    void mountFstab(@utf8InCpp String blkDevice, @utf8InCpp String mountPoint);
+    void encryptFstab(@utf8InCpp String blkDevice, @utf8InCpp String mountPoint);
 
     void createUserKey(int userId, int userSerial, boolean ephemeral);
     void destroyUserKey(int userId);
