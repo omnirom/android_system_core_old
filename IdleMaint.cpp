@@ -29,8 +29,8 @@
 #include <android-base/strings.h>
 #include <android/hardware/health/storage/1.0/IStorage.h>
 #include <fs_mgr.h>
-#include <hardware_legacy/power.h>
 #include <private/android_filesystem_config.h>
+#include <wakelock/wakelock.h>
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -145,7 +145,7 @@ static void addFromFstab(std::list<std::string>* paths, PathTypes path_type) {
 }
 
 void Trim(const android::sp<android::os::IVoldTaskListener>& listener) {
-    acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
+    android::wakelock::WakeLock wl{kWakeLock};
 
     // Collect both fstab and vold volumes
     std::list<std::string> paths;
@@ -195,7 +195,6 @@ void Trim(const android::sp<android::os::IVoldTaskListener>& listener) {
         listener->onFinished(0, extras);
     }
 
-    release_wake_lock(kWakeLock);
 }
 
 static bool waitForGc(const std::list<std::string>& paths) {
@@ -370,7 +369,7 @@ int RunIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener) {
 
     LOG(DEBUG) << "idle maintenance started";
 
-    acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
+    android::wakelock::WakeLock wl{kWakeLock};
 
     std::list<std::string> paths;
     addFromFstab(&paths, PathTypes::kBlkDevice);
@@ -400,13 +399,11 @@ int RunIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener) {
 
     LOG(DEBUG) << "idle maintenance completed";
 
-    release_wake_lock(kWakeLock);
-
     return android::OK;
 }
 
 int AbortIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener) {
-    acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
+    android::wakelock::WakeLock wl{kWakeLock};
 
     std::unique_lock<std::mutex> lk(cv_m);
     if (idle_maint_stat != IdleMaintStats::kStopped) {
@@ -423,8 +420,6 @@ int AbortIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener) 
         android::os::PersistableBundle extras;
         listener->onFinished(0, extras);
     }
-
-    release_wake_lock(kWakeLock);
 
     LOG(DEBUG) << "idle maintenance stopped";
 
