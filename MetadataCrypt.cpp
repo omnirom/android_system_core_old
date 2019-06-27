@@ -249,7 +249,8 @@ static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
     return true;
 }
 
-bool fscrypt_mount_metadata_encrypted(const std::string& mount_point, bool needs_encrypt) {
+bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::string& mount_point,
+                                      bool needs_encrypt) {
     LOG(DEBUG) << "fscrypt_mount_metadata_encrypted: " << mount_point << " " << needs_encrypt;
     auto encrypted_state = android::base::GetProperty("ro.crypto.state", "");
     if (encrypted_state != "") {
@@ -268,13 +269,14 @@ bool fscrypt_mount_metadata_encrypted(const std::string& mount_point, bool needs
     if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
     std::string crypto_blkdev;
     if (!create_crypto_blk_dev(kDmNameUserdata, nr_sec, DEFAULT_KEY_TARGET_TYPE,
-                               default_key_params(data_rec->blk_device, key), &crypto_blkdev))
+                               default_key_params(blk_device, key), &crypto_blkdev))
         return false;
+
     // FIXME handle the corrupt case
     if (needs_encrypt) {
         LOG(INFO) << "Beginning inplace encryption, nr_sec: " << nr_sec;
         off64_t size_already_done = 0;
-        auto rc = cryptfs_enable_inplace(crypto_blkdev.data(), data_rec->blk_device.data(), nr_sec,
+        auto rc = cryptfs_enable_inplace(crypto_blkdev.data(), blk_device.data(), nr_sec,
                                          &size_already_done, nr_sec, 0, false);
         if (rc != 0) {
             LOG(ERROR) << "Inplace crypto failed with code: " << rc;
