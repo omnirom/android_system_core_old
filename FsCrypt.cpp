@@ -269,7 +269,7 @@ static bool lookup_key_ref(const std::map<userid_t, std::string>& key_map, useri
                            std::string* raw_ref) {
     auto refi = key_map.find(user_id);
     if (refi == key_map.end()) {
-        LOG(ERROR) << "Cannot find key for " << user_id;
+        LOG(DEBUG) << "Cannot find key for " << user_id;
         return false;
     }
     *raw_ref = refi->second;

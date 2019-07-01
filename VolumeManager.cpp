@@ -30,6 +30,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <array>
 
 #include <linux/kdev_t.h>
 
@@ -58,6 +59,7 @@
 #include "NetlinkManager.h"
 #include "Process.h"
 #include "Utils.h"
+#include "VoldNativeService.h"
 #include "VoldUtil.h"
 #include "VolumeManager.h"
 #include "cryptfs.h"
@@ -67,14 +69,27 @@
 #include "model/ObbVolume.h"
 #include "model/StubVolume.h"
 
+using android::OK;
+using android::base::GetBoolProperty;
 using android::base::StartsWith;
+using android::base::StringAppendF;
 using android::base::StringPrintf;
 using android::base::unique_fd;
+using android::vold::BindMount;
+using android::vold::CreateDir;
+using android::vold::DeleteDirContents;
+using android::vold::DeleteDirContentsAndDir;
+using android::vold::Symlink;
+using android::vold::Unlink;
+using android::vold::UnmountTree;
+using android::vold::VoldNativeService;
 
 static const char* kPathUserMount = "/mnt/user";
 static const char* kPathVirtualDisk = "/data/misc/vold/virtual_disk";
 
 static const char* kPropVirtualDisk = "persist.sys.virtual_disk";
+
+static const std::string kEmptyString("");
 
 /* 512MiB is large enough for testing purposes */
 static const unsigned int kSizeVirtualDisk = 536870912;
@@ -103,7 +118,7 @@ VolumeManager::~VolumeManager() {}
 
 int VolumeManager::updateVirtualDisk() {
     ATRACE_NAME("VolumeManager::updateVirtualDisk");
-    if (android::base::GetBoolProperty(kPropVirtualDisk, false)) {
+    if (GetBoolProperty(kPropVirtualDisk, false)) {
         if (access(kPathVirtualDisk, F_OK) != 0) {
             Loop::createImageFile(kPathVirtualDisk, kSizeVirtualDisk / 512);
         }
@@ -351,22 +366,14 @@ int VolumeManager::forgetPartition(const std::string& partGuid, const std::strin
 
 int VolumeManager::linkPrimary(userid_t userId) {
     std::string source(mPrimary->getPath());
-    if (mPrimary->getType() == android::vold::VolumeBase::Type::kEmulated) {
+    if (mPrimary->isEmulated()) {
         source = StringPrintf("%s/%d", source.c_str(), userId);
         fs_prepare_dir(source.c_str(), 0755, AID_ROOT, AID_ROOT);
     }
 
     std::string target(StringPrintf("/mnt/user/%d/primary", userId));
-    if (TEMP_FAILURE_RETRY(unlink(target.c_str()))) {
-        if (errno != ENOENT) {
-            PLOG(WARNING) << "Failed to unlink " << target;
-        }
-    }
     LOG(DEBUG) << "Linking " << source << " to " << target;
-    if (TEMP_FAILURE_RETRY(symlink(source.c_str(), target.c_str()))) {
-        PLOG(WARNING) << "Failed to link";
-        return -errno;
-    }
+    Symlink(source, target);
     return 0;
 }
 
@@ -381,6 +388,7 @@ int VolumeManager::onUserRemoved(userid_t userId) {
 }
 
 int VolumeManager::onUserStarted(userid_t userId) {
+    LOG(VERBOSE) << "onUserStarted: " << userId;
     // Note that sometimes the system will spin up processes from Zygote
     // before actually starting the user, so we're okay if Zygote
     // already created this directory.
@@ -395,6 +403,7 @@ int VolumeManager::onUserStarted(userid_t userId) {
 }
 
 int VolumeManager::onUserStopped(userid_t userId) {
+    LOG(VERBOSE) << "onUserStopped: " << userId;
     mStartedUsers.erase(userId);
     return 0;
 }
@@ -421,7 +430,30 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
     return 0;
 }
 
-int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
+int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
+    std::string mode;
+    switch (mountMode) {
+        case VoldNativeService::REMOUNT_MODE_NONE:
+            mode = "none";
+            break;
+        case VoldNativeService::REMOUNT_MODE_DEFAULT:
+            mode = "default";
+            break;
+        case VoldNativeService::REMOUNT_MODE_READ:
+            mode = "read";
+            break;
+        case VoldNativeService::REMOUNT_MODE_WRITE:
+        case VoldNativeService::REMOUNT_MODE_LEGACY:
+        case VoldNativeService::REMOUNT_MODE_INSTALLER:
+            mode = "write";
+            break;
+        case VoldNativeService::REMOUNT_MODE_FULL:
+            mode = "full";
+            break;
+        default:
+            PLOG(ERROR) << "Unknown mode " << std::to_string(mountMode);
+            return -1;
+    }
     LOG(DEBUG) << "Remounting " << uid << " as mode " << mode;
 
     DIR* dir;
@@ -522,6 +554,8 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
                 storageSource = "/mnt/runtime/read";
             } else if (mode == "write") {
                 storageSource = "/mnt/runtime/write";
+            } else if (mode == "full") {
+                storageSource = "/mnt/runtime/full";
             } else {
                 // Sane default of no storage visible
                 _exit(0);

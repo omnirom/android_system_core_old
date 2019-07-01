@@ -27,6 +27,8 @@
 #include <list>
 #include <string>
 
+static constexpr userid_t USER_UNKNOWN = ((userid_t)-1);
+
 namespace android {
 namespace vold {
 
@@ -97,11 +99,15 @@ class VolumeBase {
 
     std::shared_ptr<VolumeBase> findVolume(const std::string& id);
 
+    bool isEmulated() { return mType == Type::kEmulated; }
+
     status_t create();
     status_t destroy();
     status_t mount();
     status_t unmount();
     status_t format(const std::string& fsType);
+
+    std::ostream& operator<<(std::ostream& stream) const;
 
   protected:
     explicit VolumeBase(Type type);

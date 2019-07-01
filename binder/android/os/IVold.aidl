@@ -32,6 +32,9 @@ interface IVold {
     void onUserStarted(int userId);
     void onUserStopped(int userId);
 
+    void addAppIds(in @utf8InCpp String[] packageNames, in int[] appIds);
+    void addSandboxIds(in int[] appIds, in @utf8InCpp String[] sandboxIds);
+
     void onSecureKeyguardStateChanged(boolean isShowing);
 
     void partition(@utf8InCpp String diskId, int partitionType, int ratio);
@@ -96,6 +99,11 @@ interface IVold {
                             int storageFlags);
     void destroyUserStorage(@nullable @utf8InCpp String uuid, int userId, int storageFlags);
 
+    void prepareSandboxForApp(in @utf8InCpp String packageName, int appId,
+                              in @utf8InCpp String sandboxId, int userId);
+    void destroySandboxForApp(in @utf8InCpp String packageName,
+                              in @utf8InCpp String sandboxId, int userId);
+
     void startCheckpoint(int retry);
     boolean needsCheckpoint();
     boolean needsRollback();
@@ -146,6 +154,9 @@ interface IVold {
     const int REMOUNT_MODE_DEFAULT = 1;
     const int REMOUNT_MODE_READ = 2;
     const int REMOUNT_MODE_WRITE = 3;
+    const int REMOUNT_MODE_LEGACY = 4;
+    const int REMOUNT_MODE_INSTALLER = 5;
+    const int REMOUNT_MODE_FULL = 6;
 
     const int VOLUME_STATE_UNMOUNTED = 0;
     const int VOLUME_STATE_CHECKING = 1;

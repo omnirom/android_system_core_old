@@ -276,6 +276,16 @@ binder::Status VoldNativeService::onUserStopped(int32_t userId) {
     return translate(VolumeManager::Instance()->onUserStopped(userId));
 }
 
+binder::Status VoldNativeService::addAppIds(const std::vector<std::string>& packageNames,
+                                            const std::vector<int32_t>& appIds) {
+    return ok();
+}
+
+binder::Status VoldNativeService::addSandboxIds(const std::vector<int32_t>& appIds,
+                                                const std::vector<std::string>& sandboxIds) {
+    return ok();
+}
+
 binder::Status VoldNativeService::onSecureKeyguardStateChanged(bool isShowing) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
@@ -330,10 +340,16 @@ binder::Status VoldNativeService::mount(const std::string& volId, int32_t mountF
     vol->setMountUserId(mountUserId);
 
     int res = vol->mount();
-    if ((mountFlags & MOUNT_FLAG_PRIMARY) != 0) {
-        VolumeManager::Instance()->setPrimary(vol);
+    if (res != OK) {
+        return translate(res);
     }
-    return translate(res);
+    if ((mountFlags & MOUNT_FLAG_PRIMARY) != 0) {
+        res = VolumeManager::Instance()->setPrimary(vol);
+        if (res != OK) {
+            return translate(res);
+        }
+    }
+    return translate(OK);
 }
 
 binder::Status VoldNativeService::unmount(const std::string& volId) {
@@ -431,24 +447,7 @@ binder::Status VoldNativeService::remountUid(int32_t uid, int32_t remountMode) {
     ENFORCE_UID(AID_SYSTEM);
     ACQUIRE_LOCK;
 
-    std::string tmp;
-    switch (remountMode) {
-        case REMOUNT_MODE_NONE:
-            tmp = "none";
-            break;
-        case REMOUNT_MODE_DEFAULT:
-            tmp = "default";
-            break;
-        case REMOUNT_MODE_READ:
-            tmp = "read";
-            break;
-        case REMOUNT_MODE_WRITE:
-            tmp = "write";
-            break;
-        default:
-            return error("Unknown mode " + std::to_string(remountMode));
-    }
-    return translate(VolumeManager::Instance()->remountUid(uid, tmp));
+    return translate(VolumeManager::Instance()->remountUid(uid, remountMode));
 }
 
 binder::Status VoldNativeService::mkdirs(const std::string& path) {
@@ -805,6 +804,18 @@ binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::
 
     ACQUIRE_CRYPT_LOCK;
     return translateBool(fscrypt_destroy_user_storage(uuid_, userId, flags));
+}
+
+binder::Status VoldNativeService::prepareSandboxForApp(const std::string& packageName,
+                                                       int32_t appId, const std::string& sandboxId,
+                                                       int32_t userId) {
+    return ok();
+}
+
+binder::Status VoldNativeService::destroySandboxForApp(const std::string& packageName,
+                                                       const std::string& sandboxId,
+                                                       int32_t userId) {
+    return ok();
 }
 
 binder::Status VoldNativeService::startCheckpoint(int32_t retry) {

@@ -42,6 +42,11 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status onUserStarted(int32_t userId);
     binder::Status onUserStopped(int32_t userId);
 
+    binder::Status addAppIds(const std::vector<std::string>& packageNames,
+                             const std::vector<int32_t>& appIds);
+    binder::Status addSandboxIds(const std::vector<int32_t>& appIds,
+                                 const std::vector<std::string>& sandboxIds);
+
     binder::Status onSecureKeyguardStateChanged(bool isShowing);
 
     binder::Status partition(const std::string& diskId, int32_t partitionType, int32_t ratio);
@@ -118,8 +123,10 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status destroyUserStorage(const std::unique_ptr<std::string>& uuid, int32_t userId,
                                       int32_t flags);
 
-    binder::Status mountExternalStorageForApp(const std::string& packageName, int32_t appId,
-                                              const std::string& sandboxId, int32_t userId);
+    binder::Status prepareSandboxForApp(const std::string& packageName, int32_t appId,
+                                        const std::string& sandboxId, int32_t userId);
+    binder::Status destroySandboxForApp(const std::string& packageName,
+                                        const std::string& sandboxId, int32_t userId);
 
     binder::Status startCheckpoint(int32_t retry);
     binder::Status needsCheckpoint(bool* _aidl_return);

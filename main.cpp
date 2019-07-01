@@ -54,7 +54,7 @@ using android::fs_mgr::ReadDefaultFstab;
 
 int main(int argc, char** argv) {
     atrace_set_tracing_enabled(false);
-    setenv("ANDROID_LOG_TAGS", "*:d", 1);
+    setenv("ANDROID_LOG_TAGS", "*:d", 1);  // Do not submit with verbose logs enabled
     android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
 
     LOG(INFO) << "Vold 3.0 (the awakening) firing up";

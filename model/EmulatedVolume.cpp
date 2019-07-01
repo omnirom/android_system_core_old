@@ -16,9 +16,10 @@
 
 #include "EmulatedVolume.h"
 #include "Utils.h"
+#include "VolumeManager.h"
 
-#include <android-base/stringprintf.h>
 #include <android-base/logging.h>
+#include <android-base/stringprintf.h>
 #include <cutils/fs.h>
 #include <private/android_filesystem_config.h>
 #include <utils/Timers.h>
@@ -89,6 +90,7 @@ status_t EmulatedVolume::doMount() {
                 "-w",
                 "-G",
                 "-i",
+                "-o",
                 mRawPath.c_str(),
                 label.c_str(),
                 NULL)) {

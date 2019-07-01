@@ -35,7 +35,7 @@ namespace vold {
 VolumeBase::VolumeBase(Type type)
     : mType(type),
       mMountFlags(0),
-      mMountUserId(-1),
+      mMountUserId(USER_UNKNOWN),
       mCreated(false),
       mState(State::kUnmounted),
       mSilent(false) {}
@@ -219,11 +219,7 @@ status_t VolumeBase::mount() {
 
     setState(State::kChecking);
     status_t res = doMount();
-    if (res == OK) {
-        setState(State::kMounted);
-    } else {
-        setState(State::kUnmountable);
-    }
+    setState(res == OK ? State::kMounted : State::kUnmountable);
 
     return res;
 }
@@ -265,6 +261,11 @@ status_t VolumeBase::format(const std::string& fsType) {
 
 status_t VolumeBase::doFormat(const std::string& fsType) {
     return -ENOTSUP;
+}
+
+std::ostream& VolumeBase::operator<<(std::ostream& stream) const {
+    return stream << " VolumeBase{id=" << mId << ",mountFlags=" << mMountFlags
+                  << ",mountUserId=" << mMountUserId << "}";
 }
 
 }  // namespace vold
