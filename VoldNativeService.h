@@ -52,7 +52,8 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status partition(const std::string& diskId, int32_t partitionType, int32_t ratio);
     binder::Status forgetPartition(const std::string& partGuid, const std::string& fsUuid);
 
-    binder::Status mount(const std::string& volId, int32_t mountFlags, int32_t mountUserId);
+    binder::Status mount(const std::string& volId, int32_t mountFlags, int32_t mountUserId,
+                         android::base::unique_fd* _aidl_return);
     binder::Status unmount(const std::string& volId);
     binder::Status format(const std::string& volId, const std::string& fsType);
     binder::Status benchmark(const std::string& volId,

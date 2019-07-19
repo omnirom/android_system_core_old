@@ -31,6 +31,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <array>
+#include <thread>
 
 #include <linux/kdev_t.h>
 
@@ -99,6 +100,22 @@ static const unsigned int kMajorBlockExperimentalMin = 240;
 static const unsigned int kMajorBlockExperimentalMax = 254;
 
 VolumeManager* VolumeManager::sInstance = NULL;
+
+static void* symlinkPrimary(void* data) {
+    std::unique_ptr<std::pair<std::string, std::string>> linkInfo(
+        static_cast<std::pair<std::string, std::string>*>(data));
+    std::string* source = &linkInfo->first;
+    std::string* target = &linkInfo->second;
+
+    fs_prepare_dir(source->c_str(), 0755, AID_ROOT, AID_ROOT);
+    fs_prepare_dir(target->c_str(), 0755, AID_ROOT, AID_ROOT);
+    *target = *target + "/primary";
+
+    // Link source to target
+    LOG(DEBUG) << "Linking " << *source << " to " << *target;
+    Symlink(*source, *target);
+    return nullptr;
+}
 
 VolumeManager* VolumeManager::Instance() {
     if (!sInstance) sInstance = new VolumeManager();
@@ -365,6 +382,21 @@ int VolumeManager::forgetPartition(const std::string& partGuid, const std::strin
 }
 
 int VolumeManager::linkPrimary(userid_t userId) {
+    bool isFuse = GetBoolProperty(android::vold::kPropFuse, false);
+
+    if (isFuse) {
+        // Here we have to touch /mnt/user/userid>/<volumeid> which was already mounted as part of
+        // the boot sequence, requiring waiting till a fuse handler is available. If we do this work
+        // in foreground we could hang the caller, i.e. system server, which needs to start the fuse
+        // handler. So do it in the background.
+        std::string source(
+            StringPrintf("/mnt/user/%d/%s/%d", userId, mPrimary->getId().c_str(), userId));
+        std::string target(StringPrintf("/mnt/user/%d/self", userId));
+
+        auto symlinkInfo = new std::pair<std::string, std::string>(source, target);
+        std::thread(symlinkPrimary, symlinkInfo).detach();
+    }
+
     std::string source(mPrimary->getPath());
     if (mPrimary->isEmulated()) {
         source = StringPrintf("%s/%d", source.c_str(), userId);
@@ -431,6 +463,10 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
 }
 
 int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
+    if (GetBoolProperty(android::vold::kPropFuse, false)) {
+        // TODO(135341433): Implement fuse specific logic.
+        return 0;
+    }
     std::string mode;
     switch (mountMode) {
         case VoldNativeService::REMOUNT_MODE_NONE:

@@ -143,6 +143,16 @@ status_t VolumeBase::setInternalPath(const std::string& internalPath) {
     return OK;
 }
 
+status_t VolumeBase::setDeviceFd(int deviceFd) {
+    if ((mState != State::kChecking)) {
+        LOG(WARNING) << getId() << " device fd change requires state checking";
+        return -EBUSY;
+    }
+
+    mDeviceFd.reset(deviceFd);
+    return OK;
+}
+
 android::sp<android::os::IVoldListener> VolumeBase::getListener() const {
     if (mSilent) {
         return nullptr;

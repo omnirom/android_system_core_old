@@ -40,7 +40,7 @@ interface IVold {
     void partition(@utf8InCpp String diskId, int partitionType, int ratio);
     void forgetPartition(@utf8InCpp String partGuid, @utf8InCpp String fsUuid);
 
-    void mount(@utf8InCpp String volId, int mountFlags, int mountUserId);
+    FileDescriptor mount(@utf8InCpp String volId, int mountFlags, int mountUserId);
     void unmount(@utf8InCpp String volId);
     void format(@utf8InCpp String volId, @utf8InCpp String fsType);
     void benchmark(@utf8InCpp String volId, IVoldTaskListener listener);
