@@ -244,6 +244,11 @@ bool cp_needsRollback() {
 }
 
 bool cp_needsCheckpoint() {
+    // Make sure we only return true during boot. See b/138952436 for discussion
+    static bool called_once = false;
+    if (called_once) return isCheckpointing;
+    called_once = true;
+
     bool ret;
     std::string content;
     sp<IBootControl> module = IBootControl::getService();
@@ -317,6 +322,8 @@ static void cp_healthDaemon(std::string mnt_pnt, std::string blk_device, bool is
 }  // namespace
 
 Status cp_prepareCheckpoint() {
+    // Log to notify CTS - see b/137924328 for context
+    LOG(INFO) << "cp_prepareCheckpoint called";
     if (!isCheckpointing) {
         return Status::ok();
     }
