@@ -153,7 +153,7 @@ static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_s
 
 static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
                                   const std::string& real_blkdev, const KeyBuffer& key,
-                                  std::string* crypto_blkdev) {
+                                  std::string* crypto_blkdev, bool set_dun) {
     auto& dm = DeviceMapper::Instance();
 
     KeyBuffer hex_key_buffer;
@@ -164,7 +164,7 @@ static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
     std::string hex_key(hex_key_buffer.data(), hex_key_buffer.size());
 
     DmTable table;
-    table.Emplace<DmTargetDefaultKey>(0, nr_sec, "AES-256-XTS", hex_key, real_blkdev, 0);
+    table.Emplace<DmTargetDefaultKey>(0, nr_sec, "AES-256-XTS", hex_key, real_blkdev, 0, set_dun);
 
     for (int i = 0;; i++) {
         if (dm.CreateDevice(dm_name, table)) {
@@ -203,8 +203,14 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
     if (!read_key(*data_rec, needs_encrypt, &key)) return false;
     uint64_t nr_sec;
     if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
+    bool set_dun = android::base::GetBoolProperty("ro.crypto.set_dun", false);
+    if (!set_dun && data_rec->fs_mgr_flags.checkpoint_blk) {
+        LOG(ERROR) << "Block checkpoints and metadata encryption require setdun option!";
+        return false;
+    }
+
     std::string crypto_blkdev;
-    if (!create_crypto_blk_dev(kDmNameUserdata, nr_sec, blk_device, key, &crypto_blkdev))
+    if (!create_crypto_blk_dev(kDmNameUserdata, nr_sec, blk_device, key, &crypto_blkdev, set_dun))
         return false;
 
     // FIXME handle the corrupt case
