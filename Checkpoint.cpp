@@ -263,6 +263,11 @@ bool cp_needsRollback() {
 }
 
 bool cp_needsCheckpoint() {
+    // Make sure we only return true during boot. See b/138952436 for discussion
+    static bool called_once = false;
+    if (called_once) return isCheckpointing;
+    called_once = true;
+
     bool ret;
     std::string content;
     sp<IBootControl> module = IBootControl::getService();
