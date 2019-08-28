@@ -15,6 +15,8 @@
  */
 
 #include "PublicVolume.h"
+
+#include "AppFuseUtil.h"
 #include "Utils.h"
 #include "VolumeManager.h"
 #include "fs/Exfat.h"
@@ -167,6 +169,20 @@ status_t PublicVolume::doMount() {
 
     dev_t before = GetDevice(mFuseFull);
 
+    bool isFuse = base::GetBoolProperty(kPropFuse, false);
+
+    if (isFuse) {
+        LOG(INFO) << "Mounting public fuse volume";
+        int fd = -1;
+        int result = MountUserFuse(getMountUserId(), stableName, &fd);
+        if (result != 0) {
+            LOG(ERROR) << "Failed to mount public fuse volume";
+            return -result;
+        }
+        setDeviceFd(fd);
+        return OK;
+    }
+
     if (!(mFusePid = fork())) {
         if (getMountFlags() & MountFlags::kPrimary) {
             // clang-format off
@@ -228,6 +244,30 @@ status_t PublicVolume::doUnmount() {
     // ENOTCONN until the unmount completes. This is an exotic and unusual
     // error code and might cause broken behaviour in applications.
     KillProcessesUsingPath(getPath());
+
+    bool isFuse = base::GetBoolProperty(kPropFuse, false);
+    if (isFuse) {
+        // Use UUID as stable name, if available
+        std::string stableName = getId();
+        if (!mFsUuid.empty()) {
+            stableName = mFsUuid;
+        }
+
+        std::string path(StringPrintf("/mnt/user/%d/%s", getMountUserId(), stableName.c_str()));
+        status_t result = ForceUnmount(path);
+        if (result != OK) {
+            // TODO(135341433): MNT_DETACH is needed for fuse because umount2 can fail with EBUSY.
+            // Figure out why we get EBUSY and remove this special casing if possible.
+            if (!umount2(path.c_str(), UMOUNT_NOFOLLOW | MNT_DETACH) || errno == EINVAL ||
+                errno == ENOENT) {
+                PLOG(INFO) << "ForceUnmount failed on public fuse volume";
+            }
+        }
+
+        rmdir(path.c_str());
+        setDeviceFd(-1);
+        return OK;
+    }
 
     ForceUnmount(kAsecPath);
 

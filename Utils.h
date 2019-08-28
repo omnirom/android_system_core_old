@@ -33,6 +33,8 @@ struct DIR;
 namespace android {
 namespace vold {
 
+static const char* kPropFuse = "persist.sys.fuse";
+
 /* SELinux contexts used depending on the block device type */
 extern security_context_t sBlkidContext;
 extern security_context_t sBlkidUntrustedContext;
@@ -147,6 +149,9 @@ status_t WaitForFile(const char* filename, std::chrono::nanoseconds timeout);
 bool FsyncDirectory(const std::string& dirname);
 
 bool writeStringToFile(const std::string& payload, const std::string& filename);
+
+int MountUserFuse(userid_t user_id, const std::string& relative_path, int* device_fd);
+
 }  // namespace vold
 }  // namespace android
 

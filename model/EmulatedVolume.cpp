@@ -15,10 +15,13 @@
  */
 
 #include "EmulatedVolume.h"
+
+#include "AppFuseUtil.h"
 #include "Utils.h"
 #include "VolumeManager.h"
 
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <cutils/fs.h>
 #include <private/android_filesystem_config.h>
@@ -81,7 +84,22 @@ status_t EmulatedVolume::doMount() {
 
     dev_t before = GetDevice(mFuseFull);
 
+    bool isFuse = base::GetBoolProperty(kPropFuse, false);
+
+    if (isFuse) {
+        LOG(INFO) << "Mounting emulated fuse volume";
+        int fd = -1;
+        int result = MountUserFuse(getMountUserId(), label, &fd);
+        if (result != 0) {
+            PLOG(ERROR) << "Failed to mount emulated fuse volume";
+            return -result;
+        }
+        setDeviceFd(fd);
+        return OK;
+    }
+
     if (!(mFusePid = fork())) {
+        LOG(INFO) << "Executing sdcardfs";
         // clang-format off
         if (execl(kFusePath, kFusePath,
                 "-u", "1023", // AID_MEDIA_RW
@@ -131,6 +149,31 @@ status_t EmulatedVolume::doUnmount() {
     // ENOTCONN until the unmount completes. This is an exotic and unusual
     // error code and might cause broken behaviour in applications.
     KillProcessesUsingPath(getPath());
+
+    bool isFuse = base::GetBoolProperty(kPropFuse, false);
+    if (isFuse) {
+        // We could have migrated storage to an adopted private volume, so always
+        // call primary storage "emulated" to avoid media rescans.
+        std::string label = mLabel;
+        if (getMountFlags() & MountFlags::kPrimary) {
+            label = "emulated";
+        }
+        std::string path(StringPrintf("/mnt/user/%d/%s", getMountUserId(), label.c_str()));
+        status_t result = ForceUnmount(path);
+        if (result != OK) {
+            // TODO(135341433): MNT_DETACH is needed for fuse because umount2 can fail with EBUSY.
+            // Figure out why we get EBUSY and remove this special casing if possible.
+            if (!umount2(path.c_str(), UMOUNT_NOFOLLOW | MNT_DETACH) || errno == EINVAL ||
+                errno == ENOENT) {
+                PLOG(INFO) << "ForceUnmount failed on emulated fuse volume";
+            }
+        }
+
+        rmdir(path.c_str());
+        setDeviceFd(-1);
+        return OK;
+    }
+
     ForceUnmount(mFuseDefault);
     ForceUnmount(mFuseRead);
     ForceUnmount(mFuseWrite);
