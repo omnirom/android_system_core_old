@@ -985,7 +985,8 @@ bool writeStringToFile(const std::string& payload, const std::string& filename) 
     return true;
 }
 
-int MountUserFuse(userid_t user_id, const std::string& relative_path, int* device_fd) {
+int MountUserFuse(userid_t user_id, const std::string& relative_path,
+                  android::base::unique_fd* fuse_fd) {
     std::string path(StringPrintf("/mnt/user/%d/%s", user_id, relative_path.c_str()));
 
     // Force remove the existing mount before we attempt to prepare the
@@ -1004,9 +1005,9 @@ int MountUserFuse(userid_t user_id, const std::string& relative_path, int* devic
         return -1;
     }
 
-    // Open device fd.
-    *device_fd = open("/dev/fuse", O_RDWR | O_CLOEXEC);
-    if (*device_fd == -1) {
+    // Open fuse fd.
+    fuse_fd->reset(open("/dev/fuse", O_RDWR | O_CLOEXEC));
+    if (fuse_fd->get() == -1) {
         PLOG(ERROR) << "Failed to open /dev/fuse";
         return -1;
     }
@@ -1018,7 +1019,7 @@ int MountUserFuse(userid_t user_id, const std::string& relative_path, int* devic
         "rootmode=40000,"
         "allow_other,"
         "user_id=0,group_id=0,",
-        *device_fd);
+        fuse_fd->get());
 
     const int result_int =
         TEMP_FAILURE_RETRY(mount("/dev/fuse", path.c_str(), "fuse",

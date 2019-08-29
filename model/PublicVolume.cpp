@@ -173,13 +173,13 @@ status_t PublicVolume::doMount() {
 
     if (isFuse) {
         LOG(INFO) << "Mounting public fuse volume";
-        int fd = -1;
+        android::base::unique_fd fd;
         int result = MountUserFuse(getMountUserId(), stableName, &fd);
         if (result != 0) {
             LOG(ERROR) << "Failed to mount public fuse volume";
             return -result;
         }
-        setDeviceFd(fd);
+        setFuseFd(std::move(fd));
         return OK;
     }
 
@@ -265,7 +265,7 @@ status_t PublicVolume::doUnmount() {
         }
 
         rmdir(path.c_str());
-        setDeviceFd(-1);
+        setFuseFd(android::base::unique_fd());
         return OK;
     }
 

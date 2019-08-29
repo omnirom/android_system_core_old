@@ -345,7 +345,7 @@ binder::Status VoldNativeService::mount(const std::string& volId, int32_t mountF
         return translate(res);
     }
 
-    _aidl_return->reset(vol->getDeviceFd());
+    _aidl_return->reset(dup(vol->getFuseFd().get()));
     if (_aidl_return->get() == -1) {
         // Let's not return invalid fd since binder will not allow null fds. Instead give it a
         // default value.

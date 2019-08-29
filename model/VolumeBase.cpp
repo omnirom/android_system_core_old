@@ -143,13 +143,13 @@ status_t VolumeBase::setInternalPath(const std::string& internalPath) {
     return OK;
 }
 
-status_t VolumeBase::setDeviceFd(int deviceFd) {
-    if ((mState != State::kChecking)) {
-        LOG(WARNING) << getId() << " device fd change requires state checking";
+status_t VolumeBase::setFuseFd(android::base::unique_fd fuseFd) {
+    if ((mState != State::kChecking) && (mState != State::kEjecting)) {
+        LOG(WARNING) << getId() << " fuse fd change requires state checking or ejecting";
         return -EBUSY;
     }
 
-    mDeviceFd.reset(deviceFd);
+    mFuseFd.reset(std::move(fuseFd.get()));
     return OK;
 }
 

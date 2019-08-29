@@ -20,6 +20,7 @@
 #include "KeyBuffer.h"
 
 #include <android-base/macros.h>
+#include <android-base/unique_fd.h>
 #include <cutils/multiuser.h>
 #include <selinux/selinux.h>
 #include <utils/Errors.h>
@@ -150,7 +151,8 @@ bool FsyncDirectory(const std::string& dirname);
 
 bool writeStringToFile(const std::string& payload, const std::string& filename);
 
-int MountUserFuse(userid_t user_id, const std::string& relative_path, int* device_fd);
+int MountUserFuse(userid_t user_id, const std::string& relative_path,
+                  android::base::unique_fd* fuse_fd);
 
 }  // namespace vold
 }  // namespace android

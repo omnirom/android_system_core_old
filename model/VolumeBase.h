@@ -87,7 +87,7 @@ class VolumeBase {
     State getState() const { return mState; }
     const std::string& getPath() const { return mPath; }
     const std::string& getInternalPath() const { return mInternalPath; }
-    int getDeviceFd() const { return dup(mDeviceFd.get()); }
+    const android::base::unique_fd& getFuseFd() const { return mFuseFd; }
 
     status_t setDiskId(const std::string& diskId);
     status_t setPartGuid(const std::string& partGuid);
@@ -122,7 +122,7 @@ class VolumeBase {
     status_t setId(const std::string& id);
     status_t setPath(const std::string& path);
     status_t setInternalPath(const std::string& internalPath);
-    status_t setDeviceFd(int deviceFd);
+    status_t setFuseFd(android::base::unique_fd fuseFd);
 
     android::sp<android::os::IVoldListener> getListener() const;
 
@@ -150,7 +150,7 @@ class VolumeBase {
     /* Flag indicating that volume should emit no events */
     bool mSilent;
     /* The filedescriptor for the fuse device, if the volume uses fuse, or -1 otherwise */
-    android::base::unique_fd mDeviceFd;
+    android::base::unique_fd mFuseFd;
 
     /* Volumes stacked on top of this volume */
     std::list<std::shared_ptr<VolumeBase>> mVolumes;

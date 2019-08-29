@@ -88,13 +88,13 @@ status_t EmulatedVolume::doMount() {
 
     if (isFuse) {
         LOG(INFO) << "Mounting emulated fuse volume";
-        int fd = -1;
+        android::base::unique_fd fd;
         int result = MountUserFuse(getMountUserId(), label, &fd);
         if (result != 0) {
             PLOG(ERROR) << "Failed to mount emulated fuse volume";
             return -result;
         }
-        setDeviceFd(fd);
+        setFuseFd(std::move(fd));
         return OK;
     }
 
@@ -170,7 +170,7 @@ status_t EmulatedVolume::doUnmount() {
         }
 
         rmdir(path.c_str());
-        setDeviceFd(-1);
+        setFuseFd(android::base::unique_fd());
         return OK;
     }
 
