@@ -149,7 +149,7 @@ status_t VolumeBase::setFuseFd(android::base::unique_fd fuseFd) {
         return -EBUSY;
     }
 
-    mFuseFd.reset(std::move(fuseFd.get()));
+    mFuseFd = std::move(fuseFd);
     return OK;
 }
 

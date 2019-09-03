@@ -122,6 +122,7 @@ class VolumeBase {
     status_t setId(const std::string& id);
     status_t setPath(const std::string& path);
     status_t setInternalPath(const std::string& internalPath);
+    // Takes ownership of the fd passed in.
     status_t setFuseFd(android::base::unique_fd fuseFd);
 
     android::sp<android::os::IVoldListener> getListener() const;
