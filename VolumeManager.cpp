@@ -395,6 +395,7 @@ int VolumeManager::linkPrimary(userid_t userId) {
 
         auto symlinkInfo = new std::pair<std::string, std::string>(source, target);
         std::thread(symlinkPrimary, symlinkInfo).detach();
+        return 0;
     }
 
     std::string source(mPrimary->getPath());
