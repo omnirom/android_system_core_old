@@ -36,6 +36,7 @@
 #include <mntent.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
@@ -194,8 +195,50 @@ status_t KillProcessesUsingPath(const std::string& path) {
 }
 
 status_t BindMount(const std::string& source, const std::string& target) {
-    if (::mount(source.c_str(), target.c_str(), "", MS_BIND, NULL)) {
+    if (UnmountTree(target) < 0) {
+        return -errno;
+    }
+    if (TEMP_FAILURE_RETRY(mount(source.c_str(), target.c_str(), nullptr, MS_BIND, nullptr)) < 0) {
         PLOG(ERROR) << "Failed to bind mount " << source << " to " << target;
+        return -errno;
+    }
+    return OK;
+}
+
+status_t Symlink(const std::string& target, const std::string& linkpath) {
+    if (Unlink(linkpath) < 0) {
+        return -errno;
+    }
+    if (TEMP_FAILURE_RETRY(symlink(target.c_str(), linkpath.c_str())) < 0) {
+        PLOG(ERROR) << "Failed to create symlink " << linkpath << " to " << target;
+        return -errno;
+    }
+    return OK;
+}
+
+status_t Unlink(const std::string& linkpath) {
+    if (TEMP_FAILURE_RETRY(unlink(linkpath.c_str())) < 0 && errno != EINVAL && errno != ENOENT) {
+        PLOG(ERROR) << "Failed to unlink " << linkpath;
+        return -errno;
+    }
+    return OK;
+}
+
+status_t CreateDir(const std::string& dir, mode_t mode) {
+    struct stat sb;
+    if (TEMP_FAILURE_RETRY(stat(dir.c_str(), &sb)) == 0) {
+        if (S_ISDIR(sb.st_mode)) {
+            return OK;
+        } else if (TEMP_FAILURE_RETRY(unlink(dir.c_str())) == -1) {
+            PLOG(ERROR) << "Failed to unlink " << dir;
+            return -errno;
+        }
+    } else if (errno != ENOENT) {
+        PLOG(ERROR) << "Failed to stat " << dir;
+        return -errno;
+    }
+    if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), mode)) == -1 && errno != EEXIST) {
+        PLOG(ERROR) << "Failed to mkdir " << dir;
         return -errno;
     }
     return OK;
@@ -801,11 +844,85 @@ status_t UnmountTreeWithPrefix(const std::string& prefix) {
 }
 
 status_t UnmountTree(const std::string& mountPoint) {
-    if (umount2(mountPoint.c_str(), MNT_DETACH)) {
+    if (TEMP_FAILURE_RETRY(umount2(mountPoint.c_str(), MNT_DETACH)) < 0 && errno != EINVAL &&
+        errno != ENOENT) {
         PLOG(ERROR) << "Failed to unmount " << mountPoint;
         return -errno;
     }
     return OK;
+}
+
+static status_t delete_dir_contents(DIR* dir) {
+    // Shamelessly borrowed from android::installd
+    int dfd = dirfd(dir);
+    if (dfd < 0) {
+        return -errno;
+    }
+
+    status_t result = OK;
+    struct dirent* de;
+    while ((de = readdir(dir))) {
+        const char* name = de->d_name;
+        if (de->d_type == DT_DIR) {
+            /* always skip "." and ".." */
+            if (name[0] == '.') {
+                if (name[1] == 0) continue;
+                if ((name[1] == '.') && (name[2] == 0)) continue;
+            }
+
+            android::base::unique_fd subfd(
+                openat(dfd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+            if (subfd.get() == -1) {
+                PLOG(ERROR) << "Couldn't openat " << name;
+                result = -errno;
+                continue;
+            }
+            std::unique_ptr<DIR, decltype(&closedir)> subdirp(
+                android::base::Fdopendir(std::move(subfd)), closedir);
+            if (!subdirp) {
+                PLOG(ERROR) << "Couldn't fdopendir " << name;
+                result = -errno;
+                continue;
+            }
+            result = delete_dir_contents(subdirp.get());
+            if (unlinkat(dfd, name, AT_REMOVEDIR) < 0) {
+                PLOG(ERROR) << "Couldn't unlinkat " << name;
+                result = -errno;
+            }
+        } else {
+            if (unlinkat(dfd, name, 0) < 0) {
+                PLOG(ERROR) << "Couldn't unlinkat " << name;
+                result = -errno;
+            }
+        }
+    }
+    return result;
+}
+
+status_t DeleteDirContentsAndDir(const std::string& pathname) {
+    status_t res = DeleteDirContents(pathname);
+    if (res < 0) {
+        return res;
+    }
+    if (TEMP_FAILURE_RETRY(rmdir(pathname.c_str())) < 0 && errno != ENOENT) {
+        PLOG(ERROR) << "rmdir failed on " << pathname;
+        return -errno;
+    }
+    LOG(VERBOSE) << "Success: rmdir on " << pathname;
+    return OK;
+}
+
+status_t DeleteDirContents(const std::string& pathname) {
+    // Shamelessly borrowed from android::installd
+    std::unique_ptr<DIR, decltype(&closedir)> dirp(opendir(pathname.c_str()), closedir);
+    if (!dirp) {
+        if (errno == ENOENT) {
+            return OK;
+        }
+        PLOG(ERROR) << "Failed to opendir " << pathname;
+        return -errno;
+    }
+    return delete_dir_contents(dirp.get());
 }
 
 // TODO(118708649): fix duplication with init/util.h
