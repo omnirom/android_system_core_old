@@ -49,8 +49,8 @@ using android::fs_mgr::Fstab;
 using android::fs_mgr::ReadDefaultFstab;
 using android::hardware::Return;
 using android::hardware::Void;
-using android::hardware::health::storage::V1_0::IGarbageCollectCallback;
 using android::hardware::health::storage::V1_0::IStorage;
+using android::hardware::health::storage::V1_0::IGarbageCollectCallback;
 using android::hardware::health::storage::V1_0::Result;
 
 namespace android {

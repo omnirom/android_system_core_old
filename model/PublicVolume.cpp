@@ -21,6 +21,7 @@
 #include "fs/Vfat.h"
 
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <cutils/fs.h>
 #include <private/android_filesystem_config.h>
@@ -34,6 +35,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+using android::base::GetBoolProperty;
 using android::base::StringPrintf;
 
 namespace android {

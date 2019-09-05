@@ -49,9 +49,6 @@ static android::status_t GetMountPath(uid_t uid, const std::string& name, std::s
 }
 
 static android::status_t Mount(int device_fd, const std::string& path) {
-    // Remove existing mount.
-    android::vold::ForceUnmount(path);
-
     const auto opts = StringPrintf(
         "fd=%i,"
         "rootmode=40000,"
@@ -114,6 +111,11 @@ int MountAppFuse(uid_t uid, int mountId, android::base::unique_fd* device_fd) {
         LOG(ERROR) << "Invalid mount point name";
         return -1;
     }
+
+    // Forcibly remove the existing mount before we attempt to prepare the
+    // directory. If we have a dangling mount, then PrepareDir may fail if the
+    // indirection to FUSE doesn't work.
+    android::vold::ForceUnmount(path);
 
     // Create directories.
     const android::status_t result = android::vold::PrepareDir(path, 0700, 0, 0);

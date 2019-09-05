@@ -95,7 +95,7 @@ class VolumeManager {
 
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
 
-    int remountUid(uid_t uid, const std::string& mode);
+    int remountUid(uid_t uid, int32_t remountMode);
 
     /* Reset all internal state, typically during framework boot */
     int reset();
