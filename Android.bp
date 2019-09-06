@@ -56,7 +56,6 @@ cc_defaults {
         "libhardware",
         "libhardware_legacy",
         "libhidlbase",
-        "libhwbinder",
         "libkeymaster4support",
         "libkeyutils",
         "liblog",
@@ -191,7 +190,6 @@ cc_binary {
 
     shared_libs: [
         "android.hardware.health.storage@1.0",
-        "libhidltransport",
     ],
 }
 
@@ -229,7 +227,6 @@ cc_binary {
         "libhardware",
         "libhardware_legacy",
         "libhidlbase",
-        "libhwbinder",
         "libkeymaster4support",
         "libutils",
     ],
