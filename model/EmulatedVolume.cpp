@@ -89,13 +89,18 @@ status_t EmulatedVolume::doMount() {
     if (isFuse) {
         LOG(INFO) << "Mounting emulated fuse volume";
         android::base::unique_fd fd;
-        int result = MountUserFuse(getMountUserId(), label, &fd);
+        int user_id = getMountUserId();
+        int result = MountUserFuse(user_id, label, &fd);
+
         if (result != 0) {
             PLOG(ERROR) << "Failed to mount emulated fuse volume";
             return -result;
         }
         setFuseFd(std::move(fd));
-        return OK;
+
+        std::string pass_through_path(StringPrintf("/mnt/pass_through/%d/%s",
+                                                   user_id, label.c_str()));
+        return BindMount(getInternalPath(), pass_through_path);
     }
 
     if (!(mFusePid = fork())) {

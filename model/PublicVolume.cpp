@@ -174,13 +174,18 @@ status_t PublicVolume::doMount() {
     if (isFuse) {
         LOG(INFO) << "Mounting public fuse volume";
         android::base::unique_fd fd;
-        int result = MountUserFuse(getMountUserId(), stableName, &fd);
+        int user_id = getMountUserId();
+        int result = MountUserFuse(user_id, stableName, &fd);
+
         if (result != 0) {
             LOG(ERROR) << "Failed to mount public fuse volume";
             return -result;
         }
         setFuseFd(std::move(fd));
-        return OK;
+
+        std::string pass_through_path(StringPrintf("/mnt/pass_through/%d/%s",
+                                                 user_id, stableName.c_str()));
+        return BindMount(getInternalPath(), pass_through_path);
     }
 
     if (!(mFusePid = fork())) {

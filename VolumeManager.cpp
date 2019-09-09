@@ -487,6 +487,9 @@ int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
         case VoldNativeService::REMOUNT_MODE_FULL:
             mode = "full";
             break;
+        case VoldNativeService::REMOUNT_MODE_PASS_THROUGH:
+            mode = "pass_through";
+            break;
         default:
             PLOG(ERROR) << "Unknown mode " << std::to_string(mountMode);
             return -1;
