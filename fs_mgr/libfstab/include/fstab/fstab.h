@@ -85,6 +85,7 @@ struct FstabEntry {
         bool ext_meta_csum : 1;
         bool fs_compress : 1;
         bool overlayfs_remove_missing_lowerdir : 1;
+        bool wrapped_key : 1;
     } fs_mgr_flags = {};
 
     bool is_encryptable() const { return fs_mgr_flags.crypt; }
