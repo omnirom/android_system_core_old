@@ -18,7 +18,7 @@
 
 #include <cutils/multiuser.h>
 
-bool fscrypt_initialize_global_de();
+bool fscrypt_initialize_systemwide_keys();
 
 bool fscrypt_init_user0();
 bool fscrypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral);
