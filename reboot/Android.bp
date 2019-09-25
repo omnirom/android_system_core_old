@@ -2,6 +2,7 @@
 
 cc_binary {
     name: "reboot",
+    recovery_available: true,
     srcs: ["reboot.c"],
     shared_libs: ["libcutils"],
     cflags: ["-Werror"],
