@@ -84,7 +84,7 @@ status_t EmulatedVolume::doMount() {
 
     dev_t before = GetDevice(mFuseFull);
 
-    bool isFuse = base::GetBoolProperty(kPropFuse, false);
+    bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
 
     if (isFuse) {
         LOG(INFO) << "Mounting emulated fuse volume";
@@ -150,7 +150,7 @@ status_t EmulatedVolume::doUnmount() {
     // error code and might cause broken behaviour in applications.
     KillProcessesUsingPath(getPath());
 
-    bool isFuse = base::GetBoolProperty(kPropFuse, false);
+    bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
     if (isFuse) {
         // We could have migrated storage to an adopted private volume, so always
         // call primary storage "emulated" to avoid media rescans.
