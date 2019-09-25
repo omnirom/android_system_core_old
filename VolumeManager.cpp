@@ -31,7 +31,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <array>
-#include <thread>
 
 #include <linux/kdev_t.h>
 
@@ -68,6 +67,7 @@
 #include "fs/Vfat.h"
 #include "model/EmulatedVolume.h"
 #include "model/ObbVolume.h"
+#include "model/PrivateVolume.h"
 #include "model/StubVolume.h"
 
 using android::OK;
@@ -80,10 +80,12 @@ using android::vold::BindMount;
 using android::vold::CreateDir;
 using android::vold::DeleteDirContents;
 using android::vold::DeleteDirContentsAndDir;
+using android::vold::PrivateVolume;
 using android::vold::Symlink;
 using android::vold::Unlink;
 using android::vold::UnmountTree;
 using android::vold::VoldNativeService;
+using android::vold::VolumeBase;
 
 static const char* kPathUserMount = "/mnt/user";
 static const char* kPathVirtualDisk = "/data/misc/vold/virtual_disk";
@@ -100,22 +102,6 @@ static const unsigned int kMajorBlockExperimentalMin = 240;
 static const unsigned int kMajorBlockExperimentalMax = 254;
 
 VolumeManager* VolumeManager::sInstance = NULL;
-
-static void* symlinkPrimary(void* data) {
-    std::unique_ptr<std::pair<std::string, std::string>> linkInfo(
-        static_cast<std::pair<std::string, std::string>*>(data));
-    std::string* source = &linkInfo->first;
-    std::string* target = &linkInfo->second;
-
-    fs_prepare_dir(source->c_str(), 0755, AID_ROOT, AID_ROOT);
-    fs_prepare_dir(target->c_str(), 0755, AID_ROOT, AID_ROOT);
-    *target = *target + "/primary";
-
-    // Link source to target
-    LOG(DEBUG) << "Linking " << *source << " to " << *target;
-    Symlink(*source, *target);
-    return nullptr;
-}
 
 VolumeManager* VolumeManager::Instance() {
     if (!sInstance) sInstance = new VolumeManager();
@@ -191,10 +177,13 @@ int VolumeManager::start() {
 
     // Assume that we always have an emulated volume on internal
     // storage; the framework will decide if it should be mounted.
-    CHECK(mInternalEmulated == nullptr);
-    mInternalEmulated = std::shared_ptr<android::vold::VolumeBase>(
-        new android::vold::EmulatedVolume("/data/media"));
-    mInternalEmulated->create();
+    CHECK(mInternalEmulatedVolumes.empty());
+
+    auto vol = std::shared_ptr<android::vold::VolumeBase>(
+            new android::vold::EmulatedVolume("/data/media", 0));
+    vol->setMountUserId(0);
+    vol->create();
+    mInternalEmulatedVolumes.push_back(vol);
 
     // Consider creating a virtual disk
     updateVirtualDisk();
@@ -203,9 +192,12 @@ int VolumeManager::start() {
 }
 
 int VolumeManager::stop() {
-    CHECK(mInternalEmulated != nullptr);
-    mInternalEmulated->destroy();
-    mInternalEmulated = nullptr;
+    CHECK(!mInternalEmulatedVolumes.empty());
+    for (const auto& vol : mInternalEmulatedVolumes) {
+        vol->destroy();
+    }
+    mInternalEmulatedVolumes.clear();
+
     return 0;
 }
 
@@ -327,11 +319,10 @@ std::shared_ptr<android::vold::Disk> VolumeManager::findDisk(const std::string& 
 }
 
 std::shared_ptr<android::vold::VolumeBase> VolumeManager::findVolume(const std::string& id) {
-    // Vold could receive "mount" after "shutdown" command in the extreme case.
-    // If this happens, mInternalEmulated will equal nullptr and
-    // we need to deal with it in order to avoid null pointer crash.
-    if (mInternalEmulated != nullptr && mInternalEmulated->getId() == id) {
-        return mInternalEmulated;
+    for (const auto& vol : mInternalEmulatedVolumes) {
+        if (vol->getId() == id) {
+            return vol;
+        }
     }
     for (const auto& disk : mDisks) {
         auto vol = disk->findVolume(id);
@@ -382,61 +373,129 @@ int VolumeManager::forgetPartition(const std::string& partGuid, const std::strin
 }
 
 int VolumeManager::linkPrimary(userid_t userId) {
-    bool isFuse = GetBoolProperty(android::vold::kPropFuseSnapshot, false);
+    if (!GetBoolProperty(android::vold::kPropFuseSnapshot, false)) {
+        std::string source(mPrimary->getPath());
+        if (mPrimary->isEmulated()) {
+            source = StringPrintf("%s/%d", source.c_str(), userId);
+            fs_prepare_dir(source.c_str(), 0755, AID_ROOT, AID_ROOT);
+        }
 
-    if (isFuse) {
-        // Here we have to touch /mnt/user/userid>/<volumeid> which was already mounted as part of
-        // the boot sequence, requiring waiting till a fuse handler is available. If we do this work
-        // in foreground we could hang the caller, i.e. system server, which needs to start the fuse
-        // handler. So do it in the background.
-        std::string source(
-            StringPrintf("/mnt/user/%d/%s/%d", userId, mPrimary->getId().c_str(), userId));
-        std::string target(StringPrintf("/mnt/user/%d/self", userId));
-
-        auto symlinkInfo = new std::pair<std::string, std::string>(source, target);
-        std::thread(symlinkPrimary, symlinkInfo).detach();
-        return 0;
+        std::string target(StringPrintf("/mnt/user/%d/primary", userId));
+        LOG(DEBUG) << "Linking " << source << " to " << target;
+        Symlink(source, target);
     }
-
-    std::string source(mPrimary->getPath());
-    if (mPrimary->isEmulated()) {
-        source = StringPrintf("%s/%d", source.c_str(), userId);
-        fs_prepare_dir(source.c_str(), 0755, AID_ROOT, AID_ROOT);
-    }
-
-    std::string target(StringPrintf("/mnt/user/%d/primary", userId));
-    LOG(DEBUG) << "Linking " << source << " to " << target;
-    Symlink(source, target);
     return 0;
 }
 
+void VolumeManager::destroyEmulatedVolumesForUser(userid_t userId) {
+    // Destroy and remove all unstacked EmulatedVolumes for the user
+    auto i = mInternalEmulatedVolumes.begin();
+    while (i != mInternalEmulatedVolumes.end()) {
+        auto vol = *i;
+        if (vol->getMountUserId() == userId) {
+            vol->destroy();
+            i = mInternalEmulatedVolumes.erase(i);
+        } else {
+            i++;
+        }
+    }
+
+    // Destroy and remove all stacked EmulatedVolumes for the user on each mounted private volume
+    std::list<std::string> private_vols;
+    listVolumes(VolumeBase::Type::kPrivate, private_vols);
+    for (const std::string& id : private_vols) {
+        PrivateVolume* pvol = static_cast<PrivateVolume*>(findVolume(id).get());
+        std::list<std::shared_ptr<VolumeBase>> vols_to_remove;
+        if (pvol->getState() == VolumeBase::State::kMounted) {
+            for (const auto& vol : pvol->getVolumes()) {
+                if (vol->getMountUserId() == userId) {
+                    vols_to_remove.push_back(vol);
+                }
+            }
+            for (const auto& vol : vols_to_remove) {
+                vol->destroy();
+                pvol->removeVolume(vol);
+            }
+        }  // else EmulatedVolumes will be destroyed on VolumeBase#unmount
+    }
+}
+
+void VolumeManager::createEmulatedVolumesForUser(userid_t userId) {
+    // Create unstacked EmulatedVolumes for the user
+    auto vol = std::shared_ptr<android::vold::VolumeBase>(
+            new android::vold::EmulatedVolume("/data/media", userId));
+    vol->setMountUserId(userId);
+    mInternalEmulatedVolumes.push_back(vol);
+    vol->create();
+
+    // Create stacked EmulatedVolumes for the user on each PrivateVolume
+    std::list<std::string> private_vols;
+    listVolumes(VolumeBase::Type::kPrivate, private_vols);
+    for (const std::string& id : private_vols) {
+        PrivateVolume* pvol = static_cast<PrivateVolume*>(findVolume(id).get());
+        if (pvol->getState() == VolumeBase::State::kMounted) {
+            auto evol =
+                    std::shared_ptr<android::vold::VolumeBase>(new android::vold::EmulatedVolume(
+                            pvol->getPath() + "/media", pvol->getRawDevice(), pvol->getFsUuid(),
+                            userId));
+            evol->setMountUserId(userId);
+            pvol->addVolume(evol);
+            evol->create();
+        }  // else EmulatedVolumes will be created per user when on PrivateVolume#doMount
+    }
+}
+
 int VolumeManager::onUserAdded(userid_t userId, int userSerialNumber) {
+    LOG(INFO) << "onUserAdded: " << userId;
+
     mAddedUsers[userId] = userSerialNumber;
     return 0;
 }
 
 int VolumeManager::onUserRemoved(userid_t userId) {
+    LOG(INFO) << "onUserRemoved: " << userId;
+
+    if (GetBoolProperty(android::vold::kPropFuseSnapshot, false) &&
+        mAddedUsers.find(userId) != mAddedUsers.end()) {
+        destroyEmulatedVolumesForUser(userId);
+    }
+
     mAddedUsers.erase(userId);
+    mStartedUsers.erase(userId);
     return 0;
 }
 
 int VolumeManager::onUserStarted(userid_t userId) {
-    LOG(VERBOSE) << "onUserStarted: " << userId;
-    // Note that sometimes the system will spin up processes from Zygote
-    // before actually starting the user, so we're okay if Zygote
-    // already created this directory.
-    std::string path(StringPrintf("%s/%d", kPathUserMount, userId));
-    fs_prepare_dir(path.c_str(), 0755, AID_ROOT, AID_ROOT);
+    LOG(INFO) << "onUserStarted: " << userId;
+
+    if (GetBoolProperty(android::vold::kPropFuseSnapshot, false)) {
+        if (mStartedUsers.find(userId) == mStartedUsers.end()) {
+            createEmulatedVolumesForUser(userId);
+        }
+    } else {
+        // Note that sometimes the system will spin up processes from Zygote
+        // before actually starting the user, so we're okay if Zygote
+        // already created this directory.
+        std::string path(StringPrintf("%s/%d", kPathUserMount, userId));
+        fs_prepare_dir(path.c_str(), 0755, AID_ROOT, AID_ROOT);
+
+        if (mPrimary) {
+            linkPrimary(userId);
+        }
+    }
 
     mStartedUsers.insert(userId);
-    if (mPrimary) {
-        linkPrimary(userId);
-    }
     return 0;
 }
 
 int VolumeManager::onUserStopped(userid_t userId) {
     LOG(VERBOSE) << "onUserStopped: " << userId;
+
+    if (GetBoolProperty(android::vold::kPropFuseSnapshot, false) &&
+        mStartedUsers.find(userId) != mStartedUsers.end()) {
+        destroyEmulatedVolumesForUser(userId);
+    }
+
     mStartedUsers.erase(userId);
     return 0;
 }
@@ -640,10 +699,17 @@ int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
 int VolumeManager::reset() {
     // Tear down all existing disks/volumes and start from a blank slate so
     // newly connected framework hears all events.
-    if (mInternalEmulated != nullptr) {
-        mInternalEmulated->destroy();
-        mInternalEmulated->create();
+    for (const auto& vol : mInternalEmulatedVolumes) {
+        vol->destroy();
     }
+    mInternalEmulatedVolumes.clear();
+    // Add user 0 cos it's always running and started
+    auto vol = std::shared_ptr<android::vold::VolumeBase>(
+            new android::vold::EmulatedVolume("/data/media", 0));
+    vol->setMountUserId(0);
+    vol->create();
+    mInternalEmulatedVolumes.push_back(vol);
+
     for (const auto& disk : mDisks) {
         disk->destroy();
         disk->create();
@@ -651,20 +717,25 @@ int VolumeManager::reset() {
     updateVirtualDisk();
     mAddedUsers.clear();
     mStartedUsers.clear();
+
+    mStartedUsers.insert(0);
     return 0;
 }
 
 // Can be called twice (sequentially) during shutdown. should be safe for that.
 int VolumeManager::shutdown() {
-    if (mInternalEmulated == nullptr) {
+    if (mInternalEmulatedVolumes.empty()) {
         return 0;  // already shutdown
     }
     android::vold::sSleepOnUnmount = false;
-    mInternalEmulated->destroy();
-    mInternalEmulated = nullptr;
+    for (const auto& vol : mInternalEmulatedVolumes) {
+        vol->destroy();
+    }
     for (const auto& disk : mDisks) {
         disk->destroy();
     }
+
+    mInternalEmulatedVolumes.clear();
     mStubVolumes.clear();
     mDisks.clear();
     mPendingDisks.clear();
@@ -677,8 +748,8 @@ int VolumeManager::unmountAll() {
     ATRACE_NAME("VolumeManager::unmountAll()");
 
     // First, try gracefully unmounting all known devices
-    if (mInternalEmulated != nullptr) {
-        mInternalEmulated->unmount();
+    for (const auto& vol : mInternalEmulatedVolumes) {
+        vol->unmount();
     }
     for (const auto& stub : mStubVolumes) {
         stub->unmount();

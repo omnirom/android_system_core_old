@@ -42,6 +42,8 @@ class PrivateVolume : public VolumeBase {
     const std::string& getFsType() const { return mFsType; };
     const std::string& getRawDevPath() const { return mRawDevPath; };
     const std::string& getRawDmDevPath() const { return mDmDevPath; };
+    const std::string& getFsUuid() const { return mFsUuid; };
+    dev_t getRawDevice() const { return mRawDevice; };
 
   protected:
     status_t doCreate() override;

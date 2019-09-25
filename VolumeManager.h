@@ -84,6 +84,8 @@ class VolumeManager {
 
     void listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list) const;
 
+    const std::unordered_set<userid_t>& getStartedUsers() const { return mStartedUsers; }
+
     int forgetPartition(const std::string& partGuid, const std::string& fsUuid);
 
     int onUserAdded(userid_t userId, int userSerialNumber);
@@ -137,6 +139,9 @@ class VolumeManager {
 
     int linkPrimary(userid_t userId);
 
+    void createEmulatedVolumesForUser(userid_t userId);
+    void destroyEmulatedVolumesForUser(userid_t userId);
+
     void handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk);
     void handleDiskChanged(dev_t device);
     void handleDiskRemoved(dev_t device);
@@ -151,13 +156,13 @@ class VolumeManager {
     std::list<std::shared_ptr<android::vold::Disk>> mPendingDisks;
     std::list<std::shared_ptr<android::vold::VolumeBase>> mObbVolumes;
     std::list<std::shared_ptr<android::vold::VolumeBase>> mStubVolumes;
+    std::list<std::shared_ptr<android::vold::VolumeBase>> mInternalEmulatedVolumes;
 
     std::unordered_map<userid_t, int> mAddedUsers;
     std::unordered_set<userid_t> mStartedUsers;
 
     std::string mVirtualDiskPath;
     std::shared_ptr<android::vold::Disk> mVirtualDisk;
-    std::shared_ptr<android::vold::VolumeBase> mInternalEmulated;
     std::shared_ptr<android::vold::VolumeBase> mPrimary;
 
     int mNextObbId;

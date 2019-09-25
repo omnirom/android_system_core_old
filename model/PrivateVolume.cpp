@@ -155,12 +155,18 @@ status_t PrivateVolume::doMount() {
         return -EIO;
     }
 
-    // Create a new emulated volume stacked above us, it will automatically
-    // be destroyed during unmount
+    auto vol_manager = VolumeManager::Instance();
     std::string mediaPath(mPath + "/media");
-    auto vol = std::shared_ptr<VolumeBase>(new EmulatedVolume(mediaPath, mRawDevice, mFsUuid));
-    addVolume(vol);
-    vol->create();
+
+    // Create a new emulated volume stacked above us for all added users, they will automatically
+    // be destroyed during unmount
+    for (userid_t user : vol_manager->getStartedUsers()) {
+        auto vol = std::shared_ptr<VolumeBase>(
+                new EmulatedVolume(mediaPath, mRawDevice, mFsUuid, user));
+        vol->setMountUserId(user);
+        addVolume(vol);
+        vol->create();
+    }
 
     return OK;
 }

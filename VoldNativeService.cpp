@@ -107,7 +107,7 @@ binder::Status checkArgumentId(const std::string& id) {
         return exception(binder::Status::EX_ILLEGAL_ARGUMENT, "Missing ID");
     }
     for (const char& c : id) {
-        if (!std::isalnum(c) && c != ':' && c != ',') {
+        if (!std::isalnum(c) && c != ':' && c != ',' && c != ';') {
             return exception(binder::Status::EX_ILLEGAL_ARGUMENT,
                              StringPrintf("ID %s is malformed", id.c_str()));
         }

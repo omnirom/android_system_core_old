@@ -88,6 +88,7 @@ class VolumeBase {
     const std::string& getPath() const { return mPath; }
     const std::string& getInternalPath() const { return mInternalPath; }
     const android::base::unique_fd& getFuseFd() const { return mFuseFd; }
+    const std::list<std::shared_ptr<VolumeBase>>& getVolumes() const { return mVolumes; }
 
     status_t setDiskId(const std::string& diskId);
     status_t setPartGuid(const std::string& partGuid);

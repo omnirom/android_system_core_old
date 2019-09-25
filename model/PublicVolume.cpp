@@ -170,22 +170,18 @@ status_t PublicVolume::doMount() {
     dev_t before = GetDevice(mFuseFull);
 
     bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
-
     if (isFuse) {
         LOG(INFO) << "Mounting public fuse volume";
         android::base::unique_fd fd;
         int user_id = getMountUserId();
-        int result = MountUserFuse(user_id, stableName, &fd);
+        int result = MountUserFuse(user_id, getInternalPath(), stableName, &fd);
 
         if (result != 0) {
             LOG(ERROR) << "Failed to mount public fuse volume";
             return -result;
         }
         setFuseFd(std::move(fd));
-
-        std::string pass_through_path(StringPrintf("/mnt/pass_through/%d/%s",
-                                                 user_id, stableName.c_str()));
-        return BindMount(getInternalPath(), pass_through_path);
+        return OK;
     }
 
     if (!(mFusePid = fork())) {
@@ -258,19 +254,24 @@ status_t PublicVolume::doUnmount() {
             stableName = mFsUuid;
         }
 
-        std::string path(StringPrintf("/mnt/user/%d/%s", getMountUserId(), stableName.c_str()));
-        status_t result = ForceUnmount(path);
-        if (result != OK) {
-            // TODO(135341433): MNT_DETACH is needed for fuse because umount2 can fail with EBUSY.
-            // Figure out why we get EBUSY and remove this special casing if possible.
-            if (!umount2(path.c_str(), UMOUNT_NOFOLLOW | MNT_DETACH) || errno == EINVAL ||
-                errno == ENOENT) {
-                PLOG(INFO) << "ForceUnmount failed on public fuse volume";
-            }
+        std::string fuse_path(
+                StringPrintf("/mnt/user/%d/%s", getMountUserId(), stableName.c_str()));
+        std::string pass_through_path(
+                StringPrintf("/mnt/pass_through/%d/%s", getMountUserId(), stableName.c_str()));
+        if (UnmountUserFuse(pass_through_path, fuse_path) != OK) {
+            PLOG(INFO) << "UnmountUserFuse failed on public fuse volume";
+            return -errno;
         }
+        ForceUnmount(kAsecPath);
+        ForceUnmount(mRawPath);
 
-        rmdir(path.c_str());
+        rmdir(fuse_path.c_str());
+        rmdir(pass_through_path.c_str());
+        rmdir(mRawPath.c_str());
+        mRawPath.clear();
+
         setFuseFd(android::base::unique_fd());
+
         return OK;
     }
 

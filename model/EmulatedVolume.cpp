@@ -42,16 +42,17 @@ namespace vold {
 
 static const char* kFusePath = "/system/bin/sdcard";
 
-EmulatedVolume::EmulatedVolume(const std::string& rawPath)
+EmulatedVolume::EmulatedVolume(const std::string& rawPath, int userId)
     : VolumeBase(Type::kEmulated), mFusePid(0) {
-    setId("emulated");
+    setId(StringPrintf("emulated;%u", userId));
     mRawPath = rawPath;
     mLabel = "emulated";
 }
 
-EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const std::string& fsUuid)
+EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const std::string& fsUuid,
+                               int userId)
     : VolumeBase(Type::kEmulated), mFusePid(0) {
-    setId(StringPrintf("emulated:%u,%u", major(device), minor(device)));
+    setId(StringPrintf("emulated:%u,%u;%u", major(device), minor(device), userId));
     mRawPath = rawPath;
     mLabel = fsUuid;
 }
@@ -90,17 +91,14 @@ status_t EmulatedVolume::doMount() {
         LOG(INFO) << "Mounting emulated fuse volume";
         android::base::unique_fd fd;
         int user_id = getMountUserId();
-        int result = MountUserFuse(user_id, label, &fd);
+        int result = MountUserFuse(user_id, getInternalPath(), label, &fd);
 
         if (result != 0) {
             PLOG(ERROR) << "Failed to mount emulated fuse volume";
             return -result;
         }
         setFuseFd(std::move(fd));
-
-        std::string pass_through_path(StringPrintf("/mnt/pass_through/%d/%s",
-                                                   user_id, label.c_str()));
-        return BindMount(getInternalPath(), pass_through_path);
+        return 0;
     }
 
     if (!(mFusePid = fork())) {
@@ -163,18 +161,17 @@ status_t EmulatedVolume::doUnmount() {
         if (getMountFlags() & MountFlags::kPrimary) {
             label = "emulated";
         }
-        std::string path(StringPrintf("/mnt/user/%d/%s", getMountUserId(), label.c_str()));
-        status_t result = ForceUnmount(path);
-        if (result != OK) {
-            // TODO(135341433): MNT_DETACH is needed for fuse because umount2 can fail with EBUSY.
-            // Figure out why we get EBUSY and remove this special casing if possible.
-            if (!umount2(path.c_str(), UMOUNT_NOFOLLOW | MNT_DETACH) || errno == EINVAL ||
-                errno == ENOENT) {
-                PLOG(INFO) << "ForceUnmount failed on emulated fuse volume";
-            }
+
+        std::string fuse_path(StringPrintf("/mnt/user/%d/%s", getMountUserId(), label.c_str()));
+        std::string pass_through_path(
+                StringPrintf("/mnt/pass_through/%d/%s", getMountUserId(), label.c_str()));
+        if (UnmountUserFuse(pass_through_path, fuse_path) != OK) {
+            PLOG(INFO) << "UnmountUserFuse failed on emulated fuse volume";
+            return -errno;
         }
 
-        rmdir(path.c_str());
+        rmdir(fuse_path.c_str());
+        rmdir(pass_through_path.c_str());
         setFuseFd(android::base::unique_fd());
         return OK;
     }

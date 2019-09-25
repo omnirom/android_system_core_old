@@ -25,7 +25,7 @@ oneway interface IVoldListener {
     void onDiskDestroyed(@utf8InCpp String diskId);
 
     void onVolumeCreated(@utf8InCpp String volId,
-            int type, @utf8InCpp String diskId, @utf8InCpp String partGuid);
+            int type, @utf8InCpp String diskId, @utf8InCpp String partGuid, int userId);
     void onVolumeStateChanged(@utf8InCpp String volId, int state);
     void onVolumeMetadataChanged(@utf8InCpp String volId,
             @utf8InCpp String fsType, @utf8InCpp String fsUuid, @utf8InCpp String fsLabel);

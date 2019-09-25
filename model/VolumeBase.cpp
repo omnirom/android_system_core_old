@@ -186,7 +186,8 @@ status_t VolumeBase::create() {
 
     auto listener = getListener();
     if (listener) {
-        listener->onVolumeCreated(getId(), static_cast<int32_t>(mType), mDiskId, mPartGuid);
+        listener->onVolumeCreated(getId(), static_cast<int32_t>(mType), mDiskId, mPartGuid,
+                                  mMountUserId);
     }
 
     setState(State::kUnmounted);
