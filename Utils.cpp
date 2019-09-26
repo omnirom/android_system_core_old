@@ -1023,7 +1023,8 @@ int MountUserFuse(userid_t user_id, const std::string& relative_path,
 
     const int result_int =
         TEMP_FAILURE_RETRY(mount("/dev/fuse", path.c_str(), "fuse",
-                                 MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME, opts.c_str()));
+                                 MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME | MS_LAZYTIME,
+                                 opts.c_str()));
     if (result_int != 0) {
         PLOG(ERROR) << "Failed to mount " << path;
         return -errno;
