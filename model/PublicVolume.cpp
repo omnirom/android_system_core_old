@@ -169,7 +169,7 @@ status_t PublicVolume::doMount() {
 
     dev_t before = GetDevice(mFuseFull);
 
-    bool isFuse = base::GetBoolProperty(kPropFuse, false);
+    bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
 
     if (isFuse) {
         LOG(INFO) << "Mounting public fuse volume";
@@ -250,7 +250,7 @@ status_t PublicVolume::doUnmount() {
     // error code and might cause broken behaviour in applications.
     KillProcessesUsingPath(getPath());
 
-    bool isFuse = base::GetBoolProperty(kPropFuse, false);
+    bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
     if (isFuse) {
         // Use UUID as stable name, if available
         std::string stableName = getId();

@@ -382,7 +382,7 @@ int VolumeManager::forgetPartition(const std::string& partGuid, const std::strin
 }
 
 int VolumeManager::linkPrimary(userid_t userId) {
-    bool isFuse = GetBoolProperty(android::vold::kPropFuse, false);
+    bool isFuse = GetBoolProperty(android::vold::kPropFuseSnapshot, false);
 
     if (isFuse) {
         // Here we have to touch /mnt/user/userid>/<volumeid> which was already mounted as part of
@@ -464,7 +464,7 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
 }
 
 int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
-    if (GetBoolProperty(android::vold::kPropFuse, false)) {
+    if (GetBoolProperty(android::vold::kPropFuseSnapshot, false)) {
         // TODO(135341433): Implement fuse specific logic.
         return 0;
     }
