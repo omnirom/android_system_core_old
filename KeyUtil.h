@@ -27,11 +27,14 @@ namespace android {
 namespace vold {
 
 bool randomKey(KeyBuffer* key);
-bool installKey(const KeyBuffer& key, std::string* raw_ref);
-bool evictKey(const std::string& raw_ref);
+
+bool isFsKeyringSupported(void);
+
+bool installKey(const KeyBuffer& key, const std::string& mountpoint, std::string* raw_ref);
+bool evictKey(const std::string& mountpoint, const std::string& raw_ref);
 bool retrieveAndInstallKey(bool create_if_absent, const KeyAuthentication& key_authentication,
                            const std::string& key_path, const std::string& tmp_path,
-                           std::string* key_ref);
+                           const std::string& volume_uuid, std::string* key_ref);
 bool retrieveKey(bool create_if_absent, const std::string& key_path, const std::string& tmp_path,
                  KeyBuffer* key, bool keepOld = true);
 
