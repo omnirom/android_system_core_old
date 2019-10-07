@@ -30,11 +30,13 @@ bool randomKey(KeyBuffer* key);
 
 bool isFsKeyringSupported(void);
 
-bool installKey(const KeyBuffer& key, const std::string& mountpoint, std::string* raw_ref);
-bool evictKey(const std::string& mountpoint, const std::string& raw_ref);
+bool installKey(const KeyBuffer& key, const std::string& mountpoint, int policy_version,
+                std::string* raw_ref);
+bool evictKey(const std::string& mountpoint, const std::string& raw_ref, int policy_version);
 bool retrieveAndInstallKey(bool create_if_absent, const KeyAuthentication& key_authentication,
                            const std::string& key_path, const std::string& tmp_path,
-                           const std::string& volume_uuid, std::string* key_ref);
+                           const std::string& volume_uuid, int policy_version,
+                           std::string* key_ref);
 bool retrieveKey(bool create_if_absent, const std::string& key_path, const std::string& tmp_path,
                  KeyBuffer* key, bool keepOld = true);
 
