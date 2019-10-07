@@ -57,6 +57,7 @@
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
+#include <android-base/strings.h>
 #include <android-base/unique_fd.h>
 
 using android::base::StringPrintf;
@@ -70,7 +71,10 @@ namespace {
 struct PolicyKeyRef {
     std::string contents_mode;
     std::string filenames_mode;
+    int policy_version;
     std::string key_raw_ref;
+
+    PolicyKeyRef() : policy_version(0) {}
 };
 
 const std::string device_key_dir = std::string() + DATA_MNT_POINT + fscrypt_unencrypted_folder;
@@ -199,14 +203,57 @@ static bool read_and_fixate_user_ce_key(userid_t user_id,
     return false;
 }
 
+// Retrieve the options to use for encryption policies on the /data filesystem.
+static void get_data_file_encryption_options(PolicyKeyRef* key_ref) {
+    auto entry = GetEntryForMountPoint(&fstab_default, DATA_MNT_POINT);
+    if (entry == nullptr) {
+        return;
+    }
+    key_ref->contents_mode = entry->file_contents_mode;
+    key_ref->filenames_mode = entry->file_names_mode;
+    key_ref->policy_version = entry->file_policy_version;
+}
+
+// Retrieve the version to use for encryption policies on the /data filesystem.
+static int get_data_file_policy_version(void) {
+    auto entry = GetEntryForMountPoint(&fstab_default, DATA_MNT_POINT);
+    if (entry == nullptr) {
+        return 0;
+    }
+    return entry->file_policy_version;
+}
+
+// Retrieve the options to use for encryption policies on adoptable storage.
+static bool get_volume_file_encryption_options(PolicyKeyRef* key_ref) {
+    key_ref->contents_mode =
+            android::base::GetProperty("ro.crypto.volume.contents_mode", "aes-256-xts");
+    key_ref->filenames_mode =
+            android::base::GetProperty("ro.crypto.volume.filenames_mode", "aes-256-heh");
+    key_ref->policy_version = 1;
+
+    std::string raw_flags = android::base::GetProperty("ro.crypto.volume.flags", "");
+    auto flags = android::base::Split(raw_flags, "+");
+    for (const auto& flag : flags) {
+        if (flag == "v1") {
+            key_ref->policy_version = 1;
+        } else if (flag == "v2") {
+            key_ref->policy_version = 2;
+        } else {
+            LOG(ERROR) << "Unknown flag in ro.crypto.volume.flags: " << flag;
+            return false;
+        }
+    }
+    return true;
+}
+
 // Install a key for use by encrypted files on the /data filesystem.
 static bool install_data_key(const KeyBuffer& key, std::string* raw_ref) {
-    return android::vold::installKey(key, DATA_MNT_POINT, raw_ref);
+    return android::vold::installKey(key, DATA_MNT_POINT, get_data_file_policy_version(), raw_ref);
 }
 
 // Evict a key for use by encrypted files on the /data filesystem.
 static bool evict_data_key(const std::string& raw_ref) {
-    return android::vold::evictKey(DATA_MNT_POINT, raw_ref);
+    return android::vold::evictKey(DATA_MNT_POINT, raw_ref, get_data_file_policy_version());
 }
 
 static bool read_and_install_user_ce_key(userid_t user_id,
@@ -286,19 +333,10 @@ static bool lookup_key_ref(const std::map<userid_t, std::string>& key_map, useri
     return true;
 }
 
-static void get_data_file_encryption_modes(PolicyKeyRef* key_ref) {
-    auto entry = GetEntryForMountPoint(&fstab_default, DATA_MNT_POINT);
-    if (entry == nullptr) {
-        return;
-    }
-    key_ref->contents_mode = entry->file_contents_mode;
-    key_ref->filenames_mode = entry->file_names_mode;
-}
-
 static bool ensure_policy(const PolicyKeyRef& key_ref, const std::string& path) {
     return fscrypt_policy_ensure(path.c_str(), key_ref.key_raw_ref.data(),
                                  key_ref.key_raw_ref.size(), key_ref.contents_mode.c_str(),
-                                 key_ref.filenames_mode.c_str()) == 0;
+                                 key_ref.filenames_mode.c_str(), key_ref.policy_version) == 0;
 }
 
 static bool is_numeric(const char* name) {
@@ -354,14 +392,18 @@ bool fscrypt_initialize_systemwide_keys() {
     }
 
     PolicyKeyRef device_ref;
-    if (!android::vold::retrieveAndInstallKey(true, kEmptyAuthentication, device_key_path,
-                                              device_key_temp, "", &device_ref.key_raw_ref))
-        return false;
-    get_data_file_encryption_modes(&device_ref);
+    get_data_file_encryption_options(&device_ref);
 
-    std::string modestring = device_ref.contents_mode + ":" + device_ref.filenames_mode;
-    std::string mode_filename = std::string("/data") + fscrypt_key_mode;
-    if (!android::vold::writeStringToFile(modestring, mode_filename)) return false;
+    if (!android::vold::retrieveAndInstallKey(true, kEmptyAuthentication, device_key_path,
+                                              device_key_temp, "", device_ref.policy_version,
+                                              &device_ref.key_raw_ref))
+        return false;
+
+    std::string options_string =
+            StringPrintf("%s:%s:v%d", device_ref.contents_mode.c_str(),
+                         device_ref.filenames_mode.c_str(), device_ref.policy_version);
+    std::string options_filename = std::string("/data") + fscrypt_key_mode;
+    if (!android::vold::writeStringToFile(options_string, options_filename)) return false;
 
     std::string ref_filename = std::string("/data") + fscrypt_key_ref;
     if (!android::vold::writeStringToFile(device_ref.key_raw_ref, ref_filename)) return false;
@@ -560,14 +602,12 @@ static bool read_or_create_volkey(const std::string& misc_path, const std::strin
         return false;
     }
     android::vold::KeyAuthentication auth("", secdiscardable_hash);
-    if (!android::vold::retrieveAndInstallKey(true, auth, key_path, key_path + "_tmp", volume_uuid,
-                                              &key_ref->key_raw_ref))
-        return false;
-    key_ref->contents_mode =
-        android::base::GetProperty("ro.crypto.volume.contents_mode", "aes-256-xts");
-    key_ref->filenames_mode =
-        android::base::GetProperty("ro.crypto.volume.filenames_mode", "aes-256-heh");
-    return true;
+
+    if (!get_volume_file_encryption_options(key_ref)) return false;
+
+    return android::vold::retrieveAndInstallKey(true, auth, key_path, key_path + "_tmp",
+                                                volume_uuid, key_ref->policy_version,
+                                                &key_ref->key_raw_ref);
 }
 
 static bool destroy_volkey(const std::string& misc_path, const std::string& volume_uuid) {
@@ -715,7 +755,7 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             PolicyKeyRef de_ref;
             if (volume_uuid.empty()) {
                 if (!lookup_key_ref(s_de_key_raw_refs, user_id, &de_ref.key_raw_ref)) return false;
-                get_data_file_encryption_modes(&de_ref);
+                get_data_file_encryption_options(&de_ref);
                 if (!ensure_policy(de_ref, system_de_path)) return false;
                 if (!ensure_policy(de_ref, misc_de_path)) return false;
                 if (!ensure_policy(de_ref, vendor_de_path)) return false;
@@ -746,7 +786,7 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             PolicyKeyRef ce_ref;
             if (volume_uuid.empty()) {
                 if (!lookup_key_ref(s_ce_key_raw_refs, user_id, &ce_ref.key_raw_ref)) return false;
-                get_data_file_encryption_modes(&ce_ref);
+                get_data_file_encryption_options(&ce_ref);
                 if (!ensure_policy(ce_ref, system_ce_path)) return false;
                 if (!ensure_policy(ce_ref, misc_ce_path)) return false;
                 if (!ensure_policy(ce_ref, vendor_ce_path)) return false;
