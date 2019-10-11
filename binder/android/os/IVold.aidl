@@ -116,6 +116,7 @@ interface IVold {
     boolean supportsCheckpoint();
     boolean supportsBlockCheckpoint();
     boolean supportsFileCheckpoint();
+    void resetCheckpoint();
 
     @utf8InCpp String createStubVolume(@utf8InCpp String sourcePath,
             @utf8InCpp String mountPath, @utf8InCpp String fsType,

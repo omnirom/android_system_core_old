@@ -145,8 +145,10 @@ namespace {
 
 volatile bool isCheckpointing = false;
 
-// Protects isCheckpointing and code that makes decisions based on status of
-// isCheckpointing
+volatile bool needsCheckpointWasCalled = false;
+
+// Protects isCheckpointing, needsCheckpointWasCalled and code that makes decisions based on status
+// of isCheckpointing
 std::mutex isCheckpointingLock;
 }
 
@@ -263,16 +265,16 @@ bool cp_needsRollback() {
 }
 
 bool cp_needsCheckpoint() {
+    std::lock_guard<std::mutex> lock(isCheckpointingLock);
+
     // Make sure we only return true during boot. See b/138952436 for discussion
-    static bool called_once = false;
-    if (called_once) return isCheckpointing;
-    called_once = true;
+    if (needsCheckpointWasCalled) return isCheckpointing;
+    needsCheckpointWasCalled = true;
 
     bool ret;
     std::string content;
     sp<IBootControl> module = IBootControl::getService();
 
-    std::lock_guard<std::mutex> lock(isCheckpointingLock);
     if (isCheckpointing) return isCheckpointing;
 
     if (module && module->isSlotMarkedSuccessful(module->getCurrentSlot()) == BoolResult::FALSE) {
@@ -725,6 +727,11 @@ Status cp_markBootAttempt() {
             return error("Could not write checkpoint file");
     }
     return Status::ok();
+}
+
+void cp_resetCheckpoint() {
+    std::lock_guard<std::mutex> lock(isCheckpointingLock);
+    needsCheckpointWasCalled = false;
 }
 
 }  // namespace vold

@@ -147,6 +147,8 @@ int main(int argc, char** argv) {
         int retry;
         if (!android::base::ParseInt(args[2], &retry)) exit(EINVAL);
         checkStatus(args, vold->abortChanges(args[2], retry != 0));
+    } else if (args[0] == "checkpoint" && args[1] == "resetCheckpoint") {
+        checkStatus(args, vold->resetCheckpoint());
     } else {
         LOG(ERROR) << "Raw commands are no longer supported";
         exit(EINVAL);
