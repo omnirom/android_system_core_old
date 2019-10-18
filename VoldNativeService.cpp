@@ -916,5 +916,13 @@ binder::Status VoldNativeService::supportsFileCheckpoint(bool* _aidl_return) {
     return cp_supportsFileCheckpoint(*_aidl_return);
 }
 
+binder::Status VoldNativeService::resetCheckpoint() {
+    ENFORCE_UID(AID_SYSTEM);
+    ACQUIRE_LOCK;
+
+    cp_resetCheckpoint();
+    return ok();
+}
+
 }  // namespace vold
 }  // namespace android
