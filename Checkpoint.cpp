@@ -344,6 +344,8 @@ static void cp_healthDaemon(std::string mnt_pnt, std::string blk_device, bool is
 }  // namespace
 
 Status cp_prepareCheckpoint() {
+    // Log to notify CTS - see b/137924328 for context
+    LOG(INFO) << "cp_prepareCheckpoint called";
     std::lock_guard<std::mutex> lock(isCheckpointingLock);
     if (!isCheckpointing) {
         return Status::ok();
