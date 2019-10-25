@@ -147,6 +147,10 @@ bool secdiscard_path(const std::string& path) {
             if (!overwrite_with_zeros(fs_fd.get(), range[0], range[1])) return false;
         }
     }
+    // Should wait for overwrites completion. Otherwise after unlink(),
+    // filesystem can allocate these blocks and IO can be reordered, resulting
+    // in making zero blocks to filesystem blocks.
+    fsync(fs_fd.get());
     return true;
 }
 
