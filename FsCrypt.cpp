@@ -201,8 +201,11 @@ static void get_data_file_encryption_options(EncryptionOptions* options) {
     if (entry == nullptr) {
         return;
     }
-    ParseOptionsParts(entry->file_contents_mode, entry->file_names_mode, entry->file_policy_version,
-                      options);
+    if (!ParseOptions(entry->encryption_options, options)) {
+        LOG(ERROR) << "Unable to parse encryption options for " << DATA_MNT_POINT ": "
+                   << entry->encryption_options;
+        return;
+    }
 }
 
 // Retrieve the version to use for encryption policies on the /data filesystem.
@@ -214,10 +217,13 @@ static int get_data_file_policy_version(void) {
 
 // Retrieve the options to use for encryption policies on adoptable storage.
 static bool get_volume_file_encryption_options(EncryptionOptions* options) {
-    return ParseOptionsParts(
-            android::base::GetProperty("ro.crypto.volume.contents_mode", "aes-256-xts"),
-            android::base::GetProperty("ro.crypto.volume.filenames_mode", "aes-256-heh"),
-            android::base::GetProperty("ro.crypto.volume.flags", "v1"), options);
+    auto contents_mode =
+            android::base::GetProperty("ro.crypto.volume.contents_mode", "aes-256-xts");
+    auto filenames_mode =
+            android::base::GetProperty("ro.crypto.volume.filenames_mode", "aes-256-heh");
+    return ParseOptions(android::base::GetProperty("ro.crypto.volume.options",
+                                                   contents_mode + ":" + filenames_mode + ":v1"),
+                        options);
 }
 
 // Install a key for use by encrypted files on the /data filesystem.
