@@ -201,8 +201,11 @@ static void get_data_file_encryption_options(EncryptionOptions* options) {
     if (entry == nullptr) {
         return;
     }
-    ParseOptionsParts(entry->file_contents_mode, entry->file_names_mode, entry->file_policy_version,
-                      options);
+    if (!ParseOptions(entry->encryption_options, options)) {
+        LOG(ERROR) << "Unable to parse encryption options for " << DATA_MNT_POINT ": "
+                   << entry->encryption_options;
+        return;
+    }
 }
 
 // Retrieve the version to use for encryption policies on the /data filesystem.
