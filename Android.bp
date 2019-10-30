@@ -52,7 +52,6 @@ cc_defaults {
         "libdiskconfig",
         "libext4_utils",
         "libf2fs_sparseblock",
-        "libfscrypt",
         "libhardware",
         "libhardware_legacy",
         "libhidlbase",
