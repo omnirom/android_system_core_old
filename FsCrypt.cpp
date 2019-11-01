@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -88,8 +89,6 @@ std::set<userid_t> s_ephemeral_users;
 // Map user ids to key references
 std::map<userid_t, std::string> s_de_key_raw_refs;
 std::map<userid_t, std::string> s_ce_key_raw_refs;
-// TODO abolish this map, per b/26948053
-std::map<userid_t, KeyBuffer> s_ce_keys;
 
 }  // namespace
 
@@ -243,7 +242,6 @@ static bool read_and_install_user_ce_key(userid_t user_id,
     if (!read_and_fixate_user_ce_key(user_id, auth, &ce_key)) return false;
     std::string ce_raw_ref;
     if (!install_data_key(ce_key, &ce_raw_ref)) return false;
-    s_ce_keys[user_id] = std::move(ce_key);
     s_ce_key_raw_refs[user_id] = ce_raw_ref;
     LOG(DEBUG) << "Installed ce key for user " << user_id;
     return true;
@@ -296,7 +294,6 @@ static bool create_and_install_user_keys(userid_t user_id, bool create_ephemeral
     s_de_key_raw_refs[user_id] = de_raw_ref;
     std::string ce_raw_ref;
     if (!install_data_key(ce_key, &ce_raw_ref)) return false;
-    s_ce_keys[user_id] = ce_key;
     s_ce_key_raw_refs[user_id] = ce_raw_ref;
     LOG(DEBUG) << "Created keys for user " << user_id;
     return true;
@@ -468,7 +465,6 @@ static void drop_caches_if_needed() {
 }
 
 static bool evict_ce_key(userid_t user_id) {
-    s_ce_keys.erase(user_id);
     bool success = true;
     std::string raw_ref;
     // If we haven't loaded the CE key, no need to evict it.
@@ -549,6 +545,18 @@ static bool parse_hex(const std::string& hex, std::string* result) {
     return true;
 }
 
+static std::optional<android::vold::KeyAuthentication> authentication_from_hex(
+        const std::string& token_hex, const std::string& secret_hex) {
+    std::string token, secret;
+    if (!parse_hex(token_hex, &token)) return std::optional<android::vold::KeyAuthentication>();
+    if (!parse_hex(secret_hex, &secret)) return std::optional<android::vold::KeyAuthentication>();
+    if (secret.empty()) {
+        return kEmptyAuthentication;
+    } else {
+        return android::vold::KeyAuthentication(token, secret);
+    }
+}
+
 static std::string volkey_path(const std::string& misc_path, const std::string& volume_uuid) {
     return misc_path + "/vold/volume_keys/" + volume_uuid + "/default";
 }
@@ -592,30 +600,51 @@ static bool destroy_volkey(const std::string& misc_path, const std::string& volu
     return android::vold::destroyKey(path);
 }
 
+static bool fscrypt_rewrap_user_key(userid_t user_id, int serial,
+                                    const android::vold::KeyAuthentication& retrieve_auth,
+                                    const android::vold::KeyAuthentication& store_auth) {
+    if (s_ephemeral_users.count(user_id) != 0) return true;
+    auto const directory_path = get_ce_key_directory_path(user_id);
+    KeyBuffer ce_key;
+    std::string ce_key_current_path = get_ce_key_current_path(directory_path);
+    if (android::vold::retrieveKey(ce_key_current_path, retrieve_auth, &ce_key)) {
+        LOG(DEBUG) << "Successfully retrieved key";
+        // TODO(147732812): Remove this once Locksettingservice is fixed.
+        // Currently it calls fscrypt_clear_user_key_auth with a secret when lockscreen is
+        // changed from swipe to none or vice-versa
+    } else if (android::vold::retrieveKey(ce_key_current_path, kEmptyAuthentication, &ce_key)) {
+        LOG(DEBUG) << "Successfully retrieved key with empty auth";
+    } else {
+        LOG(ERROR) << "Failed to retrieve key for user " << user_id;
+        return false;
+    }
+    auto const paths = get_ce_key_paths(directory_path);
+    std::string ce_key_path;
+    if (!get_ce_key_new_path(directory_path, paths, &ce_key_path)) return false;
+    if (!android::vold::storeKeyAtomically(ce_key_path, user_key_temp, store_auth, ce_key))
+        return false;
+    if (!android::vold::FsyncDirectory(directory_path)) return false;
+    return true;
+}
+
 bool fscrypt_add_user_key_auth(userid_t user_id, int serial, const std::string& token_hex,
                                const std::string& secret_hex) {
     LOG(DEBUG) << "fscrypt_add_user_key_auth " << user_id << " serial=" << serial
                << " token_present=" << (token_hex != "!");
     if (!fscrypt_is_native()) return true;
-    if (s_ephemeral_users.count(user_id) != 0) return true;
-    std::string token, secret;
-    if (!parse_hex(token_hex, &token)) return false;
-    if (!parse_hex(secret_hex, &secret)) return false;
-    auto auth =
-        secret.empty() ? kEmptyAuthentication : android::vold::KeyAuthentication(token, secret);
-    auto it = s_ce_keys.find(user_id);
-    if (it == s_ce_keys.end()) {
-        LOG(ERROR) << "Key not loaded into memory, can't change for user " << user_id;
-        return false;
-    }
-    const auto& ce_key = it->second;
-    auto const directory_path = get_ce_key_directory_path(user_id);
-    auto const paths = get_ce_key_paths(directory_path);
-    std::string ce_key_path;
-    if (!get_ce_key_new_path(directory_path, paths, &ce_key_path)) return false;
-    if (!android::vold::storeKeyAtomically(ce_key_path, user_key_temp, auth, ce_key)) return false;
-    if (!android::vold::FsyncDirectory(directory_path)) return false;
-    return true;
+    auto auth = authentication_from_hex(token_hex, secret_hex);
+    if (!auth) return false;
+    return fscrypt_rewrap_user_key(user_id, serial, kEmptyAuthentication, *auth);
+}
+
+bool fscrypt_clear_user_key_auth(userid_t user_id, int serial, const std::string& token_hex,
+                                 const std::string& secret_hex) {
+    LOG(DEBUG) << "fscrypt_clear_user_key_auth " << user_id << " serial=" << serial
+               << " token_present=" << (token_hex != "!");
+    if (!fscrypt_is_native()) return true;
+    auto auth = authentication_from_hex(token_hex, secret_hex);
+    if (!auth) return false;
+    return fscrypt_rewrap_user_key(user_id, serial, *auth, kEmptyAuthentication);
 }
 
 bool fscrypt_fixate_newest_user_key_auth(userid_t user_id) {
@@ -642,11 +671,9 @@ bool fscrypt_unlock_user_key(userid_t user_id, int serial, const std::string& to
             LOG(WARNING) << "Tried to unlock already-unlocked key for user " << user_id;
             return true;
         }
-        std::string token, secret;
-        if (!parse_hex(token_hex, &token)) return false;
-        if (!parse_hex(secret_hex, &secret)) return false;
-        android::vold::KeyAuthentication auth(token, secret);
-        if (!read_and_install_user_ce_key(user_id, auth)) {
+        auto auth = authentication_from_hex(token_hex, secret_hex);
+        if (!auth) return false;
+        if (!read_and_install_user_ce_key(user_id, *auth)) {
             LOG(ERROR) << "Couldn't read key for " << user_id;
             return false;
         }
