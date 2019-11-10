@@ -341,18 +341,16 @@ void BatteryMonitor::updateValues(void) {
             int ChargingCurrent =
                     (access(path.string(), R_OK) == 0) ? getIntField(path) : 0;
 
-#ifdef HEALTHD_ENABLE_OP_FASTCHG_CHECK
-            ChargingCurrent = getOpFastCurrent(ChargingCurrent);
-#endif
             path.clear();
             path.appendFormat("%s/%s/voltage_max", POWER_SUPPLY_SYSFS_PATH,
                               mChargerNames[i].string());
-
             int ChargingVoltage =
                 (access(path.string(), R_OK) == 0) ? getIntField(path) :
                 DEFAULT_VBUS_VOLTAGE;
 #endif
-
+#ifdef HEALTHD_ENABLE_OP_FASTCHG_CHECK
+            ChargingCurrent = getOpFastCurrent(ChargingCurrent);
+#endif
             double power = ((double)ChargingCurrent / MILLION) *
                            ((double)ChargingVoltage / MILLION);
             if (MaxPower < power) {
