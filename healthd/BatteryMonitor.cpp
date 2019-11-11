@@ -296,6 +296,7 @@ bool BatteryMonitor::update(void) {
 #endif
 #ifdef HEALTHD_ENABLE_OP_FASTCHG_CHECK
             ChargingCurrent = getOpFastCurrent(ChargingCurrent);
+            //KLOG_INFO(LOG_TAG, "getOpFastCurrent active = %d ChargingCurrent = %d\n", isOpFastCharge(), ChargingCurrent);
 #endif
             double power = ((double)ChargingCurrent / MILLION) *
                            ((double)ChargingVoltage / MILLION);
@@ -672,10 +673,13 @@ bool BatteryMonitor::isOpFastCharge() {
 }
 
 int BatteryMonitor::getOpFastCurrent(int ChargingCurrent) {
-    KLOG_WARNING(LOG_TAG, "getOpFastCurrent active = %d ac = %d usb = %d\n", isOpFastCharge(), props.chargerAcOnline, props.chargerUsbOnline);
     if (props.chargerAcOnline) {
         if (isOpFastCharge()) {
+#ifdef HEALTHD_OP_FASTCHG_CURRENT
+            return HEALTHD_OP_FASTCHG_CURRENT;
+#else
             return 1800000;
+#endif
         } else {
             return 1500000;
         }
