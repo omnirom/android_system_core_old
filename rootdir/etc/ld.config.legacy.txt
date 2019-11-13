@@ -19,6 +19,7 @@ namespace.default.isolated = false
 namespace.default.search.paths  = /system/${LIB}
 namespace.default.search.paths += /vendor/${LIB}
 namespace.default.search.paths += /odm/${LIB}
+namespace.default.search.paths += /sbin
 
 namespace.default.asan.search.paths  = /data/asan/system/${LIB}
 namespace.default.asan.search.paths +=           /system/${LIB}
