@@ -99,6 +99,11 @@ status_t EmulatedVolume::doMount() {
         }
         setFuseFd(std::move(fd));
         return 0;
+    } else if (getMountUserId() != 0) {
+        // For sdcardfs, only mount for user 0, since user 0 will always be running
+        // and the paths don't change for different users. Trying to double mount
+        // will cause sepolicy to scream since sdcardfs prevents 'mounton'
+        return OK;
     }
 
     if (!(mFusePid = fork())) {
@@ -173,6 +178,10 @@ status_t EmulatedVolume::doUnmount() {
         rmdir(fuse_path.c_str());
         rmdir(pass_through_path.c_str());
         setFuseFd(android::base::unique_fd());
+        return OK;
+    } else if (getMountUserId() != 0) {
+        // For sdcardfs, only unmount for user 0, since user 0 will always be running
+        // and the paths don't change for different users.
         return OK;
     }
 

@@ -455,24 +455,19 @@ int VolumeManager::onUserAdded(userid_t userId, int userSerialNumber) {
 int VolumeManager::onUserRemoved(userid_t userId) {
     LOG(INFO) << "onUserRemoved: " << userId;
 
-    if (GetBoolProperty(android::vold::kPropFuseSnapshot, false) &&
-        mAddedUsers.find(userId) != mAddedUsers.end()) {
-        destroyEmulatedVolumesForUser(userId);
-    }
-
+    onUserStopped(userId);
     mAddedUsers.erase(userId);
-    mStartedUsers.erase(userId);
     return 0;
 }
 
 int VolumeManager::onUserStarted(userid_t userId) {
     LOG(INFO) << "onUserStarted: " << userId;
 
-    if (GetBoolProperty(android::vold::kPropFuseSnapshot, false)) {
-        if (mStartedUsers.find(userId) == mStartedUsers.end()) {
-            createEmulatedVolumesForUser(userId);
-        }
-    } else {
+    if (mStartedUsers.find(userId) == mStartedUsers.end()) {
+        createEmulatedVolumesForUser(userId);
+    }
+
+    if (!GetBoolProperty(android::vold::kPropFuseSnapshot, false)) {
         // Note that sometimes the system will spin up processes from Zygote
         // before actually starting the user, so we're okay if Zygote
         // already created this directory.
@@ -491,8 +486,7 @@ int VolumeManager::onUserStarted(userid_t userId) {
 int VolumeManager::onUserStopped(userid_t userId) {
     LOG(VERBOSE) << "onUserStopped: " << userId;
 
-    if (GetBoolProperty(android::vold::kPropFuseSnapshot, false) &&
-        mStartedUsers.find(userId) != mStartedUsers.end()) {
+    if (mStartedUsers.find(userId) != mStartedUsers.end()) {
         destroyEmulatedVolumesForUser(userId);
     }
 
