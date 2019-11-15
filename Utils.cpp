@@ -1029,15 +1029,15 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
     }
 
     if (relative_upper_path == "emulated") {
-        std::string target(StringPrintf("/mnt/user/%d/self", user_id));
-        result = PrepareDir(target, 0755, AID_ROOT, AID_ROOT);
+        std::string linkpath(StringPrintf("/mnt/user/%d/self", user_id));
+        result = PrepareDir(linkpath, 0755, AID_ROOT, AID_ROOT);
         if (result != android::OK) {
-            PLOG(ERROR) << "Failed to prepare directory " << target;
+            PLOG(ERROR) << "Failed to prepare directory " << linkpath;
             return -1;
         }
-        target += "/primary";
+        linkpath += "/primary";
 
-        Symlink(fuse_path + "/" + std::to_string(user_id), target);
+        Symlink(fuse_path + "/" + std::to_string(user_id), linkpath);
     }
 
     // Open fuse fd.
