@@ -19,6 +19,7 @@
 
 #include "Utils.h"
 #include "android/os/IVoldListener.h"
+#include "android/os/IVoldMountCallback.h"
 
 #include <cutils/multiuser.h>
 #include <utils/Errors.h>
@@ -87,13 +88,13 @@ class VolumeBase {
     State getState() const { return mState; }
     const std::string& getPath() const { return mPath; }
     const std::string& getInternalPath() const { return mInternalPath; }
-    const android::base::unique_fd& getFuseFd() const { return mFuseFd; }
     const std::list<std::shared_ptr<VolumeBase>>& getVolumes() const { return mVolumes; }
 
     status_t setDiskId(const std::string& diskId);
     status_t setPartGuid(const std::string& partGuid);
     status_t setMountFlags(int mountFlags);
     status_t setMountUserId(userid_t mountUserId);
+    status_t setMountCallback(const android::sp<android::os::IVoldMountCallback>& callback);
     status_t setSilent(bool silent);
 
     void addVolume(const std::shared_ptr<VolumeBase>& volume);
@@ -123,10 +124,9 @@ class VolumeBase {
     status_t setId(const std::string& id);
     status_t setPath(const std::string& path);
     status_t setInternalPath(const std::string& internalPath);
-    // Takes ownership of the fd passed in.
-    status_t setFuseFd(android::base::unique_fd fuseFd);
 
     android::sp<android::os::IVoldListener> getListener() const;
+    android::sp<android::os::IVoldMountCallback> getMountCallback() const;
 
   private:
     /* ID that uniquely references volume while alive */
@@ -151,8 +151,7 @@ class VolumeBase {
     std::string mInternalPath;
     /* Flag indicating that volume should emit no events */
     bool mSilent;
-    /* The filedescriptor for the fuse device, if the volume uses fuse, or -1 otherwise */
-    android::base::unique_fd mFuseFd;
+    android::sp<android::os::IVoldMountCallback> mMountCallback;
 
     /* Volumes stacked on top of this volume */
     std::list<std::shared_ptr<VolumeBase>> mVolumes;

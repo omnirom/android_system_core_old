@@ -143,14 +143,14 @@ status_t VolumeBase::setInternalPath(const std::string& internalPath) {
     return OK;
 }
 
-status_t VolumeBase::setFuseFd(android::base::unique_fd fuseFd) {
-    if ((mState != State::kChecking) && (mState != State::kEjecting)) {
-        LOG(WARNING) << getId() << " fuse fd change requires state checking or ejecting";
-        return -EBUSY;
-    }
-
-    mFuseFd = std::move(fuseFd);
+status_t VolumeBase::setMountCallback(
+        const android::sp<android::os::IVoldMountCallback>& callback) {
+    mMountCallback = callback;
     return OK;
+}
+
+sp<android::os::IVoldMountCallback> VolumeBase::getMountCallback() const {
+    return mMountCallback;
 }
 
 android::sp<android::os::IVoldListener> VolumeBase::getListener() const {
