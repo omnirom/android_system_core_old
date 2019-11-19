@@ -6,7 +6,6 @@ cc_test {
     ],
 
     srcs: [
-        "CryptfsScryptHidlizationEquivalence_test.cpp",
         "Utils_test.cpp",
         "cryptfs_test.cpp",
     ],
