@@ -697,12 +697,6 @@ int VolumeManager::reset() {
         vol->destroy();
     }
     mInternalEmulatedVolumes.clear();
-    // Add user 0 cos it's always running and started
-    auto vol = std::shared_ptr<android::vold::VolumeBase>(
-            new android::vold::EmulatedVolume("/data/media", 0));
-    vol->setMountUserId(0);
-    vol->create();
-    mInternalEmulatedVolumes.push_back(vol);
 
     for (const auto& disk : mDisks) {
         disk->destroy();
@@ -711,8 +705,6 @@ int VolumeManager::reset() {
     updateVirtualDisk();
     mAddedUsers.clear();
     mStartedUsers.clear();
-
-    mStartedUsers.insert(0);
     return 0;
 }
 
