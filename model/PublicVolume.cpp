@@ -180,7 +180,16 @@ status_t PublicVolume::doMount() {
             LOG(ERROR) << "Failed to mount public fuse volume";
             return -result;
         }
-        setFuseFd(std::move(fd));
+
+        auto callback = getMountCallback();
+        if (callback) {
+            bool is_ready = false;
+            callback->onVolumeChecking(std::move(fd), getPath(), getInternalPath(), &is_ready);
+            if (!is_ready) {
+                return -EIO;
+            }
+        }
+
         return OK;
     }
 
@@ -269,9 +278,6 @@ status_t PublicVolume::doUnmount() {
         rmdir(pass_through_path.c_str());
         rmdir(mRawPath.c_str());
         mRawPath.clear();
-
-        setFuseFd(android::base::unique_fd());
-
         return OK;
     }
 

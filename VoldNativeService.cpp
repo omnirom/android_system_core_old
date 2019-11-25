@@ -325,9 +325,9 @@ binder::Status VoldNativeService::forgetPartition(const std::string& partGuid,
     return translate(VolumeManager::Instance()->forgetPartition(partGuid, fsUuid));
 }
 
-binder::Status VoldNativeService::mount(const std::string& volId, int32_t mountFlags,
-                                        int32_t mountUserId,
-                                        android::base::unique_fd* _aidl_return) {
+binder::Status VoldNativeService::mount(
+        const std::string& volId, int32_t mountFlags, int32_t mountUserId,
+        const android::sp<android::os::IVoldMountCallback>& callback) {
     ENFORCE_SYSTEM_OR_ROOT;
     CHECK_ARGUMENT_ID(volId);
     ACQUIRE_LOCK;
@@ -340,16 +340,12 @@ binder::Status VoldNativeService::mount(const std::string& volId, int32_t mountF
     vol->setMountFlags(mountFlags);
     vol->setMountUserId(mountUserId);
 
+    vol->setMountCallback(callback);
     int res = vol->mount();
+    vol->setMountCallback(nullptr);
+
     if (res != OK) {
         return translate(res);
-    }
-
-    _aidl_return->reset(dup(vol->getFuseFd().get()));
-    if (_aidl_return->get() == -1) {
-        // Let's not return invalid fd since binder will not allow null fds. Instead give it a
-        // default value.
-        _aidl_return->reset(open("/dev/null", O_RDONLY | O_CLOEXEC));
     }
 
     if ((mountFlags & MOUNT_FLAG_PRIMARY) != 0) {

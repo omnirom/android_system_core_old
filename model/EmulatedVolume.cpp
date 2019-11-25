@@ -97,8 +97,17 @@ status_t EmulatedVolume::doMount() {
             PLOG(ERROR) << "Failed to mount emulated fuse volume";
             return -result;
         }
-        setFuseFd(std::move(fd));
-        return 0;
+
+        auto callback = getMountCallback();
+        if (callback) {
+            bool is_ready = false;
+            callback->onVolumeChecking(std::move(fd), getPath(), getInternalPath(), &is_ready);
+            if (!is_ready) {
+                return -EIO;
+            }
+        }
+
+        return OK;
     } else if (getMountUserId() != 0) {
         // For sdcardfs, only mount for user 0, since user 0 will always be running
         // and the paths don't change for different users. Trying to double mount
@@ -177,7 +186,6 @@ status_t EmulatedVolume::doUnmount() {
 
         rmdir(fuse_path.c_str());
         rmdir(pass_through_path.c_str());
-        setFuseFd(android::base::unique_fd());
         return OK;
     } else if (getMountUserId() != 0) {
         // For sdcardfs, only unmount for user 0, since user 0 will always be running
