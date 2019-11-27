@@ -42,7 +42,7 @@ interface IVold {
     void forgetPartition(@utf8InCpp String partGuid, @utf8InCpp String fsUuid);
 
     void mount(@utf8InCpp String volId, int mountFlags, int mountUserId,
-         IVoldMountCallback callback);
+         @nullable IVoldMountCallback callback);
     void unmount(@utf8InCpp String volId);
     void format(@utf8InCpp String volId, @utf8InCpp String fsType);
     void benchmark(@utf8InCpp String volId, IVoldTaskListener listener);
