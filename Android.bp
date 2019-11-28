@@ -28,6 +28,7 @@ cc_defaults {
     name: "vold_default_libs",
 
     static_libs: [
+        "libasync_safe",
         "libavb",
         "libbootloader_message",
         "libdm",

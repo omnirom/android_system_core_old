@@ -40,6 +40,7 @@
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
+#include <async_safe/log.h>
 
 #include <cutils/fs.h>
 #include <utils/Trace.h>
@@ -516,6 +517,51 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
     return 0;
 }
 
+// This code is executed after a fork so it's very important that the set of
+// methods we call here is strictly limited.
+//
+// TODO: Get rid of this guesswork altogether and instead exec a process
+// immediately after fork to do our bindding for us.
+static bool childProcess(const char* storageSource, const char* userSource, int nsFd,
+                         struct dirent* de) {
+    if (setns(nsFd, CLONE_NEWNS) != 0) {
+        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to setns for %s :%s", de->d_name,
+                              strerror(errno));
+        return false;
+    }
+
+    // NOTE: Inlined from vold::UnmountTree here to avoid using PLOG methods and
+    // to also protect against future changes that may cause issues across a
+    // fork.
+    if (TEMP_FAILURE_RETRY(umount2("/storage/", MNT_DETACH)) < 0 && errno != EINVAL &&
+        errno != ENOENT) {
+        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to unmount /storage/ :%s",
+                              strerror(errno));
+        return false;
+    }
+
+    if (TEMP_FAILURE_RETRY(mount(storageSource, "/storage", NULL, MS_BIND | MS_REC, NULL)) == -1) {
+        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to mount %s for %s :%s",
+                              storageSource, de->d_name, strerror(errno));
+        return false;
+    }
+
+    if (TEMP_FAILURE_RETRY(mount(NULL, "/storage", NULL, MS_REC | MS_SLAVE, NULL)) == -1) {
+        async_safe_format_log(ANDROID_LOG_ERROR, "vold",
+                              "Failed to set MS_SLAVE to /storage for %s :%s", de->d_name,
+                              strerror(errno));
+        return false;
+    }
+
+    if (TEMP_FAILURE_RETRY(mount(userSource, "/storage/self", NULL, MS_BIND, NULL)) == -1) {
+        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to mount %s for %s :%s",
+                              userSource, de->d_name, strerror(errno));
+        return false;
+    }
+
+    return true;
+}
+
 int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
     if (GetBoolProperty(android::vold::kPropFuseSnapshot, false)) {
         // TODO(135341433): Implement fuse specific logic.
@@ -557,6 +603,8 @@ int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
     int nsFd;
     struct stat sb;
     pid_t child;
+    std::string userSource;
+    std::string storageSource;
 
     static bool apexUpdatable = android::sysprop::ApexProperties::updatable().value_or(false);
 
@@ -632,47 +680,28 @@ int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
             goto next;
         }
 
+        if (mode == "default") {
+            storageSource = "/mnt/runtime/default";
+        } else if (mode == "read") {
+            storageSource = "/mnt/runtime/read";
+        } else if (mode == "write") {
+            storageSource = "/mnt/runtime/write";
+        } else if (mode == "full") {
+            storageSource = "/mnt/runtime/full";
+        } else {
+            // Sane default of no storage visible. No need to fork a child
+            // to remount uid.
+            goto next;
+        }
+
+        // Mount user-specific symlink helper into place
+        userSource = StringPrintf("/mnt/user/%d", multiuser_get_user_id(uid));
         if (!(child = fork())) {
-            if (setns(nsFd, CLONE_NEWNS) != 0) {
-                PLOG(ERROR) << "Failed to setns for " << de->d_name;
-                _exit(1);
-            }
-
-            android::vold::UnmountTree("/storage/");
-
-            std::string storageSource;
-            if (mode == "default") {
-                storageSource = "/mnt/runtime/default";
-            } else if (mode == "read") {
-                storageSource = "/mnt/runtime/read";
-            } else if (mode == "write") {
-                storageSource = "/mnt/runtime/write";
-            } else if (mode == "full") {
-                storageSource = "/mnt/runtime/full";
-            } else {
-                // Sane default of no storage visible
+            if (childProcess(storageSource.c_str(), userSource.c_str(), nsFd, de)) {
                 _exit(0);
-            }
-            if (TEMP_FAILURE_RETRY(
-                    mount(storageSource.c_str(), "/storage", NULL, MS_BIND | MS_REC, NULL)) == -1) {
-                PLOG(ERROR) << "Failed to mount " << storageSource << " for " << de->d_name;
+            } else {
                 _exit(1);
             }
-            if (TEMP_FAILURE_RETRY(mount(NULL, "/storage", NULL, MS_REC | MS_SLAVE, NULL)) == -1) {
-                PLOG(ERROR) << "Failed to set MS_SLAVE to /storage for " << de->d_name;
-                _exit(1);
-            }
-
-            // Mount user-specific symlink helper into place
-            userid_t user_id = multiuser_get_user_id(uid);
-            std::string userSource(StringPrintf("/mnt/user/%d", user_id));
-            if (TEMP_FAILURE_RETRY(
-                    mount(userSource.c_str(), "/storage/self", NULL, MS_BIND, NULL)) == -1) {
-                PLOG(ERROR) << "Failed to mount " << userSource << " for " << de->d_name;
-                _exit(1);
-            }
-
-            _exit(0);
         }
 
         if (child == -1) {
