@@ -69,6 +69,46 @@ std::string EmulatedVolume::getLabel() {
     }
 }
 
+static status_t mountFuseBindMounts(int userId, const std::string& label) {
+    // TODO(b/134706060) we don't actually want to mount the "write" view by
+    // default, since it gives write access to all OBB dirs.
+    std::string androidSource(
+            StringPrintf("/mnt/runtime/write/%s/%d/Android", label.c_str(), userId));
+    std::string androidTarget(
+            StringPrintf("/mnt/user/%d/%s/%d/Android", userId, label.c_str(), userId));
+
+    if (access(androidSource.c_str(), F_OK) != 0) {
+        // Android path may not exist yet if users has just been created; create it on
+        // the lower fs.
+        if (fs_prepare_dir(androidSource.c_str(), 0771, AID_ROOT, AID_ROOT) != 0) {
+            PLOG(ERROR) << "Failed to create " << androidSource;
+            return -errno;
+        }
+    }
+    LOG(INFO) << "Bind mounting " << androidSource << " on " << androidTarget;
+    auto status = BindMount(androidSource, androidTarget);
+    if (status != OK) {
+        return status;
+    }
+    LOG(INFO) << "Bind mounted " << androidSource << " on " << androidTarget;
+
+    return OK;
+}
+
+static status_t unmountFuseBindMounts(int userId, const std::string& label) {
+    std::string androidTarget(
+            StringPrintf("/mnt/user/%d/%s/%d/Android", userId, label.c_str(), userId));
+
+    LOG(INFO) << "Unmounting " << androidTarget;
+    auto status = UnmountTree(androidTarget);
+    if (status != OK) {
+        return status;
+    }
+    LOG(INFO) << "Unmounted " << androidTarget;
+
+    return OK;
+}
+
 status_t EmulatedVolume::doMount() {
     std::string label = getLabel();
     bool isVisible = getMountFlags() & MountFlags::kVisible;
@@ -159,6 +199,9 @@ status_t EmulatedVolume::doMount() {
                 return -EIO;
             }
         }
+
+        // Only do the bind-mounts when we know for sure the FUSE daemon can resolve the path.
+        return mountFuseBindMounts(user_id, label);
     }
 
     return OK;
@@ -171,19 +214,17 @@ status_t EmulatedVolume::doUnmount() {
     // error code and might cause broken behaviour in applications.
     KillProcessesUsingPath(getPath());
 
+    int userId = getMountUserId();
     if (mFuseMounted) {
         std::string label = getLabel();
+        // Ignoring unmount return status because we do want to try to unmount
+        // the rest cleanly.
 
-        std::string fuse_path(StringPrintf("/mnt/user/%d/%s", getMountUserId(), label.c_str()));
-        std::string pass_through_path(
-                StringPrintf("/mnt/pass_through/%d/%s", getMountUserId(), label.c_str()));
-        if (UnmountUserFuse(getMountUserId(), getInternalPath(), label) != OK) {
+        unmountFuseBindMounts(userId, label);
+        if (UnmountUserFuse(userId, getInternalPath(), label) != OK) {
             PLOG(INFO) << "UnmountUserFuse failed on emulated fuse volume";
             return -errno;
         }
-
-        rmdir(fuse_path.c_str());
-        rmdir(pass_through_path.c_str());
 
         mFuseMounted = false;
     }

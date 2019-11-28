@@ -269,13 +269,6 @@ status_t PublicVolume::doUnmount() {
             return -errno;
         }
 
-        std::string fuse_path(
-                StringPrintf("/mnt/user/%d/%s", getMountUserId(), stableName.c_str()));
-        std::string pass_through_path(
-                StringPrintf("/mnt/pass_through/%d/%s", getMountUserId(), stableName.c_str()));
-        rmdir(fuse_path.c_str());
-        rmdir(pass_through_path.c_str());
-
         mFuseMounted = false;
     }
 

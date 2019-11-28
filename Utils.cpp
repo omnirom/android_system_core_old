@@ -1076,6 +1076,7 @@ status_t UnmountUserFuse(userid_t user_id, const std::string& absolute_lower_pat
     if (status != android::OK) {
         LOG(ERROR) << "Failed to unmount " << pass_through_path;
     }
+    rmdir(pass_through_path.c_str());
 
     LOG(INFO) << "Unmounting fuse path " << fuse_path;
     android::status_t result = ForceUnmount(fuse_path);
@@ -1089,8 +1090,10 @@ status_t UnmountUserFuse(userid_t user_id, const std::string& absolute_lower_pat
             PLOG(ERROR) << "Failed to unmount with MNT_DETACH " << fuse_path;
             return -errno;
         }
-        return android::OK;
+        result = android::OK;
     }
+    rmdir(fuse_path.c_str());
+
     return result;
 }
 
