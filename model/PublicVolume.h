@@ -65,6 +65,9 @@ class PublicVolume : public VolumeBase {
     std::string mSdcardFsWrite;
     std::string mSdcardFsFull;
 
+    /* Whether we mounted FUSE for this volume */
+    bool mFuseMounted;
+
     /* Filesystem type */
     std::string mFsType;
     /* Filesystem UUID */

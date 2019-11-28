@@ -95,6 +95,7 @@ status_t PublicVolume::doDestroy() {
 }
 
 status_t PublicVolume::doMount() {
+    bool isVisible = getMountFlags() & MountFlags::kVisible;
     readMetadata();
 
     if (mFsType == "vfat" && vfat::IsSupported()) {
@@ -126,7 +127,7 @@ status_t PublicVolume::doMount() {
     mSdcardFsFull = StringPrintf("/mnt/runtime/full/%s", stableName.c_str());
 
     setInternalPath(mRawPath);
-    if (getMountFlags() & MountFlags::kVisible) {
+    if (isVisible) {
         setPath(StringPrintf("/storage/%s", stableName.c_str()));
     } else {
         setPath(mRawPath);
@@ -154,7 +155,7 @@ status_t PublicVolume::doMount() {
         initAsecStage();
     }
 
-    if (!(getMountFlags() & MountFlags::kVisible)) {
+    if (!isVisible) {
         // Not visible to apps, so no need to spin up sdcardfs or FUSE
         return OK;
     }
@@ -168,30 +169,6 @@ status_t PublicVolume::doMount() {
     }
 
     dev_t before = GetDevice(mSdcardFsFull);
-
-    bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
-    if (isFuse) {
-        LOG(INFO) << "Mounting public fuse volume";
-        android::base::unique_fd fd;
-        int user_id = getMountUserId();
-        int result = MountUserFuse(user_id, getInternalPath(), stableName, &fd);
-
-        if (result != 0) {
-            LOG(ERROR) << "Failed to mount public fuse volume";
-            return -result;
-        }
-
-        auto callback = getMountCallback();
-        if (callback) {
-            bool is_ready = false;
-            callback->onVolumeChecking(std::move(fd), getPath(), getInternalPath(), &is_ready);
-            if (!is_ready) {
-                return -EIO;
-            }
-        }
-
-        return OK;
-    }
 
     int sdcardFsPid;
     if (!(sdcardFsPid = fork())) {
@@ -245,6 +222,31 @@ status_t PublicVolume::doMount() {
     /* sdcardfs will have exited already. The filesystem will still be running */
     TEMP_FAILURE_RETRY(waitpid(sdcardFsPid, nullptr, 0));
 
+    bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
+    if (isFuse) {
+        // We need to mount FUSE *after* sdcardfs, since the FUSE daemon may depend
+        // on sdcardfs being up.
+        LOG(INFO) << "Mounting public fuse volume";
+        android::base::unique_fd fd;
+        int user_id = getMountUserId();
+        int result = MountUserFuse(user_id, getInternalPath(), stableName, &fd);
+
+        if (result != 0) {
+            LOG(ERROR) << "Failed to mount public fuse volume";
+            return -result;
+        }
+
+        mFuseMounted = true;
+        auto callback = getMountCallback();
+        if (callback) {
+            bool is_ready = false;
+            callback->onVolumeChecking(std::move(fd), getPath(), getInternalPath(), &is_ready);
+            if (!is_ready) {
+                return -EIO;
+            }
+        }
+    }
+
     return OK;
 }
 
@@ -255,30 +257,26 @@ status_t PublicVolume::doUnmount() {
     // error code and might cause broken behaviour in applications.
     KillProcessesUsingPath(getPath());
 
-    bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
-    if (isFuse) {
+    if (mFuseMounted) {
         // Use UUID as stable name, if available
         std::string stableName = getId();
         if (!mFsUuid.empty()) {
             stableName = mFsUuid;
         }
 
+        if (UnmountUserFuse(getMountUserId(), getInternalPath(), stableName) != OK) {
+            PLOG(INFO) << "UnmountUserFuse failed on public fuse volume";
+            return -errno;
+        }
+
         std::string fuse_path(
                 StringPrintf("/mnt/user/%d/%s", getMountUserId(), stableName.c_str()));
         std::string pass_through_path(
                 StringPrintf("/mnt/pass_through/%d/%s", getMountUserId(), stableName.c_str()));
-        if (UnmountUserFuse(pass_through_path, fuse_path) != OK) {
-            PLOG(INFO) << "UnmountUserFuse failed on public fuse volume";
-            return -errno;
-        }
-        ForceUnmount(kAsecPath);
-        ForceUnmount(mRawPath);
-
         rmdir(fuse_path.c_str());
         rmdir(pass_through_path.c_str());
-        rmdir(mRawPath.c_str());
-        mRawPath.clear();
-        return OK;
+
+        mFuseMounted = false;
     }
 
     ForceUnmount(kAsecPath);

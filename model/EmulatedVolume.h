@@ -46,6 +46,7 @@ class EmulatedVolume : public VolumeBase {
     status_t doUnmount() override;
 
   private:
+    std::string getLabel();
     std::string mRawPath;
     std::string mLabel;
 
@@ -53,6 +54,9 @@ class EmulatedVolume : public VolumeBase {
     std::string mSdcardFsRead;
     std::string mSdcardFsWrite;
     std::string mSdcardFsFull;
+
+    /* Whether we mounted FUSE for this volume */
+    bool mFuseMounted;
 
     DISALLOW_COPY_AND_ASSIGN(EmulatedVolume);
 };

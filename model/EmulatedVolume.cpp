@@ -59,13 +59,19 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const s
 
 EmulatedVolume::~EmulatedVolume() {}
 
-status_t EmulatedVolume::doMount() {
+std::string EmulatedVolume::getLabel() {
     // We could have migrated storage to an adopted private volume, so always
     // call primary storage "emulated" to avoid media rescans.
-    std::string label = mLabel;
     if (getMountFlags() & MountFlags::kPrimary) {
-        label = "emulated";
+        return "emulated";
+    } else {
+        return mLabel;
     }
+}
+
+status_t EmulatedVolume::doMount() {
+    std::string label = getLabel();
+    bool isVisible = getMountFlags() & MountFlags::kVisible;
 
     mSdcardFsDefault = StringPrintf("/mnt/runtime/default/%s", label.c_str());
     mSdcardFsRead = StringPrintf("/mnt/runtime/read/%s", label.c_str());
@@ -87,7 +93,53 @@ status_t EmulatedVolume::doMount() {
 
     bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
 
-    if (isFuse) {
+    // Mount sdcardfs regardless of FUSE, since we need it to bind-mount on top of the
+    // FUSE volume for various reasons.
+    if (getMountUserId() == 0) {
+        LOG(INFO) << "Executing sdcardfs";
+        int sdcardFsPid;
+        if (!(sdcardFsPid = fork())) {
+            // clang-format off
+            if (execl(kSdcardFsPath, kSdcardFsPath,
+                    "-u", "1023", // AID_MEDIA_RW
+                    "-g", "1023", // AID_MEDIA_RW
+                    "-m",
+                    "-w",
+                    "-G",
+                    "-i",
+                    "-o",
+                    mRawPath.c_str(),
+                    label.c_str(),
+                    NULL)) {
+                // clang-format on
+                PLOG(ERROR) << "Failed to exec";
+            }
+
+            LOG(ERROR) << "sdcardfs exiting";
+            _exit(1);
+        }
+
+        if (sdcardFsPid == -1) {
+            PLOG(ERROR) << getId() << " failed to fork";
+            return -errno;
+        }
+
+        nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
+        while (before == GetDevice(mSdcardFsFull)) {
+            LOG(DEBUG) << "Waiting for sdcardfs to spin up...";
+            usleep(50000);  // 50ms
+
+            nsecs_t now = systemTime(SYSTEM_TIME_BOOTTIME);
+            if (nanoseconds_to_milliseconds(now - start) > 5000) {
+                LOG(WARNING) << "Timed out while waiting for sdcardfs to spin up";
+                return -ETIMEDOUT;
+            }
+        }
+        /* sdcardfs will have exited already. The filesystem will still be running */
+        TEMP_FAILURE_RETRY(waitpid(sdcardFsPid, nullptr, 0));
+        sdcardFsPid = 0;
+    }
+    if (isFuse && isVisible) {
         LOG(INFO) << "Mounting emulated fuse volume";
         android::base::unique_fd fd;
         int user_id = getMountUserId();
@@ -98,6 +150,7 @@ status_t EmulatedVolume::doMount() {
             return -result;
         }
 
+        mFuseMounted = true;
         auto callback = getMountCallback();
         if (callback) {
             bool is_ready = false;
@@ -106,56 +159,7 @@ status_t EmulatedVolume::doMount() {
                 return -EIO;
             }
         }
-
-        return OK;
-    } else if (getMountUserId() != 0) {
-        // For sdcardfs, only mount for user 0, since user 0 will always be running
-        // and the paths don't change for different users. Trying to double mount
-        // will cause sepolicy to scream since sdcardfs prevents 'mounton'
-        return OK;
     }
-
-    LOG(INFO) << "Executing sdcardfs";
-    int sdcardFsPid;
-    if (!(sdcardFsPid = fork())) {
-        // clang-format off
-        if (execl(kSdcardFsPath, kSdcardFsPath,
-                "-u", "1023", // AID_MEDIA_RW
-                "-g", "1023", // AID_MEDIA_RW
-                "-m",
-                "-w",
-                "-G",
-                "-i",
-                "-o",
-                mRawPath.c_str(),
-                label.c_str(),
-                NULL)) {
-            // clang-format on
-            PLOG(ERROR) << "Failed to exec";
-        }
-
-        LOG(ERROR) << "sdcardfs exiting";
-        _exit(1);
-    }
-
-    if (sdcardFsPid == -1) {
-        PLOG(ERROR) << getId() << " failed to fork";
-        return -errno;
-    }
-
-    nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
-    while (before == GetDevice(mSdcardFsFull)) {
-        LOG(DEBUG) << "Waiting for sdcardfs to spin up...";
-        usleep(50000);  // 50ms
-
-        nsecs_t now = systemTime(SYSTEM_TIME_BOOTTIME);
-        if (nanoseconds_to_milliseconds(now - start) > 5000) {
-            LOG(WARNING) << "Timed out while waiting for sdcardfs to spin up";
-            return -ETIMEDOUT;
-        }
-    }
-    /* sdcardfs will have exited already. The filesystem will still be running */
-    TEMP_FAILURE_RETRY(waitpid(sdcardFsPid, nullptr, 0));
 
     return OK;
 }
@@ -167,27 +171,23 @@ status_t EmulatedVolume::doUnmount() {
     // error code and might cause broken behaviour in applications.
     KillProcessesUsingPath(getPath());
 
-    bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
-    if (isFuse) {
-        // We could have migrated storage to an adopted private volume, so always
-        // call primary storage "emulated" to avoid media rescans.
-        std::string label = mLabel;
-        if (getMountFlags() & MountFlags::kPrimary) {
-            label = "emulated";
-        }
+    if (mFuseMounted) {
+        std::string label = getLabel();
 
         std::string fuse_path(StringPrintf("/mnt/user/%d/%s", getMountUserId(), label.c_str()));
         std::string pass_through_path(
                 StringPrintf("/mnt/pass_through/%d/%s", getMountUserId(), label.c_str()));
-        if (UnmountUserFuse(pass_through_path, fuse_path) != OK) {
+        if (UnmountUserFuse(getMountUserId(), getInternalPath(), label) != OK) {
             PLOG(INFO) << "UnmountUserFuse failed on emulated fuse volume";
             return -errno;
         }
 
         rmdir(fuse_path.c_str());
         rmdir(pass_through_path.c_str());
-        return OK;
-    } else if (getMountUserId() != 0) {
+
+        mFuseMounted = false;
+    }
+    if (getMountUserId() != 0) {
         // For sdcardfs, only unmount for user 0, since user 0 will always be running
         // and the paths don't change for different users.
         return OK;
