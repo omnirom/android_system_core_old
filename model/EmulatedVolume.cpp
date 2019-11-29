@@ -208,13 +208,22 @@ status_t EmulatedVolume::doMount() {
 }
 
 status_t EmulatedVolume::doUnmount() {
-    // Unmount the storage before we kill the FUSE process. If we kill
-    // the FUSE process first, most file system operations will return
+    int userId = getMountUserId();
+
+    // Kill all processes using the filesystem before we unmount it. If we
+    // unmount the filesystem first, most file system operations will return
     // ENOTCONN until the unmount completes. This is an exotic and unusual
     // error code and might cause broken behaviour in applications.
-    KillProcessesUsingPath(getPath());
+    if (mFuseMounted) {
+        // For FUSE specifically, we have an emulated volume per user, so only kill
+        // processes using files from this particular user.
+        std::string user_path(StringPrintf("%s/%d", getPath().c_str(), getMountUserId()));
+        LOG(INFO) << "Killing all processes referencing " << user_path;
+        KillProcessesUsingPath(user_path);
+    } else {
+        KillProcessesUsingPath(getPath());
+    }
 
-    int userId = getMountUserId();
     if (mFuseMounted) {
         std::string label = getLabel();
         // Ignoring unmount return status because we do want to try to unmount
