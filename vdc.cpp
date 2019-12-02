@@ -101,6 +101,8 @@ int main(int argc, char** argv) {
         checkStatus(args, vold->mountDefaultEncrypted());
     } else if (args[0] == "volume" && args[1] == "shutdown") {
         checkStatus(args, vold->shutdown());
+    } else if (args[0] == "volume" && args[1] == "reset") {
+        checkStatus(args, vold->reset());
     } else if (args[0] == "cryptfs" && args[1] == "checkEncryption" && args.size() == 3) {
         checkStatus(args, vold->checkEncryption(args[2]));
     } else if (args[0] == "cryptfs" && args[1] == "mountFstab" && args.size() == 4) {
@@ -111,7 +113,8 @@ int main(int argc, char** argv) {
         bool supported = false;
         checkStatus(args, vold->supportsCheckpoint(&supported));
         return supported ? 1 : 0;
-    } else if (args[0] == "checkpoint" && args[1] == "supportsBlockCheckpoint" && args.size() == 2) {
+    } else if (args[0] == "checkpoint" && args[1] == "supportsBlockCheckpoint" &&
+               args.size() == 2) {
         bool supported = false;
         checkStatus(args, vold->supportsBlockCheckpoint(&supported));
         return supported ? 1 : 0;
