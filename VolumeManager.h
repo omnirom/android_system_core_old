@@ -23,6 +23,7 @@
 
 #include <list>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -84,7 +85,7 @@ class VolumeManager {
 
     void listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list) const;
 
-    const std::unordered_set<userid_t>& getStartedUsers() const { return mStartedUsers; }
+    const std::set<userid_t>& getStartedUsers() const { return mStartedUsers; }
 
     int forgetPartition(const std::string& partGuid, const std::string& fsUuid);
 
@@ -159,7 +160,9 @@ class VolumeManager {
     std::list<std::shared_ptr<android::vold::VolumeBase>> mInternalEmulatedVolumes;
 
     std::unordered_map<userid_t, int> mAddedUsers;
-    std::unordered_set<userid_t> mStartedUsers;
+    // This needs to be a regular set because we care about the ordering here;
+    // user 0 should always go first, because it is responsible for sdcardfs.
+    std::set<userid_t> mStartedUsers;
 
     std::string mVirtualDiskPath;
     std::shared_ptr<android::vold::Disk> mVirtualDisk;
