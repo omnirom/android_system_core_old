@@ -115,8 +115,8 @@ status_t EmulatedVolume::doMount() {
         return OK;
     }
 
+    LOG(INFO) << "Executing sdcardfs";
     if (!(mFusePid = fork())) {
-        LOG(INFO) << "Executing sdcardfs";
         // clang-format off
         if (execl(kFusePath, kFusePath,
                 "-u", "1023", // AID_MEDIA_RW
