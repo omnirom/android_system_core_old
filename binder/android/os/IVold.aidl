@@ -16,6 +16,7 @@
 
 package android.os;
 
+import android.os.incremental.IncrementalFileSystemControlParcel;
 import android.os.IVoldListener;
 import android.os.IVoldTaskListener;
 
@@ -124,6 +125,11 @@ interface IVold {
     void destroyStubVolume(@utf8InCpp String volId);
 
     FileDescriptor openAppFuseFile(int uid, int mountId, int fileId, int flags);
+
+    int incFsVersion();
+    IncrementalFileSystemControlParcel mountIncFs(@utf8InCpp String imagePath, @utf8InCpp String targetDir, int flags);
+    void unmountIncFs(@utf8InCpp String dir);
+    void bindMount(@utf8InCpp String sourceDir, @utf8InCpp String targetDir);
 
     const int ENCRYPTION_FLAG_NO_UI = 4;
 
