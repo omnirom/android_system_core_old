@@ -28,6 +28,7 @@
 #include "FsCrypt.h"
 #include "MetadataCrypt.h"
 #include "cryptfs.h"
+#include "incfs_ndk.h"
 
 #include <fstream>
 #include <thread>
@@ -913,6 +914,39 @@ binder::Status VoldNativeService::resetCheckpoint() {
 
     cp_resetCheckpoint();
     return ok();
+}
+
+binder::Status VoldNativeService::incFsVersion(int32_t* _aidl_return) {
+    *_aidl_return = IncFs_Version();
+    return ok();
+}
+
+binder::Status VoldNativeService::mountIncFs(
+        const std::string& imagePath, const std::string& targetDir, int32_t flags,
+        ::android::os::incremental::IncrementalFileSystemControlParcel* _aidl_return) {
+    auto result = IncFs_Mount(imagePath.c_str(), targetDir.c_str(), flags,
+                              INCFS_DEFAULT_READ_TIMEOUT_MS, 0777);
+    if (result.cmdFd < 0) {
+        return translate(result.cmdFd);
+    }
+    LOG(INFO) << "VoldNativeService::mountIncFs: everything is fine! " << result.cmdFd << "/"
+              << result.logFd;
+    using ParcelFileDescriptor = ::android::os::ParcelFileDescriptor;
+    using unique_fd = ::android::base::unique_fd;
+    _aidl_return->cmd = std::make_unique<ParcelFileDescriptor>(unique_fd(result.cmdFd));
+    if (result.logFd >= 0) {
+        _aidl_return->log = std::make_unique<ParcelFileDescriptor>(unique_fd(result.logFd));
+    }
+    return ok();
+}
+
+binder::Status VoldNativeService::unmountIncFs(const std::string& dir) {
+    return translate(IncFs_Unmount(dir.c_str()));
+}
+
+binder::Status VoldNativeService::bindMount(const std::string& sourceDir,
+                                            const std::string& targetDir) {
+    return translate(IncFs_BindMount(sourceDir.c_str(), targetDir.c_str()));
 }
 
 }  // namespace vold
