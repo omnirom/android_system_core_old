@@ -27,7 +27,7 @@ namespace vold {
 /*
  * Shared storage emulated on top of private storage.
  *
- * Knows how to spawn a FUSE daemon to synthesize permissions.  ObbVolume
+ * Knows how to spawn a sdcardfs daemon to synthesize permissions.  ObbVolume
  * can be stacked above it.
  *
  * This volume is always multi-user aware, but is only binds itself to
@@ -49,13 +49,10 @@ class EmulatedVolume : public VolumeBase {
     std::string mRawPath;
     std::string mLabel;
 
-    std::string mFuseDefault;
-    std::string mFuseRead;
-    std::string mFuseWrite;
-    std::string mFuseFull;
-
-    /* PID of FUSE wrapper */
-    pid_t mFusePid;
+    std::string mSdcardFsDefault;
+    std::string mSdcardFsRead;
+    std::string mSdcardFsWrite;
+    std::string mSdcardFsFull;
 
     DISALLOW_COPY_AND_ASSIGN(EmulatedVolume);
 };
