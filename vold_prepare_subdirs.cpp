@@ -155,6 +155,7 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/storaged")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/rollback")) return false;
             // TODO: Return false if this returns false once sure this should succeed.
+            prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/apexrollback");
             prepare_apex_subdirs(sehandle, misc_de_path);
 
             auto vendor_de_path = android::vold::BuildDataVendorDePath(user_id);
@@ -172,6 +173,7 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/storaged")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/rollback")) return false;
             // TODO: Return false if this returns false once sure this should succeed.
+            prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/apexrollback");
             prepare_apex_subdirs(sehandle, misc_ce_path);
 
             auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
