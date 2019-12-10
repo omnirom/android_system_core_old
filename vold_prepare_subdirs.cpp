@@ -120,6 +120,31 @@ static bool rmrf_contents(const std::string& path) {
     }
 }
 
+static bool prepare_apex_subdirs(struct selabel_handle* sehandle, const std::string& path) {
+    if (!prepare_dir(sehandle, 0700, 0, 0, path + "/apexdata")) return false;
+
+    auto dirp = std::unique_ptr<DIR, int (*)(DIR*)>(opendir("/apex"), closedir);
+    if (!dirp) {
+        PLOG(ERROR) << "Unable to open apex directory";
+        return false;
+    }
+    struct dirent* entry;
+    while ((entry = readdir(dirp.get())) != nullptr) {
+        if (entry->d_type != DT_DIR) continue;
+
+        const char* name = entry->d_name;
+        // skip any starting with "."
+        if (name[0] == '.') continue;
+
+        if (strchr(name, '@') != NULL) continue;
+
+        if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM, path + "/apexdata/" + name)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int flags) {
     struct selabel_handle* sehandle = selinux_android_file_context_handle();
 
@@ -129,6 +154,9 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/vold")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/storaged")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/rollback")) return false;
+            // TODO: Return false if this returns false once sure this should succeed.
+            prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/apexrollback");
+            prepare_apex_subdirs(sehandle, misc_de_path);
 
             auto vendor_de_path = android::vold::BuildDataVendorDePath(user_id);
             if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM, vendor_de_path + "/fpdata")) {
@@ -144,6 +172,9 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/vold")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/storaged")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/rollback")) return false;
+            // TODO: Return false if this returns false once sure this should succeed.
+            prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/apexrollback");
+            prepare_apex_subdirs(sehandle, misc_ce_path);
 
             auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
             if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM, system_ce_path + "/backup")) {
