@@ -154,7 +154,8 @@ bool writeStringToFile(const std::string& payload, const std::string& filename);
 status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
                        const std::string& relative_upper_path, android::base::unique_fd* fuse_fd);
 
-status_t UnmountUserFuse(const std::string& pass_through_path, const std::string& fuse_path);
+status_t UnmountUserFuse(userid_t userId, const std::string& absolute_lower_path,
+                         const std::string& relative_upper_path);
 
 }  // namespace vold
 }  // namespace android

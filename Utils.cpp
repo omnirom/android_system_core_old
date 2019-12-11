@@ -995,16 +995,11 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
     std::string pass_through_path(
             StringPrintf("%s/%s", pre_pass_through_path.c_str(), relative_upper_path.c_str()));
 
-    // Force remove the existing mount before we attempt to prepare the
-    // directory. If we have a dangling mount, then PrepareDir may fail if the
-    // indirection to FUSE doesn't work.
-    android::status_t result = UnmountUserFuse(pass_through_path, fuse_path);
-    if (result != android::OK) {
-        return -1;
-    }
+    std::string sdcardfs_path(
+            StringPrintf("/mnt/runtime/full/%s", relative_upper_path.c_str()));
 
     // Create directories.
-    result = PrepareDir(pre_fuse_path, 0700, AID_ROOT, AID_ROOT);
+    auto result = PrepareDir(pre_fuse_path, 0700, AID_ROOT, AID_ROOT);
     if (result != android::OK) {
         PLOG(ERROR) << "Failed to prepare directory " << pre_fuse_path;
         return -1;
@@ -1063,14 +1058,27 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
         PLOG(ERROR) << "Failed to mount " << fuse_path;
         return -errno;
     }
-    LOG(INFO) << "Bind mounting to " << absolute_lower_path;
-    return BindMount(absolute_lower_path, pass_through_path);
+
+    LOG(INFO) << "Bind mounting " << sdcardfs_path << " to " << pass_through_path;
+    return BindMount(sdcardfs_path, pass_through_path);
 }
 
-status_t UnmountUserFuse(const std::string& pass_through_path, const std::string& fuse_path) {
+status_t UnmountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
+                         const std::string& relative_upper_path) {
+    std::string fuse_path(StringPrintf("/mnt/user/%d/%s", user_id, relative_upper_path.c_str()));
+    std::string pass_through_path(
+            StringPrintf("/mnt/pass_through/%d/%s", user_id, relative_upper_path.c_str()));
+
     // Best effort unmount pass_through path
     sSleepOnUnmount = false;
-    ForceUnmount(pass_through_path);
+    LOG(INFO) << "Unmounting pass_through_path " << pass_through_path;
+    auto status = ForceUnmount(pass_through_path);
+    if (status != android::OK) {
+        LOG(ERROR) << "Failed to unmount " << pass_through_path;
+    }
+    rmdir(pass_through_path.c_str());
+
+    LOG(INFO) << "Unmounting fuse path " << fuse_path;
     android::status_t result = ForceUnmount(fuse_path);
     sSleepOnUnmount = true;
     if (result != android::OK) {
@@ -1082,8 +1090,10 @@ status_t UnmountUserFuse(const std::string& pass_through_path, const std::string
             PLOG(ERROR) << "Failed to unmount with MNT_DETACH " << fuse_path;
             return -errno;
         }
-        return android::OK;
+        result = android::OK;
     }
+    rmdir(fuse_path.c_str());
+
     return result;
 }
 
