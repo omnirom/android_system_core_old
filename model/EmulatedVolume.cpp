@@ -47,6 +47,7 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, int userId)
     setId(StringPrintf("emulated;%u", userId));
     mRawPath = rawPath;
     mLabel = "emulated";
+    mFuseMounted = false;
 }
 
 EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const std::string& fsUuid,

@@ -50,6 +50,7 @@ static const char* kAsecPath = "/mnt/secure/asec";
 PublicVolume::PublicVolume(dev_t device) : VolumeBase(Type::kPublic), mDevice(device) {
     setId(StringPrintf("public:%u,%u", major(device), minor(device)));
     mDevPath = StringPrintf("/dev/block/vold/%s", getId().c_str());
+    mFuseMounted = false;
 }
 
 PublicVolume::~PublicVolume() {}
