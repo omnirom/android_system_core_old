@@ -189,7 +189,7 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
                                       bool needs_encrypt) {
     LOG(DEBUG) << "fscrypt_mount_metadata_encrypted: " << mount_point << " " << needs_encrypt;
     auto encrypted_state = android::base::GetProperty("ro.crypto.state", "");
-    if (encrypted_state != "") {
+    if (encrypted_state != "" && encrypted_state != "encrypted") {
         LOG(DEBUG) << "fscrypt_enable_crypto got unexpected starting state: " << encrypted_state;
         return false;
     }
