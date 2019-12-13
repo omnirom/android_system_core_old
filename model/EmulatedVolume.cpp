@@ -75,7 +75,7 @@ static status_t mountFuseBindMounts(int userId, const std::string& label) {
     // TODO(b/134706060) we don't actually want to mount the "write" view by
     // default, since it gives write access to all OBB dirs.
     std::string androidSource(
-            StringPrintf("/mnt/runtime/write/%s/%d/Android", label.c_str(), userId));
+            StringPrintf("/mnt/runtime/default/%s/%d/Android", label.c_str(), userId));
     std::string androidTarget(
             StringPrintf("/mnt/user/%d/%s/%d/Android", userId, label.c_str(), userId));
 
