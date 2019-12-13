@@ -374,7 +374,7 @@ int VolumeManager::forgetPartition(const std::string& partGuid, const std::strin
 }
 
 int VolumeManager::linkPrimary(userid_t userId) {
-    if (!GetBoolProperty(android::vold::kPropFuseSnapshot, false)) {
+    if (!GetBoolProperty(android::vold::kPropFuse, false)) {
         std::string source(mPrimary->getPath());
         if (mPrimary->isEmulated()) {
             source = StringPrintf("%s/%d", source.c_str(), userId);
@@ -468,7 +468,7 @@ int VolumeManager::onUserStarted(userid_t userId) {
         createEmulatedVolumesForUser(userId);
     }
 
-    if (!GetBoolProperty(android::vold::kPropFuseSnapshot, false)) {
+    if (!GetBoolProperty(android::vold::kPropFuse, false)) {
         // Note that sometimes the system will spin up processes from Zygote
         // before actually starting the user, so we're okay if Zygote
         // already created this directory.
@@ -563,7 +563,7 @@ static bool childProcess(const char* storageSource, const char* userSource, int 
 }
 
 int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
-    if (GetBoolProperty(android::vold::kPropFuseSnapshot, false)) {
+    if (GetBoolProperty(android::vold::kPropFuse, false)) {
         // TODO(135341433): Implement fuse specific logic.
         return 0;
     }

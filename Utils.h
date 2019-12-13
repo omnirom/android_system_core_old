@@ -34,7 +34,7 @@ struct DIR;
 namespace android {
 namespace vold {
 
-static const char* kPropFuseSnapshot = "sys.fuse_snapshot";
+static const char* kPropFuse = "persist.sys.fuse";
 
 /* SELinux contexts used depending on the block device type */
 extern security_context_t sBlkidContext;
