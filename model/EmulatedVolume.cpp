@@ -133,7 +133,7 @@ status_t EmulatedVolume::doMount() {
 
     dev_t before = GetDevice(mSdcardFsFull);
 
-    bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
+    bool isFuse = base::GetBoolProperty(kPropFuse, false);
 
     // Mount sdcardfs regardless of FUSE, since we need it to bind-mount on top of the
     // FUSE volume for various reasons.

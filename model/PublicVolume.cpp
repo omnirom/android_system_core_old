@@ -223,7 +223,7 @@ status_t PublicVolume::doMount() {
     /* sdcardfs will have exited already. The filesystem will still be running */
     TEMP_FAILURE_RETRY(waitpid(sdcardFsPid, nullptr, 0));
 
-    bool isFuse = base::GetBoolProperty(kPropFuseSnapshot, false);
+    bool isFuse = base::GetBoolProperty(kPropFuse, false);
     if (isFuse) {
         // We need to mount FUSE *after* sdcardfs, since the FUSE daemon may depend
         // on sdcardfs being up.
