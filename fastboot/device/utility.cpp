@@ -197,7 +197,8 @@ bool GetDeviceLockStatus() {
     if (!android::base::ReadFileToString("/proc/cmdline", &cmdline)) {
         return true;
     }
-    return cmdline.find("androidboot.verifiedbootstate=orange") == std::string::npos;
+    //return cmdline.find("androidboot.verifiedbootstate=orange") == std::string::npos;
+    return false;
 }
 
 bool UpdateAllPartitionMetadata(FastbootDevice* device, const std::string& super_name,
