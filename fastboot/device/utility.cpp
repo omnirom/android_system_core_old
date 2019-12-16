@@ -17,7 +17,7 @@
 #include "utility.h"
 
 #include <dirent.h>
-#include <sys/stat.h>
+// #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -197,7 +197,8 @@ bool GetDeviceLockStatus() {
     if (!android::base::ReadFileToString("/proc/cmdline", &cmdline)) {
         return true;
     }
-    return cmdline.find("androidboot.verifiedbootstate=orange") == std::string::npos;
+    //return cmdline.find("androidboot.verifiedbootstate=orange") == std::string::npos;
+    return true;
 }
 
 bool UpdateAllPartitionMetadata(FastbootDevice* device, const std::string& super_name,
