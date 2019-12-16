@@ -21,7 +21,7 @@
 #include <string>
 
 #include <fcntl.h>
-#include <linux/fs.h>
+#include <linux/fscrypt.h>
 #include <openssl/sha.h>
 #include <sys/ioctl.h>
 
@@ -31,7 +31,6 @@
 
 #include "KeyStorage.h"
 #include "Utils.h"
-#include "fscrypt_uapi.h"
 
 namespace android {
 namespace vold {
