@@ -809,8 +809,9 @@ int VolumeManager::unmountAll() {
 int VolumeManager::mkdirs(const std::string& path) {
     // Only offer to create directories for paths managed by vold
     if (StartsWith(path, "/storage/")) {
+        std::string lower_path = "/mnt/runtime/default/" + path.substr(9);
         // fs_mkdirs() does symlink checking and relative path enforcement
-        return fs_mkdirs(path.c_str(), 0700);
+        return fs_mkdirs(lower_path.c_str(), 0700);
     } else {
         LOG(ERROR) << "Failed to find mounted volume for " << path;
         return -EINVAL;
