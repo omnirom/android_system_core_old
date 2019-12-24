@@ -55,6 +55,7 @@
 
 using namespace std::chrono_literals;
 using android::base::ReadFileToString;
+using android::base::StartsWith;
 using android::base::StringPrintf;
 
 namespace android {
@@ -112,6 +113,27 @@ status_t DestroyDeviceNode(const std::string& path) {
     } else {
         return OK;
     }
+}
+
+int PrepareDirsFromRoot(std::string path, std::string root, mode_t mode, uid_t uid, gid_t gid) {
+    int ret = 0;
+    if (!StartsWith(path, root)) {
+        return -1;
+    }
+    std::string to_create_from_root = path.substr(root.length());
+
+    size_t pos = 0;
+    while ((pos = to_create_from_root.find('/')) != std::string::npos) {
+        auto component = to_create_from_root.substr(0, pos);
+        to_create_from_root.erase(0, pos + 1);
+        root = root + component + "/";
+        ret = fs_prepare_dir(root.c_str(), mode, uid, gid);
+        if (ret) {
+            break;
+        }
+    }
+
+    return ret;
 }
 
 status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
