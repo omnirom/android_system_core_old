@@ -320,13 +320,13 @@ static void cp_healthDaemon(std::string mnt_pnt, std::string blk_device, bool is
         uint64_t free_bytes = 0;
         if (is_fs_cp) {
             statvfs(mnt_pnt.c_str(), &data);
-            free_bytes = data.f_bavail * data.f_frsize;
+            free_bytes = ((uint64_t) data.f_bavail) * data.f_frsize;
         } else {
             std::string bow_device = fs_mgr_find_bow_device(blk_device);
             if (!bow_device.empty()) {
                 std::string content;
                 if (android::base::ReadFileToString(bow_device + "/bow/free", &content)) {
-                    free_bytes = std::strtoul(content.c_str(), NULL, 10);
+                    free_bytes = std::strtoull(content.c_str(), NULL, 10);
                 }
             }
         }
