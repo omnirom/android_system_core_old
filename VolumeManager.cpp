@@ -264,9 +264,16 @@ void VolumeManager::handleBlockEvent(NetlinkEvent* evt) {
 void VolumeManager::handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk) {
     // For security reasons, if secure keyguard is showing, wait
     // until the user unlocks the device to actually touch it
+    // Additionally, wait until user 0 is actually started, since we need
+    // the user to be up before we can mount a FUSE daemon to handle the disk.
+    bool userZeroStarted = mStartedUsers.find(0) != mStartedUsers.end();
     if (mSecureKeyguardShowing) {
         LOG(INFO) << "Found disk at " << disk->getEventPath()
                   << " but delaying scan due to secure keyguard";
+        mPendingDisks.push_back(disk);
+    } else if (!userZeroStarted) {
+        LOG(INFO) << "Found disk at " << disk->getEventPath()
+                  << " but delaying scan due to user zero not having started";
         mPendingDisks.push_back(disk);
     } else {
         disk->create();
@@ -482,6 +489,8 @@ int VolumeManager::onUserStarted(userid_t userId) {
     }
 
     mStartedUsers.insert(userId);
+
+    createPendingDisksIfNeeded();
     return 0;
 }
 
@@ -496,17 +505,22 @@ int VolumeManager::onUserStopped(userid_t userId) {
     return 0;
 }
 
-int VolumeManager::onSecureKeyguardStateChanged(bool isShowing) {
-    mSecureKeyguardShowing = isShowing;
-    if (!mSecureKeyguardShowing) {
-        // Now that secure keyguard has been dismissed, process
-        // any pending disks
+void VolumeManager::createPendingDisksIfNeeded() {
+    bool userZeroStarted = mStartedUsers.find(0) != mStartedUsers.end();
+    if (!mSecureKeyguardShowing && userZeroStarted) {
+        // Now that secure keyguard has been dismissed and user 0 has
+        // started, process any pending disks
         for (const auto& disk : mPendingDisks) {
             disk->create();
             mDisks.push_back(disk);
         }
         mPendingDisks.clear();
     }
+}
+
+int VolumeManager::onSecureKeyguardStateChanged(bool isShowing) {
+    mSecureKeyguardShowing = isShowing;
+    createPendingDisksIfNeeded();
     return 0;
 }
 

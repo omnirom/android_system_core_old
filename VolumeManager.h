@@ -94,6 +94,7 @@ class VolumeManager {
     int onUserStarted(userid_t userId);
     int onUserStopped(userid_t userId);
 
+    void createPendingDisksIfNeeded();
     int onSecureKeyguardStateChanged(bool isShowing);
 
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
