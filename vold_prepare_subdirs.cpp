@@ -138,7 +138,7 @@ static bool prepare_apex_subdirs(struct selabel_handle* sehandle, const std::str
 
         if (strchr(name, '@') != NULL) continue;
 
-        if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM, path + "/apexdata/" + name)) {
+        if (!prepare_dir(sehandle, 0770, AID_ROOT, AID_SYSTEM, path + "/apexdata/" + name)) {
             return false;
         }
     }
