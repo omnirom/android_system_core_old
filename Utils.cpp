@@ -1021,7 +1021,13 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
             StringPrintf("/mnt/runtime/full/%s", relative_upper_path.c_str()));
 
     // Create directories.
-    auto result = PrepareDir(pre_fuse_path, 0700, AID_ROOT, AID_ROOT);
+    // Shell is neither AID_ROOT nor AID_EVERYBODY. Since it equally needs 'execute' access to
+    // /mnt/user/0 to 'adb shell ls /sdcard' for instance, we set the uid bit of /mnt/user/0 to
+    // AID_SHELL. This gives shell access along with apps running as group everybody (user 0 apps)
+    // These bits should be consistent with what is set in zygote in
+    // com_android_internal_os_Zygote#MountEmulatedStorage on volume bind mount during app fork
+    auto result = PrepareDir(pre_fuse_path, 0710, user_id ? AID_ROOT : AID_SHELL,
+                             multiuser_get_uid(user_id, AID_EVERYBODY));
     if (result != android::OK) {
         PLOG(ERROR) << "Failed to prepare directory " << pre_fuse_path;
         return -1;
