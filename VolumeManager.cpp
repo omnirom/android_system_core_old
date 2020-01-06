@@ -81,6 +81,7 @@ using android::vold::BindMount;
 using android::vold::CreateDir;
 using android::vold::DeleteDirContents;
 using android::vold::DeleteDirContentsAndDir;
+using android::vold::PrepareDirsFromRoot;
 using android::vold::PrivateVolume;
 using android::vold::Symlink;
 using android::vold::Unlink;
@@ -806,16 +807,21 @@ int VolumeManager::unmountAll() {
     return 0;
 }
 
-int VolumeManager::mkdirs(const std::string& path) {
+int VolumeManager::setupAppDir(const std::string& path, const std::string& appDirRoot,
+                               int32_t appUid) {
     // Only offer to create directories for paths managed by vold
-    if (StartsWith(path, "/storage/")) {
-        std::string lower_path = "/mnt/runtime/default/" + path.substr(9);
-        // fs_mkdirs() does symlink checking and relative path enforcement
-        return fs_mkdirs(lower_path.c_str(), 0700);
-    } else {
+    if (!StartsWith(path, "/storage/")) {
         LOG(ERROR) << "Failed to find mounted volume for " << path;
         return -EINVAL;
     }
+
+    // First create the root which holds app dirs, if needed.
+    int ret = PrepareDirsFromRoot(appDirRoot, "/storage/", 0771, AID_MEDIA_RW, AID_MEDIA_RW);
+    if (ret != 0) {
+        return ret;
+    }
+    // Then, create app-specific dirs with the correct UID/GID
+    return PrepareDirsFromRoot(path, appDirRoot, 0770, appUid, AID_MEDIA_RW);
 }
 
 int VolumeManager::createObb(const std::string& sourcePath, const std::string& sourceKey,

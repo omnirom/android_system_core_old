@@ -48,6 +48,12 @@ extern bool sSleepOnUnmount;
 status_t CreateDeviceNode(const std::string& path, dev_t dev);
 status_t DestroyDeviceNode(const std::string& path);
 
+/*
+ * Recursively calls fs_prepare_dir() on all components in 'path', starting at 'root'.
+ * 'path' must start with 'root'
+ */
+int PrepareDirsFromRoot(std::string path, std::string root, mode_t mode, uid_t uid, gid_t gid);
+
 /* fs_prepare_dir wrapper that creates with SELinux context */
 status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid);
 

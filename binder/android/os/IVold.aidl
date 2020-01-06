@@ -54,7 +54,7 @@ interface IVold {
 
     void remountUid(int uid, int remountMode);
 
-    void mkdirs(@utf8InCpp String path);
+    void setupAppDir(@utf8InCpp String path, @utf8InCpp String appDirRoot, int appUid);
 
     @utf8InCpp String createObb(@utf8InCpp String sourcePath, @utf8InCpp String sourceKey,
                                 int ownerGid);

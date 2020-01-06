@@ -113,13 +113,30 @@ class VolumeManager {
     static VolumeManager* Instance();
 
     /*
-     * Ensure that all directories along given path exist, creating parent
-     * directories as needed.  Validates that given path is absolute and that
-     * it contains no relative "." or ".." paths or symlinks.  Last path segment
-     * is treated as filename and ignored, unless the path ends with "/".  Also
-     * ensures that path belongs to a volume managed by vold.
+     * Creates a directory 'path' for an application, automatically creating
+     * directories along the given path if they don't exist yet. 'appDirRoot'
+     * is the "root" directory for app-specific directories of this kind;
+     * 'path' must always start with 'appDirRoot'.
+     *
+     * Example:
+     *   path = /storage/emulated/0/Android/data/com.foo/files/
+     *   appDirRoot = /storage/emulated/0/Android/data/
+     *
+     * This function will set the UID of all app-specific directories below
+     * 'appDirRoot' to the 'appUid' argument. In the given example, the UID
+     * of /storage/emulated/0/Android/data/com.foo and
+     * /storage/emulated/0/Android/data/com.foo/files would be set to 'appUid'.
+     *
+     * The UID of the parent directories will be set according to the
+     * requirements of the underlying filesystem and are of no concern to the
+     * caller.
+     *
+     * Validates that given paths are absolute and that they contain no relative
+     * "." or ".." paths or symlinks.  Last path segment is treated as filename
+     * and ignored, unless the path ends with "/".  Also ensures that path
+     * belongs to a volume managed by vold.
      */
-    int mkdirs(const std::string& path);
+    int setupAppDir(const std::string& path, const std::string& appDirRoot, int32_t appUid);
 
     int createObb(const std::string& path, const std::string& key, int32_t ownerGid,
                   std::string* outVolId);
