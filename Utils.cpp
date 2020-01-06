@@ -1017,9 +1017,6 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
     std::string pass_through_path(
             StringPrintf("%s/%s", pre_pass_through_path.c_str(), relative_upper_path.c_str()));
 
-    std::string sdcardfs_path(
-            StringPrintf("/mnt/runtime/full/%s", relative_upper_path.c_str()));
-
     // Create directories.
     auto result = PrepareDir(pre_fuse_path, 0700, AID_ROOT, AID_ROOT);
     if (result != android::OK) {
@@ -1081,8 +1078,16 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
         return -errno;
     }
 
-    LOG(INFO) << "Bind mounting " << sdcardfs_path << " to " << pass_through_path;
-    return BindMount(sdcardfs_path, pass_through_path);
+    if (IsFilesystemSupported("sdcardfs")) {
+        std::string sdcardfs_path(
+                StringPrintf("/mnt/runtime/full/%s", relative_upper_path.c_str()));
+
+        LOG(INFO) << "Bind mounting " << sdcardfs_path << " to " << pass_through_path;
+        return BindMount(sdcardfs_path, pass_through_path);
+    } else {
+        LOG(INFO) << "Bind mounting " << absolute_lower_path << " to " << pass_through_path;
+        return BindMount(absolute_lower_path, pass_through_path);
+    }
 }
 
 status_t UnmountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
