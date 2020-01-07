@@ -51,6 +51,7 @@ PublicVolume::PublicVolume(dev_t device) : VolumeBase(Type::kPublic), mDevice(de
     setId(StringPrintf("public:%u,%u", major(device), minor(device)));
     mDevPath = StringPrintf("/dev/block/vold/%s", getId().c_str());
     mFuseMounted = false;
+    mUseSdcardFs = IsFilesystemSupported("sdcardfs");
 }
 
 PublicVolume::~PublicVolume() {}
@@ -161,67 +162,69 @@ status_t PublicVolume::doMount() {
         return OK;
     }
 
-    if (fs_prepare_dir(mSdcardFsDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
-        fs_prepare_dir(mSdcardFsRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
-        fs_prepare_dir(mSdcardFsWrite.c_str(), 0700, AID_ROOT, AID_ROOT) ||
-        fs_prepare_dir(mSdcardFsFull.c_str(), 0700, AID_ROOT, AID_ROOT)) {
-        PLOG(ERROR) << getId() << " failed to create sdcardfs mount points";
-        return -errno;
-    }
-
-    dev_t before = GetDevice(mSdcardFsFull);
-
-    int sdcardFsPid;
-    if (!(sdcardFsPid = fork())) {
-        if (getMountFlags() & MountFlags::kPrimary) {
-            // clang-format off
-            if (execl(kSdcardFsPath, kSdcardFsPath,
-                    "-u", "1023", // AID_MEDIA_RW
-                    "-g", "1023", // AID_MEDIA_RW
-                    "-U", std::to_string(getMountUserId()).c_str(),
-                    "-w",
-                    mRawPath.c_str(),
-                    stableName.c_str(),
-                    NULL)) {
-                // clang-format on
-                PLOG(ERROR) << "Failed to exec";
-            }
-        } else {
-            // clang-format off
-            if (execl(kSdcardFsPath, kSdcardFsPath,
-                    "-u", "1023", // AID_MEDIA_RW
-                    "-g", "1023", // AID_MEDIA_RW
-                    "-U", std::to_string(getMountUserId()).c_str(),
-                    mRawPath.c_str(),
-                    stableName.c_str(),
-                    NULL)) {
-                // clang-format on
-                PLOG(ERROR) << "Failed to exec";
-            }
+    if (mUseSdcardFs) {
+        if (fs_prepare_dir(mSdcardFsDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mSdcardFsRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mSdcardFsWrite.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mSdcardFsFull.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+            PLOG(ERROR) << getId() << " failed to create sdcardfs mount points";
+            return -errno;
         }
 
-        LOG(ERROR) << "sdcardfs exiting";
-        _exit(1);
-    }
+        dev_t before = GetDevice(mSdcardFsFull);
 
-    if (sdcardFsPid == -1) {
-        PLOG(ERROR) << getId() << " failed to fork";
-        return -errno;
-    }
+        int sdcardFsPid;
+        if (!(sdcardFsPid = fork())) {
+            if (getMountFlags() & MountFlags::kPrimary) {
+                // clang-format off
+                if (execl(kSdcardFsPath, kSdcardFsPath,
+                        "-u", "1023", // AID_MEDIA_RW
+                        "-g", "1023", // AID_MEDIA_RW
+                        "-U", std::to_string(getMountUserId()).c_str(),
+                        "-w",
+                        mRawPath.c_str(),
+                        stableName.c_str(),
+                        NULL)) {
+                    // clang-format on
+                    PLOG(ERROR) << "Failed to exec";
+                }
+            } else {
+                // clang-format off
+                if (execl(kSdcardFsPath, kSdcardFsPath,
+                        "-u", "1023", // AID_MEDIA_RW
+                        "-g", "1023", // AID_MEDIA_RW
+                        "-U", std::to_string(getMountUserId()).c_str(),
+                        mRawPath.c_str(),
+                        stableName.c_str(),
+                        NULL)) {
+                    // clang-format on
+                    PLOG(ERROR) << "Failed to exec";
+                }
+            }
 
-    nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
-    while (before == GetDevice(mSdcardFsFull)) {
-        LOG(DEBUG) << "Waiting for sdcardfs to spin up...";
-        usleep(50000);  // 50ms
-
-        nsecs_t now = systemTime(SYSTEM_TIME_BOOTTIME);
-        if (nanoseconds_to_milliseconds(now - start) > 5000) {
-            LOG(WARNING) << "Timed out while waiting for sdcardfs to spin up";
-            return -ETIMEDOUT;
+            LOG(ERROR) << "sdcardfs exiting";
+            _exit(1);
         }
+
+        if (sdcardFsPid == -1) {
+            PLOG(ERROR) << getId() << " failed to fork";
+            return -errno;
+        }
+
+        nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
+        while (before == GetDevice(mSdcardFsFull)) {
+            LOG(DEBUG) << "Waiting for sdcardfs to spin up...";
+            usleep(50000);  // 50ms
+
+            nsecs_t now = systemTime(SYSTEM_TIME_BOOTTIME);
+            if (nanoseconds_to_milliseconds(now - start) > 5000) {
+                LOG(WARNING) << "Timed out while waiting for sdcardfs to spin up";
+                return -ETIMEDOUT;
+            }
+        }
+        /* sdcardfs will have exited already. The filesystem will still be running */
+        TEMP_FAILURE_RETRY(waitpid(sdcardFsPid, nullptr, 0));
     }
-    /* sdcardfs will have exited already. The filesystem will still be running */
-    TEMP_FAILURE_RETRY(waitpid(sdcardFsPid, nullptr, 0));
 
     bool isFuse = base::GetBoolProperty(kPropFuse, false);
     if (isFuse) {
@@ -275,22 +278,24 @@ status_t PublicVolume::doUnmount() {
 
     ForceUnmount(kAsecPath);
 
-    ForceUnmount(mSdcardFsDefault);
-    ForceUnmount(mSdcardFsRead);
-    ForceUnmount(mSdcardFsWrite);
-    ForceUnmount(mSdcardFsFull);
+    if (mUseSdcardFs) {
+        ForceUnmount(mSdcardFsDefault);
+        ForceUnmount(mSdcardFsRead);
+        ForceUnmount(mSdcardFsWrite);
+        ForceUnmount(mSdcardFsFull);
+
+        rmdir(mSdcardFsDefault.c_str());
+        rmdir(mSdcardFsRead.c_str());
+        rmdir(mSdcardFsWrite.c_str());
+        rmdir(mSdcardFsFull.c_str());
+
+        mSdcardFsDefault.clear();
+        mSdcardFsRead.clear();
+        mSdcardFsWrite.clear();
+        mSdcardFsFull.clear();
+    }
     ForceUnmount(mRawPath);
-
-    rmdir(mSdcardFsDefault.c_str());
-    rmdir(mSdcardFsRead.c_str());
-    rmdir(mSdcardFsWrite.c_str());
-    rmdir(mSdcardFsFull.c_str());
     rmdir(mRawPath.c_str());
-
-    mSdcardFsDefault.clear();
-    mSdcardFsRead.clear();
-    mSdcardFsWrite.clear();
-    mSdcardFsFull.clear();
     mRawPath.clear();
 
     return OK;

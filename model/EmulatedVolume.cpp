@@ -48,6 +48,7 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, int userId)
     mRawPath = rawPath;
     mLabel = "emulated";
     mFuseMounted = false;
+    mUseSdcardFs = IsFilesystemSupported("sdcardfs");
 }
 
 EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const std::string& fsUuid,
@@ -57,6 +58,7 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const s
     mRawPath = rawPath;
     mLabel = fsUuid;
     mFuseMounted = false;
+    mUseSdcardFs = IsFilesystemSupported("sdcardfs");
 }
 
 EmulatedVolume::~EmulatedVolume() {}
@@ -71,18 +73,23 @@ std::string EmulatedVolume::getLabel() {
     }
 }
 
-static status_t mountFuseBindMounts(int userId, const std::string& label) {
-    // TODO(b/134706060) we don't actually want to mount the "write" view by
-    // default, since it gives write access to all OBB dirs.
-    std::string androidSource(
-            StringPrintf("/mnt/runtime/default/%s/%d/Android", label.c_str(), userId));
+status_t EmulatedVolume::mountFuseBindMounts() {
+    std::string androidSource;
+    std::string label = getLabel();
+    int userId = getMountUserId();
+
+    if (mUseSdcardFs) {
+        androidSource = StringPrintf("/mnt/runtime/default/%s/%d/Android", label.c_str(), userId);
+    } else {
+        androidSource = StringPrintf("/%s/%d/Android", mRawPath.c_str(), userId);
+    }
     std::string androidTarget(
             StringPrintf("/mnt/user/%d/%s/%d/Android", userId, label.c_str(), userId));
 
     if (access(androidSource.c_str(), F_OK) != 0) {
         // Android path may not exist yet if users has just been created; create it on
         // the lower fs.
-        if (fs_prepare_dir(androidSource.c_str(), 0771, AID_ROOT, AID_ROOT) != 0) {
+        if (fs_prepare_dir(androidSource.c_str(), 0771, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
             PLOG(ERROR) << "Failed to create " << androidSource;
             return -errno;
         }
@@ -97,7 +104,10 @@ static status_t mountFuseBindMounts(int userId, const std::string& label) {
     return OK;
 }
 
-static status_t unmountFuseBindMounts(int userId, const std::string& label) {
+status_t EmulatedVolume::unmountFuseBindMounts() {
+    std::string label = getLabel();
+    int userId = getMountUserId();
+
     std::string androidTarget(
             StringPrintf("/mnt/user/%d/%s/%d/Android", userId, label.c_str(), userId));
 
@@ -137,7 +147,7 @@ status_t EmulatedVolume::doMount() {
 
     // Mount sdcardfs regardless of FUSE, since we need it to bind-mount on top of the
     // FUSE volume for various reasons.
-    if (getMountUserId() == 0) {
+    if (mUseSdcardFs && getMountUserId() == 0) {
         LOG(INFO) << "Executing sdcardfs";
         int sdcardFsPid;
         if (!(sdcardFsPid = fork())) {
@@ -203,7 +213,7 @@ status_t EmulatedVolume::doMount() {
         }
 
         // Only do the bind-mounts when we know for sure the FUSE daemon can resolve the path.
-        return mountFuseBindMounts(user_id, label);
+        return mountFuseBindMounts();
     }
 
     return OK;
@@ -231,7 +241,7 @@ status_t EmulatedVolume::doUnmount() {
         // Ignoring unmount return status because we do want to try to unmount
         // the rest cleanly.
 
-        unmountFuseBindMounts(userId, label);
+        unmountFuseBindMounts();
         if (UnmountUserFuse(userId, getInternalPath(), label) != OK) {
             PLOG(INFO) << "UnmountUserFuse failed on emulated fuse volume";
             return -errno;
@@ -239,7 +249,7 @@ status_t EmulatedVolume::doUnmount() {
 
         mFuseMounted = false;
     }
-    if (getMountUserId() != 0) {
+    if (getMountUserId() != 0 || !mUseSdcardFs) {
         // For sdcardfs, only unmount for user 0, since user 0 will always be running
         // and the paths don't change for different users.
         return OK;
