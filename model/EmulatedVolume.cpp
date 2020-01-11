@@ -73,6 +73,26 @@ std::string EmulatedVolume::getLabel() {
     }
 }
 
+// Creates a bind mount from source to target, creating the source (!) directory
+// if not yet present.
+static status_t doFuseBindMount(const std::string& source, const std::string& target) {
+    if (access(source.c_str(), F_OK) != 0) {
+        // Android path may not exist yet if users has just been created; create it on
+        // the lower fs.
+        if (fs_prepare_dir(source.c_str(), 0771, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
+            PLOG(ERROR) << "Failed to create " << source;
+            return -errno;
+        }
+    }
+    LOG(INFO) << "Bind mounting " << source << " on " << target;
+    auto status = BindMount(source, target);
+    if (status != OK) {
+        return status;
+    }
+    LOG(INFO) << "Bind mounted " << source << " on " << target;
+    return OK;
+}
+
 status_t EmulatedVolume::mountFuseBindMounts() {
     std::string androidSource;
     std::string label = getLabel();
@@ -86,27 +106,44 @@ status_t EmulatedVolume::mountFuseBindMounts() {
     std::string androidTarget(
             StringPrintf("/mnt/user/%d/%s/%d/Android", userId, label.c_str(), userId));
 
-    if (access(androidSource.c_str(), F_OK) != 0) {
-        // Android path may not exist yet if users has just been created; create it on
-        // the lower fs.
-        if (fs_prepare_dir(androidSource.c_str(), 0771, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
-            PLOG(ERROR) << "Failed to create " << androidSource;
-            return -errno;
-        }
-    }
-    LOG(INFO) << "Bind mounting " << androidSource << " on " << androidTarget;
-    auto status = BindMount(androidSource, androidTarget);
+    auto status = doFuseBindMount(androidSource, androidTarget);
     if (status != OK) {
         return status;
     }
-    LOG(INFO) << "Bind mounted " << androidSource << " on " << androidTarget;
 
+    // Installers get the same view as all other apps, with the sole exception that the
+    // OBB dirs (Android/obb) are writable to them. On sdcardfs devices, this requires
+    // a special bind mount, since app-private and OBB dirs share the same GID, but we
+    // only want to give access to the latter.
+    if (!mUseSdcardFs) {
+        return OK;
+    }
+    std::string installerSource(
+            StringPrintf("/mnt/runtime/write/%s/%d/Android/obb", label.c_str(), userId));
+    std::string installerTarget(
+            StringPrintf("/mnt/installer/%d/%s/%d/Android/obb", userId, label.c_str(), userId));
+
+    status = doFuseBindMount(installerSource, installerTarget);
+    if (status != OK) {
+        return status;
+    }
     return OK;
 }
 
 status_t EmulatedVolume::unmountFuseBindMounts() {
     std::string label = getLabel();
     int userId = getMountUserId();
+
+    if (mUseSdcardFs) {
+        std::string installerTarget(
+                StringPrintf("/mnt/installer/%d/%s/%d/Android/obb", userId, label.c_str(), userId));
+        LOG(INFO) << "Unmounting " << installerTarget;
+        auto status = UnmountTree(installerTarget);
+        if (status != OK) {
+            LOG(ERROR) << "Failed to unmount " << installerTarget;
+            // Intentional continue to try to unmount the other bind mount
+        }
+    }
 
     std::string androidTarget(
             StringPrintf("/mnt/user/%d/%s/%d/Android", userId, label.c_str(), userId));
