@@ -42,7 +42,7 @@
 #include <sys/types.h>
 
 static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quota,
-                          bool* has_reserved);
+                          bool* has_reserved, bool* has_compress);
 static void coldboot(const char* path);
 static void parse_args(int argc, char** argv);
 
@@ -103,8 +103,9 @@ int main(int argc, char** argv) {
     bool has_adoptable;
     bool has_quota;
     bool has_reserved;
+    bool has_compress;
 
-    if (process_config(vm, &has_adoptable, &has_quota, &has_reserved)) {
+    if (process_config(vm, &has_adoptable, &has_quota, &has_reserved, &has_compress)) {
         PLOG(ERROR) << "Error reading configuration... continuing anyways";
     }
 
@@ -131,6 +132,7 @@ int main(int argc, char** argv) {
     android::base::SetProperty("vold.has_adoptable", has_adoptable ? "1" : "0");
     android::base::SetProperty("vold.has_quota", has_quota ? "1" : "0");
     android::base::SetProperty("vold.has_reserved", has_reserved ? "1" : "0");
+    android::base::SetProperty("vold.has_compress", has_compress ? "1" : "0");
 
     // Do coldboot here so it won't block booting,
     // also the cold boot is needed in case we have flash drive
@@ -214,7 +216,7 @@ static void coldboot(const char* path) {
 }
 
 static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quota,
-                          bool* has_reserved) {
+                          bool* has_reserved, bool* has_compress) {
     ATRACE_NAME("process_config");
 
     if (!ReadDefaultFstab(&fstab_default)) {
@@ -226,12 +228,16 @@ static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quot
     *has_adoptable = false;
     *has_quota = false;
     *has_reserved = false;
+    *has_compress = false;
     for (auto& entry : fstab_default) {
         if (entry.fs_mgr_flags.quota) {
             *has_quota = true;
         }
         if (entry.reserved_size > 0) {
             *has_reserved = true;
+        }
+        if (entry.fs_mgr_flags.fs_compress) {
+            *has_compress = true;
         }
 
         /* Make sure logical partitions have an updated blk_device. */
