@@ -115,6 +115,25 @@ status_t DestroyDeviceNode(const std::string& path) {
     }
 }
 
+int SetQuotaProjectId(std::string path, long projectId) {
+    struct fsxattr fsx;
+
+    android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(path.c_str(), O_RDONLY | O_CLOEXEC)));
+    if (fd == -1) {
+        PLOG(ERROR) << "Failed to open " << path << " to set project id.";
+        return -1;
+    }
+
+    int ret = ioctl(fd, FS_IOC_FSGETXATTR, &fsx);
+    if (ret == -1) {
+        PLOG(ERROR) << "Failed to get extended attributes for " << path << " to get project id.";
+        return ret;
+    }
+
+    fsx.fsx_projid = projectId;
+    return ioctl(fd, FS_IOC_FSSETXATTR, &fsx);
+}
+
 int PrepareDirsFromRoot(std::string path, std::string root, mode_t mode, uid_t uid, gid_t gid) {
     int ret = 0;
     if (!StartsWith(path, root)) {
