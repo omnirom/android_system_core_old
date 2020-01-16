@@ -44,6 +44,7 @@ cc_defaults {
     shared_libs: [
         "android.hardware.keymaster@3.0",
         "android.hardware.keymaster@4.0",
+        "android.hardware.keymaster@4.1",
         "android.hardware.boot@1.0",
         "libbase",
         "libbinder",
@@ -58,6 +59,7 @@ cc_defaults {
         "libincfs",
         "libhidlbase",
         "libkeymaster4support",
+        "libkeymaster4_1support",
         "libkeyutils",
         "liblog",
         "liblogwrap",
@@ -232,10 +234,12 @@ cc_binary {
 
         "android.hardware.keymaster@3.0",
         "android.hardware.keymaster@4.0",
+        "android.hardware.keymaster@4.1",
         "libhardware",
         "libhardware_legacy",
         "libhidlbase",
         "libkeymaster4support",
+        "libkeymaster4_1support",
         "libutils",
     ],
 }
