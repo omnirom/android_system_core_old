@@ -245,12 +245,19 @@ status_t EmulatedVolume::doMount() {
             bool is_ready = false;
             callback->onVolumeChecking(std::move(fd), getPath(), getInternalPath(), &is_ready);
             if (!is_ready) {
+                fd.reset();
+                doUnmount();
                 return -EIO;
             }
         }
 
         // Only do the bind-mounts when we know for sure the FUSE daemon can resolve the path.
-        return mountFuseBindMounts();
+        status_t res = mountFuseBindMounts();
+        if (res != OK) {
+            fd.reset();
+            doUnmount();
+        }
+        return res;
     }
 
     return OK;
