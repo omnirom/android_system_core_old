@@ -207,6 +207,17 @@ bool Keymaster::isSecure() {
     return mDevice->halVersion().securityLevel != km::SecurityLevel::SOFTWARE;
 }
 
+void Keymaster::earlyBootEnded() {
+    auto error = mDevice->earlyBootEnded();
+    if (!error.isOk()) {
+        LOG(ERROR) << "earlyBootEnded failed: " << error.description();
+    }
+    km::V4_1_ErrorCode km_error = error;
+    if (km_error != km::V4_1_ErrorCode::OK && km_error != km::V4_1_ErrorCode::UNIMPLEMENTED) {
+        LOG(ERROR) << "Error reporting early boot ending to keymaster: " << int32_t(km_error);
+    }
+}
+
 }  // namespace vold
 }  // namespace android
 
