@@ -1056,7 +1056,7 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
             return -1;
         }
         linkpath += "/primary";
-        Symlink(fuse_path + "/" + std::to_string(user_id), linkpath);
+        Symlink("/storage/emulated/" + std::to_string(user_id), linkpath);
 
         std::string pass_through_linkpath(StringPrintf("/mnt/pass_through/%d/self", user_id));
         result = PrepareDir(pass_through_linkpath, 0755, AID_ROOT, AID_ROOT);
@@ -1065,7 +1065,7 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
             return -1;
         }
         pass_through_linkpath += "/primary";
-        Symlink(pass_through_path + "/" + std::to_string(user_id), pass_through_linkpath);
+        Symlink("/storage/emulated/" + std::to_string(user_id), pass_through_linkpath);
     }
 
     // Open fuse fd.
