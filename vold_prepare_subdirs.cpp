@@ -121,7 +121,7 @@ static bool rmrf_contents(const std::string& path) {
 }
 
 static bool prepare_apex_subdirs(struct selabel_handle* sehandle, const std::string& path) {
-    if (!prepare_dir(sehandle, 0700, 0, 0, path + "/apexdata")) return false;
+    if (!prepare_dir(sehandle, 0711, 0, 0, path + "/apexdata")) return false;
 
     auto dirp = std::unique_ptr<DIR, int (*)(DIR*)>(opendir("/apex"), closedir);
     if (!dirp) {
@@ -138,7 +138,7 @@ static bool prepare_apex_subdirs(struct selabel_handle* sehandle, const std::str
 
         if (strchr(name, '@') != NULL) continue;
 
-        if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM, path + "/apexdata/" + name)) {
+        if (!prepare_dir(sehandle, 0771, AID_ROOT, AID_SYSTEM, path + "/apexdata/" + name)) {
             return false;
         }
     }
