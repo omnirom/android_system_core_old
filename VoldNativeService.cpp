@@ -768,6 +768,15 @@ binder::Status VoldNativeService::addUserKeyAuth(int32_t userId, int32_t userSer
     return translateBool(fscrypt_add_user_key_auth(userId, userSerial, token, secret));
 }
 
+binder::Status VoldNativeService::clearUserKeyAuth(int32_t userId, int32_t userSerial,
+                                                   const std::string& token,
+                                                   const std::string& secret) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_CRYPT_LOCK;
+
+    return translateBool(fscrypt_clear_user_key_auth(userId, userSerial, token, secret));
+}
+
 binder::Status VoldNativeService::fixateNewestUserKeyAuth(int32_t userId) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
