@@ -84,7 +84,7 @@ cc_library_static {
         local_include_dirs: ["binder"],
         include_dirs: [
             "frameworks/native/aidl/binder",
-            "frameworks/base/core/java/android/os/incremental",
+            "frameworks/base/core/java",
         ],
         export_aidl_headers: true,
     },
