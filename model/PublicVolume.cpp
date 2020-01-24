@@ -141,13 +141,14 @@ status_t PublicVolume::doMount() {
     }
 
     if (mFsType == "vfat") {
-        if (vfat::Mount(mDevPath, mRawPath, false, false, false, AID_MEDIA_RW, AID_MEDIA_RW, 0007,
-                        true)) {
+        if (vfat::Mount(mDevPath, mRawPath, false, false, false, AID_ROOT,
+                        (isVisible ? AID_MEDIA_RW : AID_EXTERNAL_STORAGE), 0007, true)) {
             PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
             return -EIO;
         }
     } else if (mFsType == "exfat") {
-        if (exfat::Mount(mDevPath, mRawPath, AID_MEDIA_RW, AID_MEDIA_RW, 0007)) {
+        if (exfat::Mount(mDevPath, mRawPath, AID_ROOT,
+                         (isVisible ? AID_MEDIA_RW : AID_EXTERNAL_STORAGE), 0007)) {
             PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
             return -EIO;
         }
