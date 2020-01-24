@@ -171,6 +171,14 @@ status_t Format(const std::string& source, unsigned long numSectors, const std::
     cmd.push_back("-M");
     cmd.push_back(target);
 
+    bool needs_casefold = android::base::GetBoolProperty("ro.emulated_storage.casefold", false);
+    bool needs_projid = android::base::GetBoolProperty("ro.emulated_storage.projid", false);
+
+    if (needs_projid) {
+        cmd.push_back("-I");
+        cmd.push_back("512");
+    }
+
     std::string options("has_journal");
     if (android::base::GetBoolProperty("vold.has_quota", false)) {
         options += ",quota";
@@ -178,9 +186,20 @@ status_t Format(const std::string& source, unsigned long numSectors, const std::
     if (fscrypt_is_native()) {
         options += ",encrypt";
     }
+    if (needs_casefold) {
+        options += ",casefold";
+    }
 
     cmd.push_back("-O");
     cmd.push_back(options);
+
+    if (needs_casefold || needs_projid) {
+        cmd.push_back("-E");
+        std::string extopts = "";
+        if (needs_casefold) extopts += "encoding=utf8,";
+        if (needs_projid) extopts += "quotatype=prjquota,";
+        cmd.push_back(extopts);
+    }
 
     cmd.push_back(source);
 
