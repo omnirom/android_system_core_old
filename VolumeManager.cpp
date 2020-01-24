@@ -830,16 +830,47 @@ int VolumeManager::setupAppDir(const std::string& path, const std::string& appDi
         return -EINVAL;
     }
 
+    // Find the volume it belongs to
+    auto filter_fn = [&](const VolumeBase& vol) {
+        if (vol.getState() != VolumeBase::State::kMounted) {
+            // The volume must be mounted
+            return false;
+        }
+        if ((vol.getMountFlags() & VolumeBase::MountFlags::kVisible) == 0) {
+            // and visible
+            return false;
+        }
+        if (vol.getInternalPath().empty()) {
+            return false;
+        }
+        if (vol.getMountUserId() != USER_UNKNOWN &&
+            vol.getMountUserId() != multiuser_get_user_id(appUid)) {
+            // The app dir must be created on a volume with the same user-id
+            return false;
+        }
+        if (!path.empty() && StartsWith(path, vol.getPath())) {
+            return true;
+        }
+
+        return false;
+    };
+    auto volume = findVolumeWithFilter(filter_fn);
+    if (volume == nullptr) {
+        LOG(ERROR) << "Failed to find mounted volume for " << path;
+        return -EINVAL;
+    }
     // Convert paths to lower filesystem paths to avoid making FUSE requests for these reasons:
     // 1. A FUSE request from vold puts vold at risk of hanging if the FUSE daemon is down
     // 2. The FUSE daemon prevents requests on /mnt/user/0/emulated/<userid != 0> and a request
     // on /storage/emulated/10 means /mnt/user/0/emulated/10
-    // TODO(b/146419093): Use lower filesystem paths that don't depend on sdcardfs
-    const std::string lowerPath = "/mnt/runtime/default/" + path.substr(9);
-    const std::string lowerAppDirRoot = "/mnt/runtime/default/" + appDirRoot.substr(9);
+    const std::string lowerPath =
+            volume->getInternalPath() + path.substr(volume->getPath().length());
+    const std::string lowerAppDirRoot =
+            volume->getInternalPath() + appDirRoot.substr(volume->getPath().length());
 
     // First create the root which holds app dirs, if needed.
-    int ret = PrepareDirsFromRoot(lowerAppDirRoot, "/mnt/runtime/default/", 0771, AID_MEDIA_RW, AID_MEDIA_RW);
+    int ret = PrepareDirsFromRoot(lowerAppDirRoot, volume->getInternalPath(), 0771, AID_MEDIA_RW,
+                                  AID_MEDIA_RW);
     if (ret != 0) {
         return ret;
     }

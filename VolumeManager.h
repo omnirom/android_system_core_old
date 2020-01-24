@@ -83,6 +83,24 @@ class VolumeManager {
     std::shared_ptr<android::vold::Disk> findDisk(const std::string& id);
     std::shared_ptr<android::vold::VolumeBase> findVolume(const std::string& id);
 
+    template <typename Fn>
+    std::shared_ptr<android::vold::VolumeBase> findVolumeWithFilter(Fn fn) {
+        for (const auto& vol : mInternalEmulatedVolumes) {
+            if (fn(*vol)) {
+                return vol;
+            }
+        }
+        for (const auto& disk : mDisks) {
+            for (const auto& vol : disk->getVolumes()) {
+                if (fn(*vol)) {
+                    return vol;
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
     void listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list) const;
 
     const std::set<userid_t>& getStartedUsers() const { return mStartedUsers; }

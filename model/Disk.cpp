@@ -162,6 +162,17 @@ void Disk::listVolumes(VolumeBase::Type type, std::list<std::string>& list) cons
     }
 }
 
+std::vector<std::shared_ptr<VolumeBase>> Disk::getVolumes() const {
+    std::vector<std::shared_ptr<VolumeBase>> vols;
+    for (const auto& vol : mVolumes) {
+        vols.push_back(vol);
+        auto stackedVolumes = vol->getVolumes();
+        vols.insert(vols.end(), stackedVolumes.begin(), stackedVolumes.end());
+    }
+
+    return vols;
+}
+
 status_t Disk::create() {
     CHECK(!mCreated);
     mCreated = true;
