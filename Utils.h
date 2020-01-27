@@ -48,6 +48,7 @@ extern bool sSleepOnUnmount;
 status_t CreateDeviceNode(const std::string& path, dev_t dev);
 status_t DestroyDeviceNode(const std::string& path);
 
+int SetQuotaProjectId(std::string path, long projectId);
 /*
  * Recursively calls fs_prepare_dir() on all components in 'path', starting at 'root'.
  * 'path' must start with 'root'
