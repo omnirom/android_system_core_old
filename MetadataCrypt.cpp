@@ -158,6 +158,9 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const FstabEntry* 
     uint64_t nr_sec;
     if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
 
+    bool is_legacy;
+    if (!DmTargetDefaultKey::IsLegacy(&is_legacy)) return false;
+
     KeyBuffer hex_key_buffer;
     if (android::vold::StrToHex(key, hex_key_buffer) != android::OK) {
         LOG(ERROR) << "Failed to turn key to hex";
@@ -165,15 +168,16 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const FstabEntry* 
     }
     std::string hex_key(hex_key_buffer.data(), hex_key_buffer.size());
 
-    bool set_dun = android::base::GetBoolProperty("ro.crypto.set_dun", false);
+    // Non-legacy driver always sets DUN
+    bool set_dun = !is_legacy || android::base::GetBoolProperty("ro.crypto.set_dun", false);
     if (!set_dun && data_rec->fs_mgr_flags.checkpoint_blk) {
         LOG(ERROR) << "Block checkpoints and metadata encryption require ro.crypto.set_dun option";
         return false;
     }
 
     DmTable table;
-    table.Emplace<DmTargetDefaultKey>(0, nr_sec, "AES-256-XTS", hex_key, data_rec->blk_device, 0,
-                                      set_dun);
+    table.Emplace<DmTargetDefaultKey>(0, nr_sec, is_legacy ? "AES-256-XTS" : "aes-xts-plain64",
+                                      hex_key, data_rec->blk_device, 0, is_legacy, set_dun);
 
     auto& dm = DeviceMapper::Instance();
     for (int i = 0;; i++) {
