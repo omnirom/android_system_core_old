@@ -67,6 +67,8 @@ class Disk {
 
     void listVolumes(VolumeBase::Type type, std::list<std::string>& list) const;
 
+    std::vector<std::shared_ptr<VolumeBase>> getVolumes() const;
+
     status_t create();
     status_t destroy();
 
