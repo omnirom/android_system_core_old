@@ -1038,7 +1038,7 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
 
     // Ensure that /mnt/user is 0700. With FUSE, apps don't need access to /mnt/user paths directly.
     // Without FUSE however, apps need /mnt/user access so /mnt/user in init.rc is 0755 until here
-    auto result = PrepareDir("/mnt/user", 0700, AID_ROOT, AID_ROOT);
+    auto result = PrepareDir("/mnt/user", 0750, AID_ROOT, AID_MEDIA_RW);
     if (result != android::OK) {
         PLOG(ERROR) << "Failed to prepare directory /mnt/user";
         return -1;
