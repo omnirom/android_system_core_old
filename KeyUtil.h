@@ -20,25 +20,45 @@
 #include "KeyBuffer.h"
 #include "KeyStorage.h"
 
+#include <fscrypt/fscrypt.h>
+
 #include <memory>
 #include <string>
 
 namespace android {
 namespace vold {
 
+using namespace android::fscrypt;
+
 bool randomKey(KeyBuffer* key);
 
 bool isFsKeyringSupported(void);
 
-bool installKey(const KeyBuffer& key, const std::string& mountpoint, int policy_version,
-                std::string* raw_ref);
-bool evictKey(const std::string& mountpoint, const std::string& raw_ref, int policy_version);
-bool retrieveAndInstallKey(bool create_if_absent, const KeyAuthentication& key_authentication,
-                           const std::string& key_path, const std::string& tmp_path,
-                           const std::string& volume_uuid, int policy_version,
-                           std::string* key_ref);
-bool retrieveKey(bool create_if_absent, const std::string& key_path, const std::string& tmp_path,
-                 KeyBuffer* key, bool keepOld = true);
+// Install a file-based encryption key to the kernel, for use by encrypted files
+// on the specified filesystem using the specified encryption policy version.
+//
+// For v1 policies, we use FS_IOC_ADD_ENCRYPTION_KEY if the kernel supports it.
+// Otherwise we add the key to the legacy global session keyring.
+//
+// For v2 policies, we always use FS_IOC_ADD_ENCRYPTION_KEY; it's the only way
+// the kernel supports.
+//
+// Returns %true on success, %false on failure.  On success also sets *policy
+// to the EncryptionPolicy used to refer to this key.
+bool installKey(const std::string& mountpoint, const EncryptionOptions& options,
+                const KeyBuffer& key, EncryptionPolicy* policy);
+
+// Evict a file-based encryption key from the kernel.
+//
+// We use FS_IOC_REMOVE_ENCRYPTION_KEY if the kernel supports it.  Otherwise we
+// remove the key from the legacy global session keyring.
+//
+// In the latter case, the caller is responsible for dropping caches.
+bool evictKey(const std::string& mountpoint, const EncryptionPolicy& policy);
+
+bool retrieveKey(bool create_if_absent, const KeyAuthentication& key_authentication,
+                 const std::string& key_path, const std::string& tmp_path, KeyBuffer* key,
+                 bool keepOld = true);
 
 }  // namespace vold
 }  // namespace android
