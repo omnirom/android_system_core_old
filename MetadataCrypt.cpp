@@ -135,7 +135,9 @@ static bool read_key(const FstabEntry& data_rec, bool create_if_absent, KeyBuffe
             unlink(newKeyPath.c_str());
     }
     bool needs_cp = cp_needsCheckpoint();
-    if (!android::vold::retrieveKey(create_if_absent, dir, temp, key, needs_cp)) return false;
+    if (!android::vold::retrieveKey(create_if_absent, kEmptyAuthentication, dir, temp, key,
+                                    needs_cp))
+        return false;
     if (needs_cp && pathExists(newKeyPath)) std::thread(commit_key, dir).detach();
     return true;
 }
