@@ -73,17 +73,8 @@ std::string EmulatedVolume::getLabel() {
     }
 }
 
-// Creates a bind mount from source to target, creating the source (!) directory
-// if not yet present.
+// Creates a bind mount from source to target
 static status_t doFuseBindMount(const std::string& source, const std::string& target) {
-    if (access(source.c_str(), F_OK) != 0) {
-        // Android path may not exist yet if users has just been created; create it on
-        // the lower fs.
-        if (fs_prepare_dir(source.c_str(), 0771, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
-            PLOG(ERROR) << "Failed to create " << source;
-            return -errno;
-        }
-    }
     LOG(INFO) << "Bind mounting " << source << " on " << target;
     auto status = BindMount(source, target);
     if (status != OK) {
@@ -232,11 +223,19 @@ status_t EmulatedVolume::doMount() {
         LOG(INFO) << "Mounting emulated fuse volume";
         android::base::unique_fd fd;
         int user_id = getMountUserId();
-        int result = MountUserFuse(user_id, getInternalPath(), label, &fd);
+        auto volumeRoot = getRootPath();
 
-        if (result != 0) {
+        // Make sure Android/ dirs exist for bind mounting
+        status_t res = PrepareAndroidDirs(volumeRoot);
+        if (res != OK) {
+            LOG(ERROR) << "Failed to prepare Android/ directories";
+            return res;
+        }
+
+        res = MountUserFuse(user_id, getInternalPath(), label, &fd);
+        if (res != 0) {
             PLOG(ERROR) << "Failed to mount emulated fuse volume";
-            return -result;
+            return res;
         }
 
         mFuseMounted = true;
@@ -252,7 +251,7 @@ status_t EmulatedVolume::doMount() {
         }
 
         // Only do the bind-mounts when we know for sure the FUSE daemon can resolve the path.
-        status_t res = mountFuseBindMounts();
+        res = mountFuseBindMounts();
         if (res != OK) {
             fd.reset();
             doUnmount();
@@ -315,6 +314,13 @@ status_t EmulatedVolume::doUnmount() {
     mSdcardFsFull.clear();
 
     return OK;
+}
+
+std::string EmulatedVolume::getRootPath() const {
+    int user_id = getMountUserId();
+    std::string volumeRoot = StringPrintf("%s/%d", getInternalPath().c_str(), user_id);
+
+    return volumeRoot;
 }
 
 }  // namespace vold

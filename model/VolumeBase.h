@@ -110,6 +110,8 @@ class VolumeBase {
     status_t unmount();
     status_t format(const std::string& fsType);
 
+    virtual std::string getRootPath() const;
+
     std::ostream& operator<<(std::ostream& stream) const;
 
   protected:

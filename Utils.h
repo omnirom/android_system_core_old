@@ -36,6 +36,11 @@ namespace vold {
 
 static const char* kPropFuse = "persist.sys.fuse";
 
+static const char* kAndroidDir = "/Android/";
+static const char* kAppDataDir = "/Android/data/";
+static const char* kAppMediaDir = "/Android/media/";
+static const char* kAppObbDir = "/Android/obb/";
+
 /* SELinux contexts used depending on the block device type */
 extern security_context_t sBlkidContext;
 extern security_context_t sBlkidUntrustedContext;
@@ -52,8 +57,10 @@ int SetQuotaProjectId(std::string path, long projectId);
 /*
  * Recursively calls fs_prepare_dir() on all components in 'path', starting at 'root'.
  * 'path' must start with 'root'
+ * ONLY for use with app-specific data directories on external storage!
+ * (eg, /Android/data/com.foo, /Android/obb/com.foo, etc.)
  */
-int PrepareDirsFromRoot(std::string path, std::string root, mode_t mode, uid_t uid, gid_t gid);
+int PrepareAppDirsFromRoot(std::string path, std::string root, mode_t mode, uid_t uid, gid_t gid);
 
 /* fs_prepare_dir wrapper that creates with SELinux context */
 status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid);
@@ -164,6 +171,7 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
 status_t UnmountUserFuse(userid_t userId, const std::string& absolute_lower_path,
                          const std::string& relative_upper_path);
 
+status_t PrepareAndroidDirs(const std::string& volumeRoot);
 }  // namespace vold
 }  // namespace android
 

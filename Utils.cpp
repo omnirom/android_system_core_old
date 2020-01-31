@@ -134,7 +134,7 @@ int SetQuotaProjectId(std::string path, long projectId) {
     return ioctl(fd, FS_IOC_FSSETXATTR, &fsx);
 }
 
-int PrepareDirsFromRoot(std::string path, std::string root, mode_t mode, uid_t uid, gid_t gid) {
+int PrepareAppDirsFromRoot(std::string path, std::string root, mode_t mode, uid_t uid, gid_t gid) {
     int ret = 0;
     if (!StartsWith(path, root)) {
         return -1;
@@ -1164,5 +1164,31 @@ status_t UnmountUserFuse(userid_t user_id, const std::string& absolute_lower_pat
     return result;
 }
 
+status_t PrepareAndroidDirs(const std::string& volumeRoot) {
+    std::string androidDir = volumeRoot + kAndroidDir;
+    std::string androidDataDir = volumeRoot + kAppDataDir;
+    std::string androidObbDir = volumeRoot + kAppObbDir;
+
+    bool useSdcardFs = IsFilesystemSupported("sdcardfs");
+
+    if (fs_prepare_dir(androidDir.c_str(), 0771, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
+        PLOG(ERROR) << "Failed to create " << androidDir;
+        return -errno;
+    }
+
+    gid_t dataGid = useSdcardFs ? AID_MEDIA_RW : AID_EXT_DATA_RW;
+    if (fs_prepare_dir(androidDataDir.c_str(), 0771, AID_MEDIA_RW, dataGid) != 0) {
+        PLOG(ERROR) << "Failed to create " << androidDataDir;
+        return -errno;
+    }
+
+    gid_t obbGid = useSdcardFs ? AID_MEDIA_RW : AID_EXT_OBB_RW;
+    if (fs_prepare_dir(androidObbDir.c_str(), 0771, AID_MEDIA_RW, obbGid) != 0) {
+        PLOG(ERROR) << "Failed to create " << androidObbDir;
+        return -errno;
+    }
+
+    return OK;
+}
 }  // namespace vold
 }  // namespace android

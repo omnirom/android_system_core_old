@@ -274,6 +274,11 @@ status_t VolumeBase::doFormat(const std::string& fsType) {
     return -ENOTSUP;
 }
 
+std::string VolumeBase::getRootPath() const {
+    // Usually the same as the internal path, except for emulated volumes.
+    return getInternalPath();
+}
+
 std::ostream& VolumeBase::operator<<(std::ostream& stream) const {
     return stream << " VolumeBase{id=" << mId << ",mountFlags=" << mMountFlags
                   << ",mountUserId=" << mMountUserId << "}";
