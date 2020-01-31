@@ -1062,13 +1062,13 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
         return -1;
     }
 
-    result = PrepareDir(pre_pass_through_path, 0755, AID_ROOT, AID_ROOT);
+    result = PrepareDir(pre_pass_through_path, 0710, AID_ROOT, AID_MEDIA_RW);
     if (result != android::OK) {
         PLOG(ERROR) << "Failed to prepare directory " << pre_pass_through_path;
         return -1;
     }
 
-    result = PrepareDir(pass_through_path, 0755, AID_ROOT, AID_ROOT);
+    result = PrepareDir(pass_through_path, 0710, AID_ROOT, AID_MEDIA_RW);
     if (result != android::OK) {
         PLOG(ERROR) << "Failed to prepare directory " << pass_through_path;
         return -1;
@@ -1085,7 +1085,7 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
         Symlink("/storage/emulated/" + std::to_string(user_id), linkpath);
 
         std::string pass_through_linkpath(StringPrintf("/mnt/pass_through/%d/self", user_id));
-        result = PrepareDir(pass_through_linkpath, 0755, AID_ROOT, AID_ROOT);
+        result = PrepareDir(pass_through_linkpath, 0710, AID_ROOT, AID_MEDIA_RW);
         if (result != android::OK) {
             PLOG(ERROR) << "Failed to prepare directory " << pass_through_linkpath;
             return -1;
