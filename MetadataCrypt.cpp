@@ -106,19 +106,19 @@ static void commit_key(const std::string& dir) {
 }
 
 static bool read_key(const FstabEntry& data_rec, bool create_if_absent, KeyBuffer* key) {
-    if (data_rec.key_dir.empty()) {
-        LOG(ERROR) << "Failed to get key_dir";
+    if (data_rec.metadata_key_dir.empty()) {
+        LOG(ERROR) << "Failed to get metadata_key_dir";
         return false;
     }
-    std::string key_dir = data_rec.key_dir;
+    std::string metadata_key_dir = data_rec.metadata_key_dir;
     std::string sKey;
-    auto dir = key_dir + "/key";
-    LOG(DEBUG) << "key_dir/key: " << dir;
+    auto dir = metadata_key_dir + "/key";
+    LOG(DEBUG) << "metadata_key_dir/key: " << dir;
     if (fs_mkdirs(dir.c_str(), 0700)) {
         PLOG(ERROR) << "Creating directories: " << dir;
         return false;
     }
-    auto temp = key_dir + "/tmp";
+    auto temp = metadata_key_dir + "/tmp";
     auto newKeyPath = dir + "/" + kFn_keymaster_key_blob_upgraded;
     /* If we have a leftover upgraded key, delete it.
      * We either failed an update and must return to the old key,
@@ -153,10 +153,10 @@ static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_s
     return true;
 }
 
-static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
-                                  const std::string& real_blkdev, const KeyBuffer& key,
-                                  std::string* crypto_blkdev, bool set_dun) {
-    auto& dm = DeviceMapper::Instance();
+static bool create_crypto_blk_dev(const std::string& dm_name, const FstabEntry* data_rec,
+                                  const KeyBuffer& key, std::string* crypto_blkdev) {
+    uint64_t nr_sec;
+    if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
 
     KeyBuffer hex_key_buffer;
     if (android::vold::StrToHex(key, hex_key_buffer) != android::OK) {
@@ -165,15 +165,23 @@ static bool create_crypto_blk_dev(const std::string& dm_name, uint64_t nr_sec,
     }
     std::string hex_key(hex_key_buffer.data(), hex_key_buffer.size());
 
-    DmTable table;
-    table.Emplace<DmTargetDefaultKey>(0, nr_sec, "AES-256-XTS", hex_key, real_blkdev, 0, set_dun);
+    bool set_dun = android::base::GetBoolProperty("ro.crypto.set_dun", false);
+    if (!set_dun && data_rec->fs_mgr_flags.checkpoint_blk) {
+        LOG(ERROR) << "Block checkpoints and metadata encryption require ro.crypto.set_dun option";
+        return false;
+    }
 
+    DmTable table;
+    table.Emplace<DmTargetDefaultKey>(0, nr_sec, "AES-256-XTS", hex_key, data_rec->blk_device, 0,
+                                      set_dun);
+
+    auto& dm = DeviceMapper::Instance();
     for (int i = 0;; i++) {
         if (dm.CreateDevice(dm_name, table)) {
             break;
         }
         if (i + 1 >= TABLE_LOAD_RETRIES) {
-            LOG(ERROR) << "Could not create default-key device " << dm_name;
+            PLOG(ERROR) << "Could not create default-key device " << dm_name;
             return false;
         }
         PLOG(INFO) << "Could not create default-key device, retrying";
@@ -198,25 +206,24 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
 
     auto data_rec = GetEntryForMountPoint(&fstab_default, mount_point);
     if (!data_rec) {
-        LOG(ERROR) << "Failed to get data_rec";
+        LOG(ERROR) << "Failed to get data_rec for " << mount_point;
+        return false;
+    }
+    if (blk_device != data_rec->blk_device) {
+        LOG(ERROR) << "blk_device " << blk_device << " does not match fstab entry "
+                   << data_rec->blk_device << " for " << mount_point;
         return false;
     }
     KeyBuffer key;
     if (!read_key(*data_rec, needs_encrypt, &key)) return false;
-    uint64_t nr_sec;
-    if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
-    bool set_dun = android::base::GetBoolProperty("ro.crypto.set_dun", false);
-    if (!set_dun && data_rec->fs_mgr_flags.checkpoint_blk) {
-        LOG(ERROR) << "Block checkpoints and metadata encryption require setdun option!";
-        return false;
-    }
 
     std::string crypto_blkdev;
-    if (!create_crypto_blk_dev(kDmNameUserdata, nr_sec, blk_device, key, &crypto_blkdev, set_dun))
-        return false;
+    if (!create_crypto_blk_dev(kDmNameUserdata, data_rec, key, &crypto_blkdev)) return false;
 
     // FIXME handle the corrupt case
     if (needs_encrypt) {
+        uint64_t nr_sec;
+        if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
         LOG(INFO) << "Beginning inplace encryption, nr_sec: " << nr_sec;
         off64_t size_already_done = 0;
         auto rc = cryptfs_enable_inplace(crypto_blkdev.data(), blk_device.data(), nr_sec,
