@@ -56,7 +56,8 @@ status_t DestroyDeviceNode(const std::string& path);
 int SetQuotaProjectId(std::string path, long projectId);
 /*
  * Recursively calls fs_prepare_dir() on all components in 'path', starting at 'root'.
- * 'path' must start with 'root'
+ * 'path' must start with 'root'. Sets up quota project IDs correctly.
+ *
  * ONLY for use with app-specific data directories on external storage!
  * (eg, /Android/data/com.foo, /Android/obb/com.foo, etc.)
  */

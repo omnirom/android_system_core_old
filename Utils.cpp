@@ -54,6 +54,7 @@
 #endif
 
 using namespace std::chrono_literals;
+using android::base::EndsWith;
 using android::base::ReadFileToString;
 using android::base::StartsWith;
 using android::base::StringPrintf;
@@ -136,9 +137,13 @@ int SetQuotaProjectId(std::string path, long projectId) {
 
 int PrepareAppDirsFromRoot(std::string path, std::string root, mode_t mode, uid_t uid, gid_t gid) {
     int ret = 0;
+    bool isCacheDir = false;
     if (!StartsWith(path, root)) {
         return -1;
     }
+    // Cache directories (eg "/storage/emulated/Android/data/com.foo/cache/") need special treatment
+    isCacheDir = EndsWith(root, "/Android/data/") && EndsWith(path, "cache/");
+
     std::string to_create_from_root = path.substr(root.length());
 
     size_t pos = 0;
@@ -149,6 +154,21 @@ int PrepareAppDirsFromRoot(std::string path, std::string root, mode_t mode, uid_
         ret = fs_prepare_dir(root.c_str(), mode, uid, gid);
         if (ret) {
             break;
+        }
+        if (!IsFilesystemSupported("sdcardfs")) {
+            long projectId;
+            // All app-specific directories share the same project-ID, except
+            // the cache directory
+            if (isCacheDir && component == "cache") {
+                // Note that this also matches paths like:
+                // /Android/data/com.foo/bar/cache/
+                // This is currently safe because we're never asked to create
+                // such directories.
+                projectId = uid - AID_APP_START + AID_CACHE_GID_START;
+            } else {
+                projectId = uid - AID_APP_START + AID_EXT_GID_START;
+            }
+            ret = SetQuotaProjectId(root, projectId);
         }
     }
 
