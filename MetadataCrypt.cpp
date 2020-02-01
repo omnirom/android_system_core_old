@@ -153,10 +153,32 @@ static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_s
     return true;
 }
 
+static std::string lookup_cipher(const std::string& cipher_name, bool is_legacy) {
+    if (is_legacy) {
+        if (cipher_name.empty() || cipher_name == "aes-256-xts") {
+            return "AES-256-XTS";
+        }
+    } else {
+        if (cipher_name.empty() || cipher_name == "aes-256-xts") {
+            return "aes-xts-plain64";
+        } else if (cipher_name == "adiantum") {
+            return "xchacha12,aes-adiantum-plain64";
+        }
+    }
+    LOG(ERROR) << "No metadata cipher named " << cipher_name << " found, is_legacy=" << is_legacy;
+    return "";
+}
+
 static bool create_crypto_blk_dev(const std::string& dm_name, const FstabEntry* data_rec,
                                   const KeyBuffer& key, std::string* crypto_blkdev) {
     uint64_t nr_sec;
     if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
+
+    bool is_legacy;
+    if (!DmTargetDefaultKey::IsLegacy(&is_legacy)) return false;
+
+    auto cipher = lookup_cipher(data_rec->metadata_cipher, is_legacy);
+    if (cipher.empty()) return false;
 
     KeyBuffer hex_key_buffer;
     if (android::vold::StrToHex(key, hex_key_buffer) != android::OK) {
@@ -165,15 +187,16 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const FstabEntry* 
     }
     std::string hex_key(hex_key_buffer.data(), hex_key_buffer.size());
 
-    bool set_dun = android::base::GetBoolProperty("ro.crypto.set_dun", false);
+    // Non-legacy driver always sets DUN
+    bool set_dun = !is_legacy || android::base::GetBoolProperty("ro.crypto.set_dun", false);
     if (!set_dun && data_rec->fs_mgr_flags.checkpoint_blk) {
         LOG(ERROR) << "Block checkpoints and metadata encryption require ro.crypto.set_dun option";
         return false;
     }
 
     DmTable table;
-    table.Emplace<DmTargetDefaultKey>(0, nr_sec, "AES-256-XTS", hex_key, data_rec->blk_device, 0,
-                                      set_dun);
+    table.Emplace<DmTargetDefaultKey>(0, nr_sec, cipher, hex_key, data_rec->blk_device, 0,
+                                      is_legacy, set_dun);
 
     auto& dm = DeviceMapper::Instance();
     for (int i = 0;; i++) {
