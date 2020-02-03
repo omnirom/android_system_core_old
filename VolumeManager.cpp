@@ -62,7 +62,6 @@
 #include "VoldNativeService.h"
 #include "VoldUtil.h"
 #include "VolumeManager.h"
-#include "cryptfs.h"
 #include "fs/Ext4.h"
 #include "fs/Vfat.h"
 #include "model/EmulatedVolume.h"

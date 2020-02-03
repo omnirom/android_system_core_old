@@ -43,8 +43,6 @@
 
 #include "android/os/IVold.h"
 
-#include "cryptfs.h"
-
 #define EMULATED_USES_SELINUX 0
 #define MANAGE_MISC_DIRS 0
 
