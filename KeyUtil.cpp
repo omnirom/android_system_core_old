@@ -29,6 +29,7 @@
 #include <android-base/logging.h>
 #include <keyutils.h>
 
+#include <fscrypt_uapi.h>
 #include "KeyStorage.h"
 #include "Utils.h"
 
@@ -43,6 +44,13 @@ bool randomKey(KeyBuffer* key) {
         return false;
     }
     return true;
+}
+
+bool generateStorageKey(const EncryptionOptions& options, KeyBuffer* key) {
+    if (options.use_hw_wrapped_key) {
+        return generateWrappedStorageKey(key);
+    }
+    return randomKey(key);
 }
 
 // Return true if the kernel supports the ioctls to add/remove fscrypt keys
@@ -222,6 +230,7 @@ bool installKey(const std::string& mountpoint, const EncryptionOptions& options,
             return false;
     }
 
+    if (options.use_hw_wrapped_key) arg->flags |= FSCRYPT_ADD_KEY_FLAG_WRAPPED;
     // Provide the raw key.
     arg->raw_size = key.size();
     memcpy(arg->raw, key.data(), key.size());
@@ -307,8 +316,8 @@ bool evictKey(const std::string& mountpoint, const EncryptionPolicy& policy) {
 }
 
 bool retrieveKey(bool create_if_absent, const KeyAuthentication& key_authentication,
-                 const std::string& key_path, const std::string& tmp_path, KeyBuffer* key,
-                 bool keepOld) {
+                 const std::string& key_path, const std::string& tmp_path,
+                 const EncryptionOptions& options, KeyBuffer* key, bool keepOld) {
     if (pathExists(key_path)) {
         LOG(DEBUG) << "Key exists, using: " << key_path;
         if (!retrieveKey(key_path, key_authentication, key, keepOld)) return false;
@@ -318,7 +327,7 @@ bool retrieveKey(bool create_if_absent, const KeyAuthentication& key_authenticat
             return false;
         }
         LOG(INFO) << "Creating new key in " << key_path;
-        if (!randomKey(key)) return false;
+        if (!generateStorageKey(options, key)) return false;
         if (!storeKeyAtomically(key_path, tmp_path, key_authentication, *key)) return false;
     }
     return true;
