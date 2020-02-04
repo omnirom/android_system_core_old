@@ -114,7 +114,7 @@ VolumeManager* VolumeManager::Instance() {
 VolumeManager::VolumeManager() {
     mDebug = false;
     mNextObbId = 0;
-    mNextStubVolumeId = 0;
+    mNextStubId = 0;
     // For security reasons, assume that a secure keyguard is
     // showing until we hear otherwise
     mSecureKeyguardShowing = true;
@@ -337,11 +337,6 @@ std::shared_ptr<android::vold::VolumeBase> VolumeManager::findVolume(const std::
     for (const auto& disk : mDisks) {
         auto vol = disk->findVolume(id);
         if (vol != nullptr) {
-            return vol;
-        }
-    }
-    for (const auto& vol : mStubVolumes) {
-        if (vol->getId() == id) {
             return vol;
         }
     }
@@ -767,7 +762,6 @@ int VolumeManager::shutdown() {
     }
 
     mInternalEmulatedVolumes.clear();
-    mStubVolumes.clear();
     mDisks.clear();
     mPendingDisks.clear();
     android::vold::sSleepOnUnmount = true;
@@ -781,9 +775,6 @@ int VolumeManager::unmountAll() {
     // First, try gracefully unmounting all known devices
     for (const auto& vol : mInternalEmulatedVolumes) {
         vol->unmount();
-    }
-    for (const auto& stub : mStubVolumes) {
-        stub->unmount();
     }
     for (const auto& disk : mDisks) {
         disk->unmountAll();
@@ -941,27 +932,30 @@ int VolumeManager::destroyObb(const std::string& volId) {
 
 int VolumeManager::createStubVolume(const std::string& sourcePath, const std::string& mountPath,
                                     const std::string& fsType, const std::string& fsUuid,
-                                    const std::string& fsLabel, std::string* outVolId) {
-    int id = mNextStubVolumeId++;
-    auto vol = std::shared_ptr<android::vold::VolumeBase>(
-        new android::vold::StubVolume(id, sourcePath, mountPath, fsType, fsUuid, fsLabel));
-    vol->create();
+                                    const std::string& fsLabel, int32_t flags __unused,
+                                    std::string* outVolId) {
+    dev_t stubId = --mNextStubId;
+    auto vol = std::shared_ptr<android::vold::StubVolume>(
+            new android::vold::StubVolume(stubId, sourcePath, mountPath, fsType, fsUuid, fsLabel));
 
-    mStubVolumes.push_back(vol);
+    // TODO (b/132796154): Passed each supported flags explicitly here.
+    // StubDisk doesn't have device node corresponds to it. So, a fake device
+    // number is used. The supported flags will be infered from the
+    // currently-unused flags parameter.
+    auto disk = std::shared_ptr<android::vold::Disk>(
+            new android::vold::Disk("stub", stubId, "stub", android::vold::Disk::Flags::kStub));
+    disk->initializePartition(vol);
+    handleDiskAdded(disk);
     *outVolId = vol->getId();
     return android::OK;
 }
 
 int VolumeManager::destroyStubVolume(const std::string& volId) {
-    auto i = mStubVolumes.begin();
-    while (i != mStubVolumes.end()) {
-        if ((*i)->getId() == volId) {
-            (*i)->destroy();
-            i = mStubVolumes.erase(i);
-        } else {
-            ++i;
-        }
-    }
+    auto tokens = android::base::Split(volId, ":");
+    CHECK(tokens.size() == 2);
+    dev_t stubId;
+    CHECK(android::base::ParseUint(tokens[1], &stubId));
+    handleDiskRemoved(stubId);
     return android::OK;
 }
 

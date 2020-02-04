@@ -125,7 +125,7 @@ interface IVold {
 
     @utf8InCpp String createStubVolume(@utf8InCpp String sourcePath,
             @utf8InCpp String mountPath, @utf8InCpp String fsType,
-            @utf8InCpp String fsUuid, @utf8InCpp String fsLabel);
+            @utf8InCpp String fsUuid, @utf8InCpp String fsLabel, int flags);
     void destroyStubVolume(@utf8InCpp String volId);
 
     FileDescriptor openAppFuseFile(int uid, int mountId, int fileId, int flags);

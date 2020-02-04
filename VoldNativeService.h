@@ -74,7 +74,8 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
 
     binder::Status createStubVolume(const std::string& sourcePath, const std::string& mountPath,
                                     const std::string& fsType, const std::string& fsUuid,
-                                    const std::string& fsLabel, std::string* _aidl_return);
+                                    const std::string& fsLabel, int32_t flags,
+                                    std::string* _aidl_return);
     binder::Status destroyStubVolume(const std::string& volId);
 
     binder::Status fstrim(int32_t fstrimFlags,

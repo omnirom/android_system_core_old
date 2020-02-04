@@ -17,6 +17,7 @@
 #ifndef ANDROID_VOLD_DISK_H
 #define ANDROID_VOLD_DISK_H
 
+#include "StubVolume.h"
 #include "Utils.h"
 #include "VolumeBase.h"
 
@@ -52,6 +53,9 @@ class Disk {
         kUsb = 1 << 3,
         /* Flag that disk is EMMC internal */
         kEmmc = 1 << 4,
+        /* Flag that disk is Stub disk, i.e., disk that is managed from outside
+         * Android (e.g., ARC++). */
+        kStub = 1 << 5,
     };
 
     const std::string& getId() const { return mId; }
@@ -74,6 +78,7 @@ class Disk {
 
     status_t readMetadata();
     status_t readPartitions();
+    void initializePartition(std::shared_ptr<StubVolume> vol);
 
     status_t unmountAll();
 
@@ -109,10 +114,13 @@ class Disk {
 
     void createPublicVolume(dev_t device);
     void createPrivateVolume(dev_t device, const std::string& partGuid);
+    void createStubVolume();
 
     void destroyAllVolumes();
 
     int getMaxMinors();
+
+    bool isStub() { return mFlags & kStub; }
 
     DISALLOW_COPY_AND_ASSIGN(Disk);
 };

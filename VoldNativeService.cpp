@@ -488,9 +488,12 @@ binder::Status VoldNativeService::destroyObb(const std::string& volId) {
     return translate(VolumeManager::Instance()->destroyObb(volId));
 }
 
-binder::Status VoldNativeService::createStubVolume(
-    const std::string& sourcePath, const std::string& mountPath, const std::string& fsType,
-    const std::string& fsUuid, const std::string& fsLabel, std::string* _aidl_return) {
+binder::Status VoldNativeService::createStubVolume(const std::string& sourcePath,
+                                                   const std::string& mountPath,
+                                                   const std::string& fsType,
+                                                   const std::string& fsUuid,
+                                                   const std::string& fsLabel, int32_t flags,
+                                                   std::string* _aidl_return) {
     ENFORCE_SYSTEM_OR_ROOT;
     CHECK_ARGUMENT_PATH(sourcePath);
     CHECK_ARGUMENT_PATH(mountPath);
@@ -499,8 +502,8 @@ binder::Status VoldNativeService::createStubVolume(
     // is quite meaningless.
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->createStubVolume(sourcePath, mountPath, fsType,
-                                                                 fsUuid, fsLabel, _aidl_return));
+    return translate(VolumeManager::Instance()->createStubVolume(
+            sourcePath, mountPath, fsType, fsUuid, fsLabel, flags, _aidl_return));
 }
 
 binder::Status VoldNativeService::destroyStubVolume(const std::string& volId) {
