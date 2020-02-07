@@ -54,11 +54,19 @@ using android::fs_mgr::GetEntryForMountPoint;
 using android::vold::KeyBuffer;
 using namespace android::dm;
 
+// Parsed from metadata options
+struct CryptoOptions {
+    struct CryptoType cipher = invalid_crypto_type;
+    bool is_legacy = false;
+    bool set_dun = true;  // Non-legacy driver always sets DUN
+};
+
 static const std::string kDmNameUserdata = "userdata";
 
 static const char* kFn_keymaster_key_blob = "keymaster_key_blob";
 static const char* kFn_keymaster_key_blob_upgraded = "keymaster_key_blob_upgraded";
 
+// The first entry in this table is the default crypto type.
 constexpr CryptoType supported_crypto_types[] = {aes_256_xts, adiantum};
 
 static_assert(validateSupportedCryptoTypes(64, supported_crypto_types,
@@ -68,11 +76,13 @@ static_assert(validateSupportedCryptoTypes(64, supported_crypto_types,
 constexpr CryptoType legacy_aes_256_xts =
         CryptoType().set_config_name("aes-256-xts").set_kernel_name("AES-256-XTS").set_keysize(64);
 
-constexpr CryptoType legacy_crypto_types[] = {legacy_aes_256_xts};
-
-static_assert(validateSupportedCryptoTypes(64, legacy_crypto_types,
-                                           array_length(legacy_crypto_types)),
+static_assert(isValidCryptoType(64, legacy_aes_256_xts),
               "We have a CryptoType which was incompletely constructed.");
+
+// Returns KeyGeneration suitable for key as described in CryptoOptions
+const KeyGeneration makeGen(const CryptoOptions& options) {
+    return KeyGeneration{options.cipher.get_keysize(), true, false};
+}
 
 static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
     // We're about to mount data not verified by verified boot.  Tell Keymaster that early boot has
@@ -173,8 +183,8 @@ static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_s
 }
 
 static bool create_crypto_blk_dev(const std::string& dm_name, const std::string& blk_device,
-                                  bool is_legacy, const std::string& cipher, bool set_dun,
-                                  const KeyBuffer& key, std::string* crypto_blkdev) {
+                                  const KeyBuffer& key, const CryptoOptions& options,
+                                  std::string* crypto_blkdev) {
     uint64_t nr_sec;
     if (!get_number_of_sectors(blk_device, &nr_sec)) return false;
 
@@ -186,8 +196,8 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const std::string&
     std::string hex_key(hex_key_buffer.data(), hex_key_buffer.size());
 
     DmTable table;
-    table.Emplace<DmTargetDefaultKey>(0, nr_sec, cipher, hex_key, blk_device, 0, is_legacy,
-                                      set_dun);
+    table.Emplace<DmTargetDefaultKey>(0, nr_sec, options.cipher.get_kernel_name(), hex_key,
+                                      blk_device, 0, options.is_legacy, options.set_dun);
 
     auto& dm = DeviceMapper::Instance();
     for (int i = 0;; i++) {
@@ -209,25 +219,23 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const std::string&
     return true;
 }
 
-static const CryptoType& lookup_cipher_in_table(const CryptoType table[], int table_len,
-                                                const std::string& cipher_name) {
-    if (cipher_name.empty()) return table[0];
-    for (int i = 0; i < table_len; i++) {
-        if (cipher_name == table[i].get_config_name()) {
-            return table[i];
+static const CryptoType& lookup_cipher(const std::string& cipher_name) {
+    if (cipher_name.empty()) return supported_crypto_types[0];
+    for (size_t i = 0; i < array_length(supported_crypto_types); i++) {
+        if (cipher_name == supported_crypto_types[i].get_config_name()) {
+            return supported_crypto_types[i];
         }
     }
     return invalid_crypto_type;
 }
 
-static const CryptoType& lookup_cipher(const std::string& cipher_name, bool is_legacy) {
-    if (is_legacy) {
-        return lookup_cipher_in_table(legacy_crypto_types, array_length(legacy_crypto_types),
-                                      cipher_name);
-    } else {
-        return lookup_cipher_in_table(supported_crypto_types, array_length(supported_crypto_types),
-                                      cipher_name);
+static bool parse_options(const std::string& options_string, CryptoOptions* options) {
+    options->cipher = lookup_cipher(options_string);
+    if (options->cipher.get_kernel_name() == nullptr) {
+        LOG(ERROR) << "No metadata cipher named " << options_string << " found";
+        return false;
     }
+    return true;
 }
 
 bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::string& mount_point,
@@ -253,27 +261,30 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
     bool is_legacy;
     if (!DmTargetDefaultKey::IsLegacy(&is_legacy)) return false;
 
-    // Non-legacy driver always sets DUN
-    bool set_dun = !is_legacy || android::base::GetBoolProperty("ro.crypto.set_dun", false);
-    if (!set_dun && data_rec->fs_mgr_flags.checkpoint_blk) {
-        LOG(ERROR) << "Block checkpoints and metadata encryption require ro.crypto.set_dun option";
-        return false;
+    CryptoOptions options;
+    if (is_legacy) {
+        if (!data_rec->metadata_cipher.empty()) {
+            LOG(ERROR) << "metadata_cipher options cannot be set in legacy mode";
+            return false;
+        }
+        options.cipher = legacy_aes_256_xts;
+        options.is_legacy = true;
+        options.set_dun = android::base::GetBoolProperty("ro.crypto.set_dun", false);
+        if (!options.set_dun && data_rec->fs_mgr_flags.checkpoint_blk) {
+            LOG(ERROR)
+                    << "Block checkpoints and metadata encryption require ro.crypto.set_dun option";
+            return false;
+        }
+    } else {
+        if (!parse_options(data_rec->metadata_cipher, &options)) return false;
     }
 
-    auto cipher = lookup_cipher(data_rec->metadata_cipher, is_legacy);
-    if (cipher.get_kernel_name() == nullptr) {
-        LOG(ERROR) << "No metadata cipher named " << data_rec->metadata_cipher
-                   << " found, is_legacy=" << is_legacy;
-        return false;
-    }
-
-    auto gen = needs_encrypt ? makeGen(cipher) : neverGen();
+    auto gen = needs_encrypt ? makeGen(options) : neverGen();
     KeyBuffer key;
     if (!read_key(data_rec->metadata_key_dir, gen, &key)) return false;
 
     std::string crypto_blkdev;
-    if (!create_crypto_blk_dev(kDmNameUserdata, data_rec->blk_device, is_legacy,
-                               cipher.get_kernel_name(), set_dun, key, &crypto_blkdev))
+    if (!create_crypto_blk_dev(kDmNameUserdata, data_rec->blk_device, key, options, &crypto_blkdev))
         return false;
 
     // FIXME handle the corrupt case
