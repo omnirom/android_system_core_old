@@ -186,9 +186,11 @@ static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_s
 
 static bool create_crypto_blk_dev(const std::string& dm_name, const std::string& blk_device,
                                   const KeyBuffer& key, const CryptoOptions& options,
-                                  std::string* crypto_blkdev) {
-    uint64_t nr_sec;
-    if (!get_number_of_sectors(blk_device, &nr_sec)) return false;
+                                  std::string* crypto_blkdev, uint64_t* nr_sec) {
+    if (!get_number_of_sectors(blk_device, nr_sec)) return false;
+    // TODO(paulcrowley): don't hardcode that DmTargetDefaultKey uses 4096-byte
+    // sectors
+    *nr_sec &= ~7;
 
     KeyBuffer module_key;
     if (options.use_hw_wrapped_key) {
@@ -207,7 +209,7 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const std::string&
     }
     std::string hex_key(hex_key_buffer.data(), hex_key_buffer.size());
 
-    auto target = std::make_unique<DmTargetDefaultKey>(0, nr_sec, options.cipher.get_kernel_name(),
+    auto target = std::make_unique<DmTargetDefaultKey>(0, *nr_sec, options.cipher.get_kernel_name(),
                                                        hex_key, blk_device, 0);
     if (options.is_legacy) target->SetIsLegacy();
     if (options.set_dun) target->SetSetDun();
@@ -316,13 +318,13 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
     if (!read_key(data_rec->metadata_key_dir, gen, &key)) return false;
 
     std::string crypto_blkdev;
-    if (!create_crypto_blk_dev(kDmNameUserdata, data_rec->blk_device, key, options, &crypto_blkdev))
+    uint64_t nr_sec;
+    if (!create_crypto_blk_dev(kDmNameUserdata, data_rec->blk_device, key, options, &crypto_blkdev,
+                               &nr_sec))
         return false;
 
     // FIXME handle the corrupt case
     if (needs_encrypt) {
-        uint64_t nr_sec;
-        if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
         LOG(INFO) << "Beginning inplace encryption, nr_sec: " << nr_sec;
         off64_t size_already_done = 0;
         auto rc = cryptfs_enable_inplace(crypto_blkdev.data(), blk_device.data(), nr_sec,
@@ -341,6 +343,28 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
     LOG(DEBUG) << "Mounting metadata-encrypted filesystem:" << mount_point;
     mount_via_fs_mgr(data_rec->mount_point.c_str(), crypto_blkdev.c_str());
     return true;
+}
+
+static bool get_volume_options(CryptoOptions* options) {
+    return parse_options(android::base::GetProperty("ro.crypto.volume.metadata.encryption", ""),
+                         options);
+}
+
+bool defaultkey_volume_keygen(KeyGeneration* gen) {
+    CryptoOptions options;
+    if (!get_volume_options(&options)) return false;
+    *gen = makeGen(options);
+    return true;
+}
+
+bool defaultkey_setup_ext_volume(const std::string& label, const std::string& blk_device,
+                                 const KeyBuffer& key, std::string* out_crypto_blkdev) {
+    LOG(DEBUG) << "defaultkey_setup_ext_volume: " << label << " " << blk_device;
+
+    CryptoOptions options;
+    if (!get_volume_options(&options)) return false;
+    uint64_t nr_sec;
+    return create_crypto_blk_dev(label, blk_device, key, options, out_crypto_blkdev, &nr_sec);
 }
 
 }  // namespace vold

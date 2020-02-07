@@ -17,8 +17,8 @@
 #include "PrivateVolume.h"
 #include "EmulatedVolume.h"
 #include "Utils.h"
+#include "VolumeEncryption.h"
 #include "VolumeManager.h"
-#include "cryptfs.h"
 #include "fs/Ext4.h"
 #include "fs/F2fs.h"
 
@@ -75,9 +75,8 @@ status_t PrivateVolume::doCreate() {
 
     // TODO: figure out better SELinux labels for private volumes
 
-    int res = cryptfs_setup_ext_volume(getId().c_str(), mRawDevPath.c_str(), mKeyRaw, &mDmDevPath);
-    if (res != 0) {
-        PLOG(ERROR) << getId() << " failed to setup cryptfs";
+    if (!setup_ext_volume(getId(), mRawDevPath, mKeyRaw, &mDmDevPath)) {
+        LOG(ERROR) << getId() << " failed to setup metadata encryption";
         return -EIO;
     }
 
