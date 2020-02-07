@@ -899,18 +899,19 @@ int VolumeManager::destroyObb(const std::string& volId) {
 
 int VolumeManager::createStubVolume(const std::string& sourcePath, const std::string& mountPath,
                                     const std::string& fsType, const std::string& fsUuid,
-                                    const std::string& fsLabel, int32_t flags __unused,
+                                    const std::string& fsLabel, int32_t flags,
                                     std::string* outVolId) {
     dev_t stubId = --mNextStubId;
     auto vol = std::shared_ptr<android::vold::StubVolume>(
             new android::vold::StubVolume(stubId, sourcePath, mountPath, fsType, fsUuid, fsLabel));
 
-    // TODO (b/132796154): Passed each supported flags explicitly here.
+    int32_t passedFlags = android::vold::Disk::Flags::kStub;
+    passedFlags |= (flags & android::vold::Disk::Flags::kUsb);
+    passedFlags |= (flags & android::vold::Disk::Flags::kSd);
     // StubDisk doesn't have device node corresponds to it. So, a fake device
-    // number is used. The supported flags will be infered from the
-    // currently-unused flags parameter.
+    // number is used.
     auto disk = std::shared_ptr<android::vold::Disk>(
-            new android::vold::Disk("stub", stubId, "stub", android::vold::Disk::Flags::kStub));
+            new android::vold::Disk("stub", stubId, "stub", passedFlags));
     disk->initializePartition(vol);
     handleDiskAdded(disk);
     *outVolId = vol->getId();
