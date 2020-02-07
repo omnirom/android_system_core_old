@@ -1188,6 +1188,7 @@ status_t PrepareAndroidDirs(const std::string& volumeRoot) {
     std::string androidDir = volumeRoot + kAndroidDir;
     std::string androidDataDir = volumeRoot + kAppDataDir;
     std::string androidObbDir = volumeRoot + kAppObbDir;
+    std::string androidMediaDir = volumeRoot + kAppMediaDir;
 
     bool useSdcardFs = IsFilesystemSupported("sdcardfs");
 
@@ -1205,6 +1206,11 @@ status_t PrepareAndroidDirs(const std::string& volumeRoot) {
     gid_t obbGid = useSdcardFs ? AID_MEDIA_RW : AID_EXT_OBB_RW;
     if (fs_prepare_dir(androidObbDir.c_str(), 0771, AID_MEDIA_RW, obbGid) != 0) {
         PLOG(ERROR) << "Failed to create " << androidObbDir;
+        return -errno;
+    }
+
+    if (fs_prepare_dir(androidMediaDir.c_str(), 0771, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
+        PLOG(ERROR) << "Failed to create " << androidMediaDir;
         return -errno;
     }
 
