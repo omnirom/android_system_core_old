@@ -30,6 +30,7 @@
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/properties.h>
+#include <android-base/strings.h>
 #include <android-base/unique_fd.h>
 #include <cutils/fs.h>
 #include <fs_mgr.h>
@@ -59,6 +60,7 @@ struct CryptoOptions {
     struct CryptoType cipher = invalid_crypto_type;
     bool is_legacy = false;
     bool set_dun = true;  // Non-legacy driver always sets DUN
+    bool use_hw_wrapped_key = false;
 };
 
 static const std::string kDmNameUserdata = "userdata";
@@ -81,7 +83,7 @@ static_assert(isValidCryptoType(64, legacy_aes_256_xts),
 
 // Returns KeyGeneration suitable for key as described in CryptoOptions
 const KeyGeneration makeGen(const CryptoOptions& options) {
-    return KeyGeneration{options.cipher.get_keysize(), true, false};
+    return KeyGeneration{options.cipher.get_keysize(), true, options.use_hw_wrapped_key};
 }
 
 static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
@@ -188,16 +190,31 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const std::string&
     uint64_t nr_sec;
     if (!get_number_of_sectors(blk_device, &nr_sec)) return false;
 
+    KeyBuffer module_key;
+    if (options.use_hw_wrapped_key) {
+        if (!exportWrappedStorageKey(key, &module_key)) {
+            LOG(ERROR) << "Failed to get ephemeral wrapped key";
+            return false;
+        }
+    } else {
+        module_key = key;
+    }
+
     KeyBuffer hex_key_buffer;
-    if (android::vold::StrToHex(key, hex_key_buffer) != android::OK) {
+    if (android::vold::StrToHex(module_key, hex_key_buffer) != android::OK) {
         LOG(ERROR) << "Failed to turn key to hex";
         return false;
     }
     std::string hex_key(hex_key_buffer.data(), hex_key_buffer.size());
 
+    auto target = std::make_unique<DmTargetDefaultKey>(0, nr_sec, options.cipher.get_kernel_name(),
+                                                       hex_key, blk_device, 0);
+    if (options.is_legacy) target->SetIsLegacy();
+    if (options.set_dun) target->SetSetDun();
+    if (options.use_hw_wrapped_key) target->SetWrappedKeyV0();
+
     DmTable table;
-    table.Emplace<DmTargetDefaultKey>(0, nr_sec, options.cipher.get_kernel_name(), hex_key,
-                                      blk_device, 0, options.is_legacy, options.set_dun);
+    table.AddTarget(std::move(target));
 
     auto& dm = DeviceMapper::Instance();
     for (int i = 0;; i++) {
@@ -230,10 +247,25 @@ static const CryptoType& lookup_cipher(const std::string& cipher_name) {
 }
 
 static bool parse_options(const std::string& options_string, CryptoOptions* options) {
-    options->cipher = lookup_cipher(options_string);
-    if (options->cipher.get_kernel_name() == nullptr) {
-        LOG(ERROR) << "No metadata cipher named " << options_string << " found";
+    auto parts = android::base::Split(options_string, ":");
+    if (parts.size() < 1 || parts.size() > 2) {
+        LOG(ERROR) << "Invalid metadata encryption option: " << options_string;
         return false;
+    }
+    std::string cipher_name = parts[0];
+    options->cipher = lookup_cipher(cipher_name);
+    if (options->cipher.get_kernel_name() == nullptr) {
+        LOG(ERROR) << "No metadata cipher named " << cipher_name << " found";
+        return false;
+    }
+
+    if (parts.size() == 2) {
+        if (parts[1] == "wrappedkey_v0") {
+            options->use_hw_wrapped_key = true;
+        } else {
+            LOG(ERROR) << "Invalid metadata encryption flag: " << parts[1];
+            return false;
+        }
     }
     return true;
 }
@@ -263,8 +295,8 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
 
     CryptoOptions options;
     if (is_legacy) {
-        if (!data_rec->metadata_cipher.empty()) {
-            LOG(ERROR) << "metadata_cipher options cannot be set in legacy mode";
+        if (!data_rec->metadata_encryption.empty()) {
+            LOG(ERROR) << "metadata_encryption options cannot be set in legacy mode";
             return false;
         }
         options.cipher = legacy_aes_256_xts;
@@ -276,7 +308,7 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
             return false;
         }
     } else {
-        if (!parse_options(data_rec->metadata_cipher, &options)) return false;
+        if (!parse_options(data_rec->metadata_encryption, &options)) return false;
     }
 
     auto gen = needs_encrypt ? makeGen(options) : neverGen();
