@@ -17,17 +17,19 @@
 #define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
 
 #include "VoldNativeService.h"
+
 #include "Benchmark.h"
 #include "CheckEncryption.h"
-#include "IdleMaint.h"
-#include "MoveStorage.h"
-#include "Process.h"
-#include "VolumeManager.h"
-
 #include "Checkpoint.h"
 #include "FsCrypt.h"
+#include "IdleMaint.h"
 #include "MetadataCrypt.h"
+#include "MoveStorage.h"
+#include "Process.h"
+#include "VoldUtil.h"
+#include "VolumeManager.h"
 #include "cryptfs.h"
+
 #include "incfs_ndk.h"
 
 #include <fstream>
