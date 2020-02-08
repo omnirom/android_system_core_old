@@ -20,7 +20,6 @@
 #include "VoldNativeService.h"
 #include "VoldUtil.h"
 #include "VolumeManager.h"
-#include "cryptfs.h"
 #include "model/Disk.h"
 #include "sehandle.h"
 
