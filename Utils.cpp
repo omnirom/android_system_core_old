@@ -116,7 +116,33 @@ status_t DestroyDeviceNode(const std::string& path) {
     }
 }
 
-int SetQuotaProjectId(std::string path, long projectId) {
+int SetQuotaInherit(const std::string& path) {
+    unsigned long flags;
+
+    android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(path.c_str(), O_RDONLY | O_CLOEXEC)));
+    if (fd == -1) {
+        PLOG(ERROR) << "Failed to open " << path << " to set project id inheritance.";
+        return -1;
+    }
+
+    int ret = ioctl(fd, FS_IOC_GETFLAGS, &flags);
+    if (ret == -1) {
+        PLOG(ERROR) << "Failed to get flags for " << path << " to set project id inheritance.";
+        return ret;
+    }
+
+    flags |= FS_PROJINHERIT_FL;
+
+    ret = ioctl(fd, FS_IOC_SETFLAGS, &flags);
+    if (ret == -1) {
+        PLOG(ERROR) << "Failed to set flags for " << path << " to set project id inheritance.";
+        return ret;
+    }
+
+    return 0;
+}
+
+int SetQuotaProjectId(const std::string& path, long projectId) {
     struct fsxattr fsx;
 
     android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(path.c_str(), O_RDONLY | O_CLOEXEC)));
