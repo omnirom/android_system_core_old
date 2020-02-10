@@ -82,7 +82,7 @@ using android::vold::DeleteDirContents;
 using android::vold::DeleteDirContentsAndDir;
 using android::vold::IsFilesystemSupported;
 using android::vold::PrepareAndroidDirs;
-using android::vold::PrepareAppDirsFromRoot;
+using android::vold::PrepareAppDirFromRoot;
 using android::vold::PrivateVolume;
 using android::vold::Symlink;
 using android::vold::Unlink;
@@ -823,29 +823,6 @@ int VolumeManager::unmountAll() {
     return 0;
 }
 
-static gid_t getAppDirGid(const std::string& appDir) {
-    // Create app-specific dirs with the correct UID/GID
-    gid_t gid = AID_MEDIA_RW;
-    if (!IsFilesystemSupported("sdcardfs")) {
-        if (appDir == android::vold::kAppDataDir) {
-            gid = AID_EXT_DATA_RW;
-        } else if (appDir == android::vold::kAppObbDir) {
-            gid = AID_EXT_OBB_RW;
-        } else if (appDir == android::vold::kAppMediaDir) {
-            gid = AID_MEDIA_RW;
-        } else {
-            gid = AID_MEDIA_RW;
-        }
-    }
-
-    return gid;
-}
-
-static bool isValidAppDirRoot(const std::string& appDirRoot) {
-    return appDirRoot == android::vold::kAppDataDir || appDirRoot == android::vold::kAppMediaDir ||
-           appDirRoot == android::vold::kAppObbDir;
-}
-
 int VolumeManager::setupAppDir(const std::string& path, const std::string& appDirRoot,
                                int32_t appUid) {
     // Only offer to create directories for paths managed by vold
@@ -889,18 +866,9 @@ int VolumeManager::setupAppDir(const std::string& path, const std::string& appDi
     // on /storage/emulated/10 means /mnt/user/0/emulated/10
     const std::string lowerPath =
             volume->getInternalPath() + path.substr(volume->getPath().length());
-    const std::string lowerAppDirRoot =
-            volume->getInternalPath() + appDirRoot.substr(volume->getPath().length());
 
     // Do some sanity checking on the app dir (relative from root)
     const std::string volumeRoot = volume->getRootPath();  // eg /data/media/0
-
-    // eg, if lowerAppDirRoot = /data/media/0/Android/data, this is /Android/data
-    const std::string relativeAppRoot = lowerAppDirRoot.substr(volumeRoot.length());
-    if (!isValidAppDirRoot(relativeAppRoot)) {
-        LOG(ERROR) << path << " is not a valid application directory.";
-        return -EINVAL;
-    }
 
     // Make sure the Android/ directories exist and are setup correctly
     int ret = PrepareAndroidDirs(volumeRoot);
@@ -909,8 +877,8 @@ int VolumeManager::setupAppDir(const std::string& path, const std::string& appDi
         return ret;
     }
 
-    gid_t gid = getAppDirGid(relativeAppRoot);
-    return PrepareAppDirsFromRoot(lowerPath, lowerAppDirRoot, 0770, appUid, gid);
+    // Finally, create the app paths we need
+    return PrepareAppDirFromRoot(lowerPath, appUid);
 }
 
 int VolumeManager::createObb(const std::string& sourcePath, const std::string& sourceKey,
