@@ -76,9 +76,7 @@ status_t PrivateVolume::doCreate() {
     // TODO: figure out better SELinux labels for private volumes
 
     unsigned char* key = (unsigned char*)mKeyRaw.data();
-    char crypto_blkdev[MAXPATHLEN];
-    int res = cryptfs_setup_ext_volume(getId().c_str(), mRawDevPath.c_str(), key, crypto_blkdev);
-    mDmDevPath = crypto_blkdev;
+    int res = cryptfs_setup_ext_volume(getId().c_str(), mRawDevPath.c_str(), key, &mDmDevPath);
     if (res != 0) {
         PLOG(ERROR) << getId() << " failed to setup cryptfs";
         return -EIO;
