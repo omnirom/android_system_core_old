@@ -1164,8 +1164,8 @@ static int add_sector_size_param(DmTargetCrypt* target, struct crypt_mnt_ftr* ft
 }
 
 static int create_crypto_blk_dev(struct crypt_mnt_ftr* crypt_ftr, const unsigned char* master_key,
-                                 const char* real_blk_name, char* crypto_blk_name, const char* name,
-                                 uint32_t flags) {
+                                 const char* real_blk_name, std::string* crypto_blk_name,
+                                 const char* name, uint32_t flags) {
     auto& dm = DeviceMapper::Instance();
 
     // We need two ASCII characters to represent each byte, and need space for
@@ -1205,15 +1205,13 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr* crypt_ftr, const unsigned
         SLOGI("Took %d tries to load dmcrypt table.\n", load_count);
     }
 
-    std::string path;
-    if (!dm.GetDmDevicePathByName(name, &path)) {
+    if (!dm.GetDmDevicePathByName(name, crypto_blk_name)) {
         SLOGE("Cannot determine dm-crypt path for %s.\n", name);
         return -1;
     }
-    snprintf(crypto_blk_name, MAXPATHLEN, "%s", path.c_str());
 
     /* Ensure the dm device has been created before returning. */
-    if (android::vold::WaitForFile(crypto_blk_name, 1s) < 0) {
+    if (android::vold::WaitForFile(crypto_blk_name->c_str(), 1s) < 0) {
         // WaitForFile generates a suitable log message
         return -1;
     }
@@ -1778,7 +1776,7 @@ static int do_crypto_complete(const char* mount_point) {
 static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr, const char* passwd,
                                    const char* mount_point, const char* label) {
     unsigned char decrypted_master_key[MAX_KEY_LEN];
-    char crypto_blkdev[MAXPATHLEN];
+    std::string crypto_blkdev;
     std::string real_blkdev;
     char tmp_mount_point[64];
     unsigned int orig_failed_decrypt_count;
@@ -1807,7 +1805,7 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr, const char* 
 
     // Create crypto block device - all (non fatal) code paths
     // need it
-    if (create_crypto_blk_dev(crypt_ftr, decrypted_master_key, real_blkdev.c_str(), crypto_blkdev,
+    if (create_crypto_blk_dev(crypt_ftr, decrypted_master_key, real_blkdev.c_str(), &crypto_blkdev,
                               label, 0)) {
         SLOGE("Error creating decrypted block device\n");
         rc = -1;
@@ -1831,7 +1829,8 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr, const char* 
          * the footer, not the key. */
         snprintf(tmp_mount_point, sizeof(tmp_mount_point), "%s/tmp_mnt", mount_point);
         mkdir(tmp_mount_point, 0755);
-        if (fs_mgr_do_mount(&fstab_default, DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
+        if (fs_mgr_do_mount(&fstab_default, DATA_MNT_POINT,
+                            const_cast<char*>(crypto_blkdev.c_str()), tmp_mount_point)) {
             SLOGE("Error temp mounting decrypted block device\n");
             delete_crypto_blk_dev(label);
 
@@ -1853,7 +1852,7 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr, const char* 
 
         /* Save the name of the crypto block device
          * so we can mount it when restarting the framework. */
-        property_set("ro.crypto.fs_crypto_blkdev", crypto_blkdev);
+        property_set("ro.crypto.fs_crypto_blkdev", crypto_blkdev.c_str());
 
         /* Also save a the master key so we can reencrypted the key
          * the key when we want to change the password on it. */
@@ -1910,11 +1909,9 @@ errout:
  * storage volume. The incoming partition has no crypto header/footer,
  * as any metadata is been stored in a separate, small partition.  We
  * assume it must be using our same crypt type and keysize.
- *
- * out_crypto_blkdev must be MAXPATHLEN.
  */
 int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const unsigned char* key,
-                             char* out_crypto_blkdev) {
+                             std::string* out_crypto_blkdev) {
     uint64_t nr_sec = 0;
     if (android::vold::GetBlockDev512Sectors(real_blkdev, &nr_sec) != android::OK) {
         SLOGE("Failed to get size of %s: %s", real_blkdev, strerror(errno));
@@ -2132,8 +2129,8 @@ static int cryptfs_SHA256_fileblock(const char* filename, __le8* buf) {
     return 0;
 }
 
-static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr* crypt_ftr, char* crypto_blkdev,
-                                      char* real_blkdev, int previously_encrypted_upto) {
+static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr* crypt_ftr, const char* crypto_blkdev,
+                                      const char* real_blkdev, int previously_encrypted_upto) {
     off64_t cur_encryption_done = 0, tot_encryption_size = 0;
     int rc = -1;
 
@@ -2168,7 +2165,7 @@ static int vold_unmountAll(void) {
 }
 
 int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
-    char crypto_blkdev[MAXPATHLEN];
+    std::string crypto_blkdev;
     std::string real_blkdev;
     unsigned char decrypted_master_key[MAX_KEY_LEN];
     int rc = -1, i;
@@ -2377,14 +2374,14 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     }
 
     decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr, 0, 0);
-    create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev.c_str(), crypto_blkdev,
+    create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev.c_str(), &crypto_blkdev,
                           CRYPTO_BLOCK_DEVICE, 0);
 
     /* If we are continuing, check checksums match */
     rc = 0;
     if (previously_encrypted_upto) {
         __le8 hash_first_block[SHA256_DIGEST_LENGTH];
-        rc = cryptfs_SHA256_fileblock(crypto_blkdev, hash_first_block);
+        rc = cryptfs_SHA256_fileblock(crypto_blkdev.c_str(), hash_first_block);
 
         if (!rc &&
             memcmp(hash_first_block, crypt_ftr.hash_first_block, sizeof(hash_first_block)) != 0) {
@@ -2394,13 +2391,13 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     }
 
     if (!rc) {
-        rc = cryptfs_enable_all_volumes(&crypt_ftr, crypto_blkdev, real_blkdev.data(),
+        rc = cryptfs_enable_all_volumes(&crypt_ftr, crypto_blkdev.c_str(), real_blkdev.data(),
                                         previously_encrypted_upto);
     }
 
     /* Calculate checksum if we are not finished */
     if (!rc && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
-        rc = cryptfs_SHA256_fileblock(crypto_blkdev, crypt_ftr.hash_first_block);
+        rc = cryptfs_SHA256_fileblock(crypto_blkdev.c_str(), crypt_ftr.hash_first_block);
         if (rc) {
             SLOGE("Error calculating checksum for continuing encryption");
             rc = -1;
