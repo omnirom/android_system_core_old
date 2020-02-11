@@ -65,6 +65,9 @@ class EmulatedVolume : public VolumeBase {
     /* Whether to use sdcardfs for this volume */
     bool mUseSdcardFs;
 
+    /* Whether to use app data isolation is enabled tor this volume */
+    bool mAppDataIsolationEnabled;
+
     DISALLOW_COPY_AND_ASSIGN(EmulatedVolume);
 };
 

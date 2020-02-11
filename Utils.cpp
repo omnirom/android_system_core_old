@@ -82,6 +82,9 @@ static const char* kAppDataDir = "/Android/data/";
 static const char* kAppMediaDir = "/Android/media/";
 static const char* kAppObbDir = "/Android/obb/";
 
+static const char* kMediaProviderCtx = "u:r:mediaprovider:";
+static const char* kMediaProviderAppCtx = "u:r:mediaprovider_app:";
+
 // Lock used to protect process-level SELinux changes from racing with each
 // other between multiple threads.
 static std::mutex kSecurityLock;
@@ -380,6 +383,31 @@ status_t ForceUnmount(const std::string& path) {
     }
     PLOG(INFO) << "ForceUnmount failed";
     return -errno;
+}
+
+status_t KillProcessesWithMountPrefix(const std::string& path) {
+    if (KillProcessesWithMounts(path, SIGINT) == 0) {
+        return OK;
+    }
+    if (sSleepOnUnmount) sleep(5);
+
+    if (KillProcessesWithMounts(path, SIGTERM) == 0) {
+        return OK;
+    }
+    if (sSleepOnUnmount) sleep(5);
+
+    if (KillProcessesWithMounts(path, SIGKILL) == 0) {
+        return OK;
+    }
+    if (sSleepOnUnmount) sleep(5);
+
+    // Send SIGKILL a second time to determine if we've
+    // actually killed everyone mount
+    if (KillProcessesWithMounts(path, SIGKILL) == 0) {
+        return OK;
+    }
+    PLOG(ERROR) << "Failed to kill processes using " << path;
+    return -EBUSY;
 }
 
 status_t KillProcessesUsingPath(const std::string& path) {
@@ -839,6 +867,19 @@ uint64_t GetTreeBytes(const std::string& path) {
     }
 }
 
+// TODO: Use a better way to determine if it's media provider app.
+bool IsFuseDaemon(const pid_t pid) {
+    auto path = StringPrintf("/proc/%d/mounts", pid);
+    char* tmp;
+    if (lgetfilecon(path.c_str(), &tmp) < 0) {
+        return false;
+    }
+    bool result = android::base::StartsWith(tmp, kMediaProviderAppCtx)
+            || android::base::StartsWith(tmp, kMediaProviderCtx);
+    freecon(tmp);
+    return result;
+}
+
 bool IsFilesystemSupported(const std::string& fsType) {
     std::string supported;
     if (!ReadFileToString(kProcFilesystems, &supported)) {
@@ -1196,6 +1237,16 @@ bool writeStringToFile(const std::string& payload, const std::string& filename) 
         }
     }
     return true;
+}
+
+status_t EnsureDirExists(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
+    if (access(path.c_str(), F_OK) != 0) {
+        PLOG(WARNING) << "Dir does not exist: " << path;
+        if (fs_prepare_dir(path.c_str(), mode, uid, gid) != 0) {
+            return -errno;
+        }
+    }
+    return OK;
 }
 
 status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
