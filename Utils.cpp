@@ -33,16 +33,18 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/fs.h>
+#include <linux/posix_acl.h>
+#include <linux/posix_acl_xattr.h>
 #include <mntent.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/xattr.h>
 #include <unistd.h>
 
 #include <list>
@@ -120,6 +122,45 @@ status_t DestroyDeviceNode(const std::string& path) {
     } else {
         return OK;
     }
+}
+
+// Sets a default ACL where the owner and group can read/write/execute.
+// Other users aren't allowed anything.
+int SetDefault770Acl(const std::string& path, uid_t uid, gid_t gid) {
+    if (IsFilesystemSupported("sdcardfs")) {
+        // sdcardfs magically takes care of this
+        return OK;
+    }
+
+    static constexpr size_t size =
+            sizeof(posix_acl_xattr_header) + 3 * sizeof(posix_acl_xattr_entry);
+    auto buf = std::make_unique<uint8_t[]>(size);
+
+    posix_acl_xattr_header* acl_header = reinterpret_cast<posix_acl_xattr_header*>(buf.get());
+    acl_header->a_version = POSIX_ACL_XATTR_VERSION;
+
+    posix_acl_xattr_entry* entry =
+            reinterpret_cast<posix_acl_xattr_entry*>(buf.get() + sizeof(posix_acl_xattr_header));
+
+    entry[0].e_tag = ACL_USER_OBJ;
+    entry[0].e_perm = ACL_READ | ACL_WRITE | ACL_EXECUTE;
+    entry[0].e_id = uid;
+
+    entry[1].e_tag = ACL_GROUP_OBJ;
+    entry[1].e_perm = ACL_READ | ACL_WRITE | ACL_EXECUTE;
+    entry[1].e_id = gid;
+
+    entry[2].e_tag = ACL_OTHER;
+    entry[2].e_perm = 0;
+    entry[2].e_id = 0;
+
+    int ret = setxattr(path.c_str(), XATTR_NAME_POSIX_ACL_DEFAULT, acl_header, size, 0);
+
+    if (ret != 0) {
+        PLOG(ERROR) << "Failed to set default ACL on " << path;
+    }
+
+    return ret;
 }
 
 int SetQuotaInherit(const std::string& path) {
@@ -228,6 +269,17 @@ int PrepareAppDirFromRoot(std::string path, int appUid) {
     // First, create the package-path
     std::string package_path = match.str(1) + match.str(3);
     ret = PrepareDirWithProjectId(package_path, mode, uid, gid, projectId);
+    if (ret) {
+        return ret;
+    }
+
+    // Set the default ACL, to ensure that even if applications run with a
+    // umask of 0077, new directories within these directories will allow the
+    // GID specified here to write; this is necessary for apps like installers
+    // and MTP, that require access here.
+    //
+    // See man (5) acl for more details.
+    ret = SetDefault770Acl(package_path, uid, gid);
     if (ret) {
         return ret;
     }
