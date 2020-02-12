@@ -440,27 +440,27 @@ struct CryptoType {
     // do it all at compile time.  Add new CryptoTypes in
     // supported_crypto_types[] below.
     constexpr CryptoType() : CryptoType(nullptr, nullptr, 0xFFFFFFFF) {}
-    constexpr CryptoType set_keysize(uint32_t size) const {
-        return CryptoType(this->property_name, this->crypto_name, size);
+    constexpr CryptoType set_keysize(size_t keysize) const {
+        return CryptoType(this->config_name, this->kernel_name, keysize);
     }
-    constexpr CryptoType set_property_name(const char* property) const {
-        return CryptoType(property, this->crypto_name, this->keysize);
+    constexpr CryptoType set_config_name(const char* config_name) const {
+        return CryptoType(config_name, this->kernel_name, this->keysize);
     }
-    constexpr CryptoType set_crypto_name(const char* crypto) const {
-        return CryptoType(this->property_name, crypto, this->keysize);
+    constexpr CryptoType set_kernel_name(const char* kernel_name) const {
+        return CryptoType(this->config_name, kernel_name, this->keysize);
     }
 
-    constexpr const char* get_property_name() const { return property_name; }
-    constexpr const char* get_crypto_name() const { return crypto_name; }
-    constexpr uint32_t get_keysize() const { return keysize; }
+    constexpr const char* get_config_name() const { return config_name; }
+    constexpr const char* get_kernel_name() const { return kernel_name; }
+    constexpr size_t get_keysize() const { return keysize; }
 
   private:
-    const char* property_name;
-    const char* crypto_name;
-    uint32_t keysize;
+    const char* config_name;
+    const char* kernel_name;
+    size_t keysize;
 
-    constexpr CryptoType(const char* property, const char* crypto, uint32_t ksize)
-        : property_name(property), crypto_name(crypto), keysize(ksize) {}
+    constexpr CryptoType(const char* config, const char* crypto, size_t ksize)
+        : config_name(config), kernel_name(crypto), keysize(ksize) {}
     friend const CryptoType& get_crypto_type();
     static const CryptoType& get_device_crypto_algorithm();
 };
@@ -474,22 +474,22 @@ const CryptoType& get_crypto_type() {
 }
 
 constexpr CryptoType default_crypto_type = CryptoType()
-                                               .set_property_name("AES-128-CBC")
-                                               .set_crypto_name("aes-cbc-essiv:sha256")
-                                               .set_keysize(16);
+                                                   .set_config_name("AES-128-CBC")
+                                                   .set_kernel_name("aes-cbc-essiv:sha256")
+                                                   .set_keysize(16);
 
 constexpr CryptoType supported_crypto_types[] = {
-    default_crypto_type,
-    CryptoType()
-        .set_property_name("adiantum")
-        .set_crypto_name("xchacha12,aes-adiantum-plain64")
-        .set_keysize(32),
-    // Add new CryptoTypes here.  Order is not important.
+        default_crypto_type,
+        CryptoType()
+                .set_config_name("adiantum")
+                .set_kernel_name("xchacha12,aes-adiantum-plain64")
+                .set_keysize(32),
+        // Add new CryptoTypes here.  Order is not important.
 };
 
 // ---------- START COMPILE-TIME SANITY CHECK BLOCK -------------------------
 // We confirm all supported_crypto_types have a small enough keysize and
-// had both set_property_name() and set_crypto_name() called.
+// had both set_config_name() and set_kernel_name() called.
 
 template <typename T, size_t N>
 constexpr size_t array_length(T (&)[N]) {
@@ -501,8 +501,8 @@ constexpr bool indexOutOfBoundsForCryptoTypes(size_t index) {
 }
 
 constexpr bool isValidCryptoType(const CryptoType& crypto_type) {
-    return ((crypto_type.get_property_name() != nullptr) &&
-            (crypto_type.get_crypto_name() != nullptr) &&
+    return ((crypto_type.get_config_name() != nullptr) &&
+            (crypto_type.get_kernel_name() != nullptr) &&
             (crypto_type.get_keysize() <= MAX_KEY_LEN));
 }
 
@@ -525,14 +525,14 @@ const CryptoType& CryptoType::get_device_crypto_algorithm() {
     constexpr char CRYPT_ALGO_PROP[] = "ro.crypto.fde_algorithm";
     char paramstr[PROPERTY_VALUE_MAX];
 
-    property_get(CRYPT_ALGO_PROP, paramstr, default_crypto_type.get_property_name());
+    property_get(CRYPT_ALGO_PROP, paramstr, default_crypto_type.get_config_name());
     for (auto const& ctype : supported_crypto_types) {
-        if (strcmp(paramstr, ctype.get_property_name()) == 0) {
+        if (strcmp(paramstr, ctype.get_config_name()) == 0) {
             return ctype;
         }
     }
     ALOGE("Invalid name (%s) for %s.  Defaulting to %s\n", paramstr, CRYPT_ALGO_PROP,
-          default_crypto_type.get_property_name());
+          default_crypto_type.get_config_name());
     return default_crypto_type;
 }
 
@@ -557,12 +557,12 @@ static void get_device_scrypt_params(struct crypt_mnt_ftr* ftr) {
     ftr->p_factor = pf;
 }
 
-uint32_t cryptfs_get_keysize() {
+size_t cryptfs_get_keysize() {
     return get_crypto_type().get_keysize();
 }
 
-const char* cryptfs_get_crypto_name() {
-    return get_crypto_type().get_crypto_name();
+const char* cryptfs_get_kernel_name() {
+    return get_crypto_type().get_kernel_name();
 }
 
 static uint64_t get_fs_size(const char* dev) {
@@ -1914,7 +1914,7 @@ errout:
 int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const KeyBuffer& key,
                              std::string* out_crypto_blkdev) {
     if (key.size() != cryptfs_get_keysize()) {
-        SLOGE("Raw keysize %zu does not match crypt keysize %" PRIu32, key.size(),
+        SLOGE("Raw keysize %zu does not match crypt keysize %zu", key.size(),
               cryptfs_get_keysize());
         return -1;
     }
@@ -1928,7 +1928,7 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const K
     memset(&ext_crypt_ftr, 0, sizeof(ext_crypt_ftr));
     ext_crypt_ftr.fs_size = nr_sec;
     ext_crypt_ftr.keysize = cryptfs_get_keysize();
-    strlcpy((char*)ext_crypt_ftr.crypto_type_name, cryptfs_get_crypto_name(),
+    strlcpy((char*)ext_crypt_ftr.crypto_type_name, cryptfs_get_kernel_name(),
             MAX_CRYPTO_TYPE_NAME_LEN);
     uint32_t flags = 0;
     if (fscrypt_is_native() &&
@@ -2318,7 +2318,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
             crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
         }
         crypt_ftr.crypt_type = crypt_type;
-        strlcpy((char*)crypt_ftr.crypto_type_name, cryptfs_get_crypto_name(),
+        strlcpy((char*)crypt_ftr.crypto_type_name, cryptfs_get_kernel_name(),
                 MAX_CRYPTO_TYPE_NAME_LEN);
 
         /* Make an encrypted master key */
