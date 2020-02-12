@@ -458,14 +458,12 @@ binder::Status VoldNativeService::remountUid(int32_t uid, int32_t remountMode) {
     return translate(VolumeManager::Instance()->remountUid(uid, remountMode));
 }
 
-binder::Status VoldNativeService::setupAppDir(const std::string& path,
-                                              const std::string& appDirRoot, int32_t appUid) {
+binder::Status VoldNativeService::setupAppDir(const std::string& path, int32_t appUid) {
     ENFORCE_SYSTEM_OR_ROOT;
     CHECK_ARGUMENT_PATH(path);
-    CHECK_ARGUMENT_PATH(appDirRoot);
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->setupAppDir(path, appDirRoot, appUid));
+    return translate(VolumeManager::Instance()->setupAppDir(path, appUid));
 }
 
 binder::Status VoldNativeService::createObb(const std::string& sourcePath,

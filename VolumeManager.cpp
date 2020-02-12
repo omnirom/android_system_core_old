@@ -823,8 +823,7 @@ int VolumeManager::unmountAll() {
     return 0;
 }
 
-int VolumeManager::setupAppDir(const std::string& path, const std::string& appDirRoot,
-                               int32_t appUid) {
+int VolumeManager::setupAppDir(const std::string& path, int32_t appUid) {
     // Only offer to create directories for paths managed by vold
     if (!StartsWith(path, "/storage/")) {
         LOG(ERROR) << "Failed to find mounted volume for " << path;
