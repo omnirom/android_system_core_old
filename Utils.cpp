@@ -293,7 +293,7 @@ int PrepareAppDirFromRoot(std::string path, int appUid) {
         // All dirs use the "app" project ID, except for the cache dir
         projectId = uid - AID_APP_START + AID_CACHE_GID_START;
     }
-    return PrepareDirWithProjectId(path.c_str(), mode, uid, gid, projectId);
+    return PrepareDirWithProjectId(path, mode, uid, gid, projectId);
 }
 
 status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
