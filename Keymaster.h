@@ -39,6 +39,7 @@ using namespace ::android::hardware::keymaster::V4_1;
 // dangerous thing to rely on, but in this case its implications are simple and straightforward:
 // km::ErrorCode refers to the 4.0 ErrorCode, though we pull everything else from 4.1.
 using ErrorCode = ::android::hardware::keymaster::V4_0::ErrorCode;
+using V4_1_ErrorCode = ::android::hardware::keymaster::V4_1::ErrorCode;
 
 }  // namespace km
 
@@ -124,6 +125,10 @@ class Keymaster {
                              const km::HardwareAuthToken& authToken,
                              km::AuthorizationSet* outParams);
     bool isSecure();
+
+    // Tell Keymaster that early boot has ended and early boot-only keys can no longer be created or
+    // used.
+    void earlyBootEnded();
 
   private:
     sp<KmDevice> mDevice;
