@@ -68,6 +68,11 @@ bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, KeyBuffe
 bool destroyKey(const std::string& dir);
 
 bool runSecdiscardSingle(const std::string& file);
+
+// Generate wrapped storage key using keymaster. Uses STORAGE_KEY tag in keymaster.
+bool generateWrappedStorageKey(KeyBuffer* key);
+// Export the per-boot boot wrapped storage key using keymaster.
+bool exportWrappedStorageKey(const KeyBuffer& kmKey, KeyBuffer* key);
 }  // namespace vold
 }  // namespace android
 
