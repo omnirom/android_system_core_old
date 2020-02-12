@@ -24,13 +24,24 @@
 #include <utility>
 
 #include <android-base/macros.h>
-#include <keymasterV4_0/Keymaster.h>
-#include <keymasterV4_0/authorization_set.h>
+#include <keymasterV4_1/Keymaster.h>
+#include <keymasterV4_1/authorization_set.h>
 
 namespace android {
 namespace vold {
 
-namespace km = ::android::hardware::keymaster::V4_0;
+namespace km {
+
+using namespace ::android::hardware::keymaster::V4_1;
+
+// Surprisingly -- to me, at least -- this is totally fine.  You can re-define symbols that were
+// brought in via a using directive (the "using namespace") above.  In general this seems like a
+// dangerous thing to rely on, but in this case its implications are simple and straightforward:
+// km::ErrorCode refers to the 4.0 ErrorCode, though we pull everything else from 4.1.
+using ErrorCode = ::android::hardware::keymaster::V4_0::ErrorCode;
+
+}  // namespace km
+
 using KmDevice = km::support::Keymaster;
 
 // C++ wrappers to the Keymaster hidl interface.
