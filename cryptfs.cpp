@@ -77,6 +77,7 @@ using android::base::StringPrintf;
 using android::fs_mgr::GetEntryForMountPoint;
 using android::vold::CryptoType;
 using android::vold::KeyBuffer;
+using android::vold::KeyGeneration;
 using namespace android::dm;
 using namespace std::chrono_literals;
 
@@ -323,6 +324,10 @@ static const CryptoType& get_crypto_type() {
     return crypto_type;
 }
 
+const KeyGeneration cryptfs_get_keygen() {
+    return makeGen(get_crypto_type());
+}
+
 /* Should we use keymaster? */
 static int keymaster_check_compatibility() {
     return keymaster_compatibility_cryptfs_scrypt();
@@ -470,10 +475,6 @@ static void get_device_scrypt_params(struct crypt_mnt_ftr* ftr) {
     ftr->N_factor = Nf;
     ftr->r_factor = rf;
     ftr->p_factor = pf;
-}
-
-size_t cryptfs_get_keysize() {
-    return get_crypto_type().get_keysize();
 }
 
 static uint64_t get_fs_size(const char* dev) {
