@@ -17,8 +17,8 @@
 #include "Keymaster.h"
 
 #include <android-base/logging.h>
-#include <keymasterV4_0/authorization_set.h>
-#include <keymasterV4_0/keymaster_utils.h>
+#include <keymasterV4_1/authorization_set.h>
+#include <keymasterV4_1/keymaster_utils.h>
 
 namespace android {
 namespace vold {

@@ -43,8 +43,8 @@
 #include <cutils/properties.h>
 
 #include <hardware/hw_auth_token.h>
-#include <keymasterV4_0/authorization_set.h>
-#include <keymasterV4_0/keymaster_utils.h>
+#include <keymasterV4_1/authorization_set.h>
+#include <keymasterV4_1/keymaster_utils.h>
 
 extern "C" {
 
