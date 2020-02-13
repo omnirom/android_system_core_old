@@ -211,6 +211,19 @@ static bool get_data_file_encryption_options(EncryptionOptions* options) {
     return true;
 }
 
+static bool install_storage_key(const std::string& mountpoint, const EncryptionOptions& options,
+                                const KeyBuffer& key, EncryptionPolicy* policy) {
+    KeyBuffer ephemeral_wrapped_key;
+    if (options.use_hw_wrapped_key) {
+        if (!exportWrappedStorageKey(key, &ephemeral_wrapped_key)) {
+            LOG(ERROR) << "Failed to get ephemeral wrapped key";
+            return false;
+        }
+    }
+    return installKey(mountpoint, options, options.use_hw_wrapped_key ? ephemeral_wrapped_key : key,
+                      policy);
+}
+
 // Retrieve the options to use for encryption policies on adoptable storage.
 static bool get_volume_file_encryption_options(EncryptionOptions* options) {
     auto contents_mode =
@@ -234,7 +247,7 @@ static bool read_and_install_user_ce_key(userid_t user_id,
     KeyBuffer ce_key;
     if (!read_and_fixate_user_ce_key(user_id, auth, &ce_key)) return false;
     EncryptionPolicy ce_policy;
-    if (!installKey(DATA_MNT_POINT, options, ce_key, &ce_policy)) return false;
+    if (!install_storage_key(DATA_MNT_POINT, options, ce_key, &ce_policy)) return false;
     s_ce_policies[user_id] = ce_policy;
     LOG(DEBUG) << "Installed ce key for user " << user_id;
     return true;
@@ -264,8 +277,8 @@ static bool create_and_install_user_keys(userid_t user_id, bool create_ephemeral
     EncryptionOptions options;
     if (!get_data_file_encryption_options(&options)) return false;
     KeyBuffer de_key, ce_key;
-    if (!android::vold::randomKey(&de_key)) return false;
-    if (!android::vold::randomKey(&ce_key)) return false;
+    if (!generateStorageKey(options, &de_key)) return false;
+    if (!generateStorageKey(options, &ce_key)) return false;
     if (create_ephemeral) {
         // If the key should be created as ephemeral, don't store it.
         s_ephemeral_users.insert(user_id);
@@ -285,10 +298,10 @@ static bool create_and_install_user_keys(userid_t user_id, bool create_ephemeral
             return false;
     }
     EncryptionPolicy de_policy;
-    if (!installKey(DATA_MNT_POINT, options, de_key, &de_policy)) return false;
+    if (!install_storage_key(DATA_MNT_POINT, options, de_key, &de_policy)) return false;
     s_de_policies[user_id] = de_policy;
     EncryptionPolicy ce_policy;
-    if (!installKey(DATA_MNT_POINT, options, ce_key, &ce_policy)) return false;
+    if (!install_storage_key(DATA_MNT_POINT, options, ce_key, &ce_policy)) return false;
     s_ce_policies[user_id] = ce_policy;
     LOG(DEBUG) << "Created keys for user " << user_id;
     return true;
@@ -341,7 +354,7 @@ static bool load_all_de_keys() {
             KeyBuffer de_key;
             if (!android::vold::retrieveKey(key_path, kEmptyAuthentication, &de_key)) return false;
             EncryptionPolicy de_policy;
-            if (!installKey(DATA_MNT_POINT, options, de_key, &de_policy)) return false;
+            if (!install_storage_key(DATA_MNT_POINT, options, de_key, &de_policy)) return false;
             s_de_policies[user_id] = de_policy;
             LOG(DEBUG) << "Installed de key for user " << user_id;
         }
@@ -363,12 +376,11 @@ bool fscrypt_initialize_systemwide_keys() {
 
     KeyBuffer device_key;
     if (!android::vold::retrieveKey(true, kEmptyAuthentication, device_key_path, device_key_temp,
-                                    &device_key))
+                                    options, &device_key))
         return false;
 
     EncryptionPolicy device_policy;
-    if (!android::vold::installKey(DATA_MNT_POINT, options, device_key, &device_policy))
-        return false;
+    if (!install_storage_key(DATA_MNT_POINT, options, device_key, &device_policy)) return false;
 
     std::string options_string;
     if (!OptionsToString(device_policy.options, &options_string)) {
@@ -383,10 +395,9 @@ bool fscrypt_initialize_systemwide_keys() {
     LOG(INFO) << "Wrote system DE key reference to:" << ref_filename;
 
     KeyBuffer per_boot_key;
-    if (!android::vold::randomKey(&per_boot_key)) return false;
+    if (!generateStorageKey(options, &per_boot_key)) return false;
     EncryptionPolicy per_boot_policy;
-    if (!android::vold::installKey(DATA_MNT_POINT, options, per_boot_key, &per_boot_policy))
-        return false;
+    if (!install_storage_key(DATA_MNT_POINT, options, per_boot_key, &per_boot_policy)) return false;
     std::string per_boot_ref_filename = std::string("/data") + fscrypt_key_per_boot_ref;
     if (!android::vold::writeStringToFile(per_boot_policy.key_raw_ref, per_boot_ref_filename))
         return false;
@@ -593,8 +604,9 @@ static bool read_or_create_volkey(const std::string& misc_path, const std::strin
     EncryptionOptions options;
     if (!get_volume_file_encryption_options(&options)) return false;
     KeyBuffer key;
-    if (!android::vold::retrieveKey(true, auth, key_path, key_path + "_tmp", &key)) return false;
-    if (!android::vold::installKey(BuildDataPath(volume_uuid), options, key, policy)) return false;
+    if (!android::vold::retrieveKey(true, auth, key_path, key_path + "_tmp", options, &key))
+        return false;
+    if (!install_storage_key(BuildDataPath(volume_uuid), options, key, policy)) return false;
     return true;
 }
 
