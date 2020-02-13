@@ -43,7 +43,7 @@ namespace vold {
 
 static const unsigned int kMajorBlockMmc = 179;
 
-PrivateVolume::PrivateVolume(dev_t device, const std::string& keyRaw)
+PrivateVolume::PrivateVolume(dev_t device, const KeyBuffer& keyRaw)
     : VolumeBase(Type::kPrivate), mRawDevice(device), mKeyRaw(keyRaw) {
     setId(StringPrintf("private:%u,%u", major(device), minor(device)));
     mRawDevPath = StringPrintf("/dev/block/vold/%s", getId().c_str());
@@ -64,19 +64,13 @@ status_t PrivateVolume::doCreate() {
     if (CreateDeviceNode(mRawDevPath, mRawDevice)) {
         return -EIO;
     }
-    if (mKeyRaw.size() != cryptfs_get_keysize()) {
-        PLOG(ERROR) << getId() << " Raw keysize " << mKeyRaw.size()
-                    << " does not match crypt keysize " << cryptfs_get_keysize();
-        return -EIO;
-    }
 
     // Recover from stale vold by tearing down any old mappings
     cryptfs_revert_ext_volume(getId().c_str());
 
     // TODO: figure out better SELinux labels for private volumes
 
-    unsigned char* key = (unsigned char*)mKeyRaw.data();
-    int res = cryptfs_setup_ext_volume(getId().c_str(), mRawDevPath.c_str(), key, &mDmDevPath);
+    int res = cryptfs_setup_ext_volume(getId().c_str(), mRawDevPath.c_str(), mKeyRaw, &mDmDevPath);
     if (res != 0) {
         PLOG(ERROR) << getId() << " failed to setup cryptfs";
         return -EIO;

@@ -25,6 +25,8 @@
 
 #include <cutils/properties.h>
 
+#include "KeyBuffer.h"
+
 #define CRYPT_FOOTER_OFFSET 0x4000
 
 /* Return values for cryptfs_crypto_complete */
@@ -62,8 +64,8 @@ int cryptfs_restart(void);
 int cryptfs_enable(int type, const char* passwd, int no_ui);
 int cryptfs_changepw(int type, const char* newpw);
 int cryptfs_enable_default(int no_ui);
-int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const unsigned char* key,
-                             std::string* out_crypto_blkdev);
+int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
+                             const android::vold::KeyBuffer& key, std::string* out_crypto_blkdev);
 int cryptfs_revert_ext_volume(const char* label);
 int cryptfs_getfield(const char* fieldname, char* value, int len);
 int cryptfs_setfield(const char* fieldname, const char* value);

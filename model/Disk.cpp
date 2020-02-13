@@ -227,7 +227,8 @@ void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
 
     LOG(DEBUG) << "Found key for GUID " << normalizedGuid;
 
-    auto vol = std::shared_ptr<VolumeBase>(new PrivateVolume(device, keyRaw));
+    auto keyBuffer = KeyBuffer(keyRaw.begin(), keyRaw.end());
+    auto vol = std::shared_ptr<VolumeBase>(new PrivateVolume(device, keyBuffer));
     if (mJustPartitioned) {
         LOG(DEBUG) << "Device just partitioned; silently formatting";
         vol->setSilent(true);
