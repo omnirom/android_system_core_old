@@ -25,6 +25,7 @@
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <cutils/fs.h>
+#include <libdm/dm.h>
 #include <private/android_filesystem_config.h>
 
 #include <fcntl.h>
@@ -66,7 +67,11 @@ status_t PrivateVolume::doCreate() {
     }
 
     // Recover from stale vold by tearing down any old mappings
-    cryptfs_revert_ext_volume(getId().c_str());
+    auto& dm = dm::DeviceMapper::Instance();
+    if (!dm.DeleteDeviceIfExists(getId())) {
+        PLOG(ERROR) << "Cannot remove dm device " << getId();
+        return -EIO;
+    }
 
     // TODO: figure out better SELinux labels for private volumes
 
@@ -80,8 +85,10 @@ status_t PrivateVolume::doCreate() {
 }
 
 status_t PrivateVolume::doDestroy() {
-    if (cryptfs_revert_ext_volume(getId().c_str())) {
-        LOG(ERROR) << getId() << " failed to revert cryptfs";
+    auto& dm = dm::DeviceMapper::Instance();
+    if (!dm.DeleteDevice(getId())) {
+        PLOG(ERROR) << "Cannot remove dm device " << getId();
+        return -EIO;
     }
     return DestroyDeviceNode(mRawDevPath);
 }

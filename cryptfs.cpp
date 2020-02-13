@@ -1955,14 +1955,6 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const K
                                  real_blkdev, out_crypto_blkdev, label, flags);
 }
 
-/*
- * Called by vold when it's asked to unmount an encrypted external
- * storage volume.
- */
-int cryptfs_revert_ext_volume(const char* label) {
-    return delete_crypto_blk_dev(label);
-}
-
 int cryptfs_crypto_complete(void) {
     return do_crypto_complete("/data");
 }
