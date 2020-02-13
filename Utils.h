@@ -57,7 +57,7 @@ int SetQuotaProjectId(const std::string& path, long projectId);
  * ONLY for use with app-specific data directories on external storage!
  * (eg, /Android/data/com.foo, /Android/obb/com.foo, etc.)
  */
-int PrepareAppDirFromRoot(std::string path, int appUid);
+int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int appUid);
 
 /* fs_prepare_dir wrapper that creates with SELinux context */
 status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid);
