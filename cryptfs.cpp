@@ -71,6 +71,7 @@ extern "C" {
 using android::base::ParseUint;
 using android::base::StringPrintf;
 using android::fs_mgr::GetEntryForMountPoint;
+using android::vold::KeyBuffer;
 using namespace android::dm;
 using namespace std::chrono_literals;
 
@@ -1910,8 +1911,13 @@ errout:
  * as any metadata is been stored in a separate, small partition.  We
  * assume it must be using our same crypt type and keysize.
  */
-int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const unsigned char* key,
+int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const KeyBuffer& key,
                              std::string* out_crypto_blkdev) {
+    if (key.size() != cryptfs_get_keysize()) {
+        SLOGE("Raw keysize %zu does not match crypt keysize %" PRIu32, key.size(),
+              cryptfs_get_keysize());
+        return -1;
+    }
     uint64_t nr_sec = 0;
     if (android::vold::GetBlockDev512Sectors(real_blkdev, &nr_sec) != android::OK) {
         SLOGE("Failed to get size of %s: %s", real_blkdev, strerror(errno));
@@ -1929,7 +1935,8 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const u
         android::base::GetBoolProperty("ro.crypto.allow_encrypt_override", false))
         flags |= CREATE_CRYPTO_BLK_DEV_FLAGS_ALLOW_ENCRYPT_OVERRIDE;
 
-    return create_crypto_blk_dev(&ext_crypt_ftr, key, real_blkdev, out_crypto_blkdev, label, flags);
+    return create_crypto_blk_dev(&ext_crypt_ftr, reinterpret_cast<const unsigned char*>(key.data()),
+                                 real_blkdev, out_crypto_blkdev, label, flags);
 }
 
 /*
