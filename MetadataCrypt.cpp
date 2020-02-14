@@ -146,12 +146,11 @@ static bool retrieveMetadataKey(bool create_if_absent, const std::string& key_pa
     return true;
 }
 
-static bool read_key(const FstabEntry& data_rec, bool create_if_absent, KeyBuffer* key) {
-    if (data_rec.metadata_key_dir.empty()) {
+static bool read_key(const std::string& metadata_key_dir, bool create_if_absent, KeyBuffer* key) {
+    if (metadata_key_dir.empty()) {
         LOG(ERROR) << "Failed to get metadata_key_dir";
         return false;
     }
-    std::string metadata_key_dir = data_rec.metadata_key_dir;
     std::string sKey;
     auto dir = metadata_key_dir + "/key";
     LOG(DEBUG) << "metadata_key_dir/key: " << dir;
@@ -189,41 +188,11 @@ static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_s
     return true;
 }
 
-static const CryptoType& lookup_cipher_in_table(const CryptoType table[], int table_len,
-                                                const std::string& cipher_name) {
-    if (cipher_name.empty()) return table[0];
-    for (int i = 0; i < table_len; i++) {
-        if (cipher_name == table[i].get_config_name()) {
-            return table[i];
-        }
-    }
-    return invalid_crypto_type;
-}
-
-static const CryptoType& lookup_cipher(const std::string& cipher_name, bool is_legacy) {
-    if (is_legacy) {
-        return lookup_cipher_in_table(legacy_crypto_types, array_length(legacy_crypto_types),
-                                      cipher_name);
-    } else {
-        return lookup_cipher_in_table(supported_crypto_types, array_length(supported_crypto_types),
-                                      cipher_name);
-    }
-}
-
-static bool create_crypto_blk_dev(const std::string& dm_name, const FstabEntry* data_rec,
+static bool create_crypto_blk_dev(const std::string& dm_name, const std::string& blk_device,
+                                  bool is_legacy, const std::string& cipher, bool set_dun,
                                   const KeyBuffer& key, std::string* crypto_blkdev) {
     uint64_t nr_sec;
-    if (!get_number_of_sectors(data_rec->blk_device, &nr_sec)) return false;
-
-    bool is_legacy;
-    if (!DmTargetDefaultKey::IsLegacy(&is_legacy)) return false;
-
-    auto cipher = lookup_cipher(data_rec->metadata_cipher, is_legacy);
-    if (cipher.get_kernel_name() == nullptr) {
-        LOG(ERROR) << "No metadata cipher named " << data_rec->metadata_cipher
-                   << " found, is_legacy=" << is_legacy;
-        return false;
-    }
+    if (!get_number_of_sectors(blk_device, &nr_sec)) return false;
 
     KeyBuffer hex_key_buffer;
     if (android::vold::StrToHex(key, hex_key_buffer) != android::OK) {
@@ -232,16 +201,9 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const FstabEntry* 
     }
     std::string hex_key(hex_key_buffer.data(), hex_key_buffer.size());
 
-    // Non-legacy driver always sets DUN
-    bool set_dun = !is_legacy || android::base::GetBoolProperty("ro.crypto.set_dun", false);
-    if (!set_dun && data_rec->fs_mgr_flags.checkpoint_blk) {
-        LOG(ERROR) << "Block checkpoints and metadata encryption require ro.crypto.set_dun option";
-        return false;
-    }
-
     DmTable table;
-    table.Emplace<DmTargetDefaultKey>(0, nr_sec, cipher.get_kernel_name(), hex_key,
-                                      data_rec->blk_device, 0, is_legacy, set_dun);
+    table.Emplace<DmTargetDefaultKey>(0, nr_sec, cipher, hex_key, blk_device, 0, is_legacy,
+                                      set_dun);
 
     auto& dm = DeviceMapper::Instance();
     for (int i = 0;; i++) {
@@ -263,6 +225,27 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const FstabEntry* 
     return true;
 }
 
+static const CryptoType& lookup_cipher_in_table(const CryptoType table[], int table_len,
+                                                const std::string& cipher_name) {
+    if (cipher_name.empty()) return table[0];
+    for (int i = 0; i < table_len; i++) {
+        if (cipher_name == table[i].get_config_name()) {
+            return table[i];
+        }
+    }
+    return invalid_crypto_type;
+}
+
+static const CryptoType& lookup_cipher(const std::string& cipher_name, bool is_legacy) {
+    if (is_legacy) {
+        return lookup_cipher_in_table(legacy_crypto_types, array_length(legacy_crypto_types),
+                                      cipher_name);
+    } else {
+        return lookup_cipher_in_table(supported_crypto_types, array_length(supported_crypto_types),
+                                      cipher_name);
+    }
+}
+
 bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::string& mount_point,
                                       bool needs_encrypt) {
     LOG(DEBUG) << "fscrypt_mount_metadata_encrypted: " << mount_point << " " << needs_encrypt;
@@ -282,11 +265,31 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
                    << data_rec->blk_device << " for " << mount_point;
         return false;
     }
+
+    bool is_legacy;
+    if (!DmTargetDefaultKey::IsLegacy(&is_legacy)) return false;
+
+    // Non-legacy driver always sets DUN
+    bool set_dun = !is_legacy || android::base::GetBoolProperty("ro.crypto.set_dun", false);
+    if (!set_dun && data_rec->fs_mgr_flags.checkpoint_blk) {
+        LOG(ERROR) << "Block checkpoints and metadata encryption require ro.crypto.set_dun option";
+        return false;
+    }
+
+    auto cipher = lookup_cipher(data_rec->metadata_cipher, is_legacy);
+    if (cipher.get_kernel_name() == nullptr) {
+        LOG(ERROR) << "No metadata cipher named " << data_rec->metadata_cipher
+                   << " found, is_legacy=" << is_legacy;
+        return false;
+    }
+
     KeyBuffer key;
-    if (!read_key(*data_rec, needs_encrypt, &key)) return false;
+    if (!read_key(data_rec->metadata_key_dir, needs_encrypt, &key)) return false;
 
     std::string crypto_blkdev;
-    if (!create_crypto_blk_dev(kDmNameUserdata, data_rec, key, &crypto_blkdev)) return false;
+    if (!create_crypto_blk_dev(kDmNameUserdata, data_rec->blk_device, is_legacy,
+                               cipher.get_kernel_name(), set_dun, key, &crypto_blkdev))
+        return false;
 
     // FIXME handle the corrupt case
     if (needs_encrypt) {
