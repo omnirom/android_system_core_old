@@ -180,6 +180,10 @@ status_t Disk::create() {
     auto listener = VolumeManager::Instance()->getListener();
     if (listener) listener->onDiskCreated(getId(), mFlags);
 
+    if (isStub()) {
+        createStubVolume();
+        return OK;
+    }
     readMetadata();
     readPartitions();
     return OK;
@@ -242,6 +246,15 @@ void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
     vol->setDiskId(getId());
     vol->setPartGuid(partGuid);
     vol->create();
+}
+
+void Disk::createStubVolume() {
+    CHECK(mVolumes.size() == 1);
+    auto listener = VolumeManager::Instance()->getListener();
+    if (listener) listener->onDiskMetadataChanged(getId(), mSize, mLabel, mSysPath);
+    if (listener) listener->onDiskScanned(getId());
+    mVolumes[0]->setDiskId(getId());
+    mVolumes[0]->create();
 }
 
 void Disk::destroyAllVolumes() {
@@ -442,6 +455,12 @@ status_t Disk::readPartitions() {
 
     mJustPartitioned = false;
     return OK;
+}
+
+void Disk::initializePartition(std::shared_ptr<StubVolume> vol) {
+    CHECK(isStub());
+    CHECK(mVolumes.empty());
+    mVolumes.push_back(vol);
 }
 
 status_t Disk::unmountAll() {
