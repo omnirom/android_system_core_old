@@ -36,6 +36,7 @@
 #include <libdm/dm.h>
 
 #include "Checkpoint.h"
+#include "CryptoType.h"
 #include "EncryptInplace.h"
 #include "KeyStorage.h"
 #include "KeyUtil.h"
@@ -44,6 +45,9 @@
 #include "VoldUtil.h"
 
 #define TABLE_LOAD_RETRIES 10
+
+namespace android {
+namespace vold {
 
 using android::fs_mgr::FstabEntry;
 using android::fs_mgr::GetEntryForMountPoint;
@@ -54,6 +58,21 @@ static const std::string kDmNameUserdata = "userdata";
 
 static const char* kFn_keymaster_key_blob = "keymaster_key_blob";
 static const char* kFn_keymaster_key_blob_upgraded = "keymaster_key_blob_upgraded";
+
+constexpr CryptoType supported_crypto_types[] = {aes_256_xts, adiantum};
+
+static_assert(validateSupportedCryptoTypes(64, supported_crypto_types,
+                                           array_length(supported_crypto_types)),
+              "We have a CryptoType which was incompletely constructed.");
+
+constexpr CryptoType legacy_aes_256_xts =
+        CryptoType().set_config_name("aes-256-xts").set_kernel_name("AES-256-XTS").set_keysize(64);
+
+constexpr CryptoType legacy_crypto_types[] = {legacy_aes_256_xts};
+
+static_assert(validateSupportedCryptoTypes(64, legacy_crypto_types,
+                                           array_length(legacy_crypto_types)),
+              "We have a CryptoType which was incompletely constructed.");
 
 static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
     // We're about to mount data not verified by verified boot.  Tell Keymaster that early boot has
@@ -84,9 +103,6 @@ static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
     LOG(DEBUG) << "Mounted " << mount_point;
     return true;
 }
-
-namespace android {
-namespace vold {
 
 // Note: It is possible to orphan a key if it is removed before deleting
 // Update this once keymaster APIs change, and we have a proper commit.
@@ -165,9 +181,6 @@ static bool read_key(const FstabEntry& data_rec, bool create_if_absent, KeyBuffe
     return true;
 }
 
-}  // namespace vold
-}  // namespace android
-
 static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_sec) {
     if (android::vold::GetBlockDev512Sectors(real_blkdev, nr_sec) != android::OK) {
         PLOG(ERROR) << "Unable to measure size of " << real_blkdev;
@@ -176,20 +189,25 @@ static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_s
     return true;
 }
 
-static std::string lookup_cipher(const std::string& cipher_name, bool is_legacy) {
-    if (is_legacy) {
-        if (cipher_name.empty() || cipher_name == "aes-256-xts") {
-            return "AES-256-XTS";
-        }
-    } else {
-        if (cipher_name.empty() || cipher_name == "aes-256-xts") {
-            return "aes-xts-plain64";
-        } else if (cipher_name == "adiantum") {
-            return "xchacha12,aes-adiantum-plain64";
+static const CryptoType& lookup_cipher_in_table(const CryptoType table[], int table_len,
+                                                const std::string& cipher_name) {
+    if (cipher_name.empty()) return table[0];
+    for (int i = 0; i < table_len; i++) {
+        if (cipher_name == table[i].get_config_name()) {
+            return table[i];
         }
     }
-    LOG(ERROR) << "No metadata cipher named " << cipher_name << " found, is_legacy=" << is_legacy;
-    return "";
+    return invalid_crypto_type;
+}
+
+static const CryptoType& lookup_cipher(const std::string& cipher_name, bool is_legacy) {
+    if (is_legacy) {
+        return lookup_cipher_in_table(legacy_crypto_types, array_length(legacy_crypto_types),
+                                      cipher_name);
+    } else {
+        return lookup_cipher_in_table(supported_crypto_types, array_length(supported_crypto_types),
+                                      cipher_name);
+    }
 }
 
 static bool create_crypto_blk_dev(const std::string& dm_name, const FstabEntry* data_rec,
@@ -201,7 +219,11 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const FstabEntry* 
     if (!DmTargetDefaultKey::IsLegacy(&is_legacy)) return false;
 
     auto cipher = lookup_cipher(data_rec->metadata_cipher, is_legacy);
-    if (cipher.empty()) return false;
+    if (cipher.get_kernel_name() == nullptr) {
+        LOG(ERROR) << "No metadata cipher named " << data_rec->metadata_cipher
+                   << " found, is_legacy=" << is_legacy;
+        return false;
+    }
 
     KeyBuffer hex_key_buffer;
     if (android::vold::StrToHex(key, hex_key_buffer) != android::OK) {
@@ -218,8 +240,8 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const FstabEntry* 
     }
 
     DmTable table;
-    table.Emplace<DmTargetDefaultKey>(0, nr_sec, cipher, hex_key, data_rec->blk_device, 0,
-                                      is_legacy, set_dun);
+    table.Emplace<DmTargetDefaultKey>(0, nr_sec, cipher.get_kernel_name(), hex_key,
+                                      data_rec->blk_device, 0, is_legacy, set_dun);
 
     auto& dm = DeviceMapper::Instance();
     for (int i = 0;; i++) {
@@ -289,3 +311,6 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
     mount_via_fs_mgr(data_rec->mount_point.c_str(), crypto_blkdev.c_str());
     return true;
 }
+
+}  // namespace vold
+}  // namespace android

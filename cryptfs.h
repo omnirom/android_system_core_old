@@ -74,7 +74,6 @@ const char* cryptfs_get_password(void);
 void cryptfs_clear_password(void);
 int cryptfs_isConvertibleToFBE(void);
 
-uint32_t cryptfs_get_keysize();
-const char* cryptfs_get_crypto_name();
+size_t cryptfs_get_keysize();
 
 #endif /* ANDROID_VOLD_CRYPTFS_H */
