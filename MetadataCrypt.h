@@ -19,7 +19,12 @@
 
 #include <string>
 
+namespace android {
+namespace vold {
+
 bool fscrypt_mount_metadata_encrypted(const std::string& block_device,
                                       const std::string& mount_point, bool needs_encrypt);
 
+}  // namespace vold
+}  // namespace android
 #endif
