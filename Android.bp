@@ -112,6 +112,7 @@ cc_library_static {
         "Benchmark.cpp",
         "CheckEncryption.cpp",
         "Checkpoint.cpp",
+        "CryptoType.cpp",
         "Devmapper.cpp",
         "EncryptInplace.cpp",
         "FileDeviceUtils.cpp",
@@ -142,8 +143,8 @@ cc_library_static {
         "model/ObbVolume.cpp",
         "model/PrivateVolume.cpp",
         "model/PublicVolume.cpp",
-        "model/VolumeBase.cpp",
         "model/StubVolume.cpp",
+        "model/VolumeBase.cpp",
     ],
     product_variables: {
         arc: {
