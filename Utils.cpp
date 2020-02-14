@@ -223,77 +223,103 @@ int PrepareDirWithProjectId(const std::string& path, mode_t mode, uid_t uid, gid
     return ret;
 }
 
-static gid_t getAppDirGid(const std::string& appDir) {
-    gid_t gid = AID_MEDIA_RW;
-    if (!IsFilesystemSupported("sdcardfs")) {
-        if (appDir == android::vold::kAppDataDir) {
-            gid = AID_EXT_DATA_RW;
-        } else if (appDir == android::vold::kAppObbDir) {
-            gid = AID_EXT_OBB_RW;
-        } else if (appDir == android::vold::kAppMediaDir) {
-            gid = AID_MEDIA_RW;
-        } else {
-            gid = AID_MEDIA_RW;
-        }
+int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int appUid) {
+    long projectId;
+    size_t pos;
+    int ret = 0;
+
+    // Make sure the Android/ directories exist and are setup correctly
+    ret = PrepareAndroidDirs(root);
+    if (ret != 0) {
+        LOG(ERROR) << "Failed to prepare Android/ directories.";
+        return ret;
     }
 
-    return gid;
-}
+    // Now create the application-specific subdir(s)
+    // path is something like /data/media/0/Android/data/com.foo/files
+    // First, chop off the volume root, eg /data/media/0
+    std::string pathFromRoot = path.substr(root.length());
 
-int PrepareAppDirFromRoot(std::string path, int appUid) {
-    int ret = 0;
-    // Extract various parts of the path to setup correctly
-    // Sample path:
-    // /data/media/0/Android/data/com.foo/files
-    // [1]: path in which to create app-specific dir, eg. /data/media/0/Android/data/
-    // [2]: the part of [1] starting from /Android, eg. /Android/data/
-    // [3]: the package name part of the path, eg. com.foo
-    // [4]: the directory to create within [3], eg files
-    std::regex re("(^/.*(/Android/(?:data|media|obb|sandbox)/))([^/]+)/([^/]+)?/?");
+    uid_t uid = appUid;
+    gid_t gid = AID_MEDIA_RW;
+    std::string appDir;
 
-    std::smatch match;
-    bool is_match = regex_match(path, match, re);
-
-    if (!is_match) {
+    // Check that the next part matches one of the allowed Android/ dirs
+    if (StartsWith(pathFromRoot, kAppDataDir)) {
+        appDir = kAppDataDir;
+        if (!IsFilesystemSupported("sdcardfs")) {
+            gid = AID_EXT_DATA_RW;
+        }
+    } else if (StartsWith(pathFromRoot, kAppMediaDir)) {
+        appDir = kAppMediaDir;
+        if (!IsFilesystemSupported("sdcardfs")) {
+            gid = AID_MEDIA_RW;
+        }
+    } else if (StartsWith(pathFromRoot, kAppMediaDir)) {
+        appDir = kAppObbDir;
+        if (!IsFilesystemSupported("sdcardfs")) {
+            gid = AID_EXT_OBB_RW;
+        }
+    } else {
         LOG(ERROR) << "Invalid application directory: " << path;
         return -EINVAL;
     }
 
-    uid_t uid = appUid;
-    gid_t gid = getAppDirGid(match.str(2));
     // mode = 770, plus sticky bit on directory to inherit GID when apps
     // create subdirs
     mode_t mode = S_IRWXU | S_IRWXG | S_ISGID;
-    long projectId = uid - AID_APP_START + AID_EXT_GID_START;
+    // the project ID for application-specific directories is directly
+    // derived from their uid
 
-    // First, create the package-path
-    std::string package_path = match.str(1) + match.str(3);
-    ret = PrepareDirWithProjectId(package_path, mode, uid, gid, projectId);
-    if (ret) {
-        return ret;
+    // Chop off the generic application-specific part, eg /Android/data/
+    // this leaves us with something like com.foo/files/
+    std::string leftToCreate = pathFromRoot.substr(appDir.length());
+    if (!EndsWith(leftToCreate, "/")) {
+        leftToCreate += "/";
+    }
+    std::string pathToCreate = root + appDir;
+    int depth = 0;
+    bool withinCache = false;
+    while ((pos = leftToCreate.find('/')) != std::string::npos) {
+        std::string component = leftToCreate.substr(0, pos + 1);
+        leftToCreate = leftToCreate.erase(0, pos + 1);
+        pathToCreate = pathToCreate + component;
+
+        if (appDir == kAppDataDir && depth == 1 && component == "cache/") {
+            // All dirs use the "app" project ID, except for the cache dirs in
+            // Android/data, eg Android/data/com.foo/cache
+            // Note that this "sticks" - eg subdirs of this dir need the same
+            // project ID.
+            withinCache = true;
+        }
+        if (withinCache) {
+            projectId = uid - AID_APP_START + AID_CACHE_GID_START;
+        } else {
+            projectId = uid - AID_APP_START + AID_EXT_GID_START;
+        }
+        ret = PrepareDirWithProjectId(pathToCreate, mode, uid, gid, projectId);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (depth == 0) {
+            // Set the default ACL on the top-level application-specific directories,
+            // to ensure that even if applications run with a umask of 0077,
+            // new directories within these directories will allow the GID
+            // specified here to write; this is necessary for apps like
+            // installers and MTP, that require access here.
+            //
+            // See man (5) acl for more details.
+            ret = SetDefault770Acl(pathToCreate, uid, gid);
+            if (ret != 0) {
+                return ret;
+            }
+        }
+
+        depth++;
     }
 
-    // Set the default ACL, to ensure that even if applications run with a
-    // umask of 0077, new directories within these directories will allow the
-    // GID specified here to write; this is necessary for apps like installers
-    // and MTP, that require access here.
-    //
-    // See man (5) acl for more details.
-    ret = SetDefault770Acl(package_path, uid, gid);
-    if (ret) {
-        return ret;
-    }
-
-    // Next, create the directory within the package, if needed
-    if (match.size() <= 4) {
-        return OK;
-    }
-
-    if (match.str(4) == "cache") {
-        // All dirs use the "app" project ID, except for the cache dir
-        projectId = uid - AID_APP_START + AID_CACHE_GID_START;
-    }
-    return PrepareDirWithProjectId(path, mode, uid, gid, projectId);
+    return OK;
 }
 
 status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {

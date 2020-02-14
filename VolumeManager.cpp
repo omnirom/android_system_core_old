@@ -857,18 +857,10 @@ int VolumeManager::setupAppDir(const std::string& path, int32_t appUid) {
     const std::string lowerPath =
             volume->getInternalPath() + path.substr(volume->getPath().length());
 
-    // Do some sanity checking on the app dir (relative from root)
     const std::string volumeRoot = volume->getRootPath();  // eg /data/media/0
 
-    // Make sure the Android/ directories exist and are setup correctly
-    int ret = PrepareAndroidDirs(volumeRoot);
-    if (ret != 0) {
-        LOG(ERROR) << "Failed to prepare Android/ directories.";
-        return ret;
-    }
-
-    // Finally, create the app paths we need
-    return PrepareAppDirFromRoot(lowerPath, appUid);
+    // Create the app paths we need from the root
+    return PrepareAppDirFromRoot(lowerPath, volumeRoot, appUid);
 }
 
 int VolumeManager::createObb(const std::string& sourcePath, const std::string& sourceKey,
