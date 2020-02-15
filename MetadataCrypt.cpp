@@ -129,24 +129,8 @@ static void commit_key(const std::string& dir) {
     LOG(INFO) << "Old Key deleted: " << dir;
 }
 
-static bool retrieveMetadataKey(bool create_if_absent, const std::string& key_path,
-                                const std::string& tmp_path, KeyBuffer* key, bool keepOld) {
-    if (pathExists(key_path)) {
-        LOG(DEBUG) << "Key exists, using: " << key_path;
-        if (!retrieveKey(key_path, kEmptyAuthentication, key, keepOld)) return false;
-    } else {
-        if (!create_if_absent) {
-            LOG(ERROR) << "No key found in " << key_path;
-            return false;
-        }
-        LOG(INFO) << "Creating new key in " << key_path;
-        if (!randomKey(key)) return false;
-        if (!storeKeyAtomically(key_path, tmp_path, kEmptyAuthentication, *key)) return false;
-    }
-    return true;
-}
-
-static bool read_key(const std::string& metadata_key_dir, bool create_if_absent, KeyBuffer* key) {
+static bool read_key(const std::string& metadata_key_dir, const KeyGeneration& gen,
+                     KeyBuffer* key) {
     if (metadata_key_dir.empty()) {
         LOG(ERROR) << "Failed to get metadata_key_dir";
         return false;
@@ -168,14 +152,14 @@ static bool read_key(const std::string& metadata_key_dir, bool create_if_absent,
     Keymaster keymaster;
     if (pathExists(newKeyPath)) {
         if (!android::base::ReadFileToString(newKeyPath, &sKey))
-            LOG(ERROR) << "Failed to read old key: " << dir;
+            LOG(ERROR) << "Failed to read incomplete key: " << dir;
         else if (!keymaster.deleteKey(sKey))
-            LOG(ERROR) << "Old key deletion failed, continuing anyway: " << dir;
+            LOG(ERROR) << "Incomplete key deletion failed, continuing anyway: " << dir;
         else
             unlink(newKeyPath.c_str());
     }
     bool needs_cp = cp_needsCheckpoint();
-    if (!retrieveMetadataKey(create_if_absent, dir, temp, key, needs_cp)) return false;
+    if (!retrieveOrGenerateKey(dir, temp, kEmptyAuthentication, gen, key, needs_cp)) return false;
     if (needs_cp && pathExists(newKeyPath)) std::thread(commit_key, dir).detach();
     return true;
 }
@@ -283,8 +267,9 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
         return false;
     }
 
+    auto gen = needs_encrypt ? makeGen(cipher) : neverGen();
     KeyBuffer key;
-    if (!read_key(data_rec->metadata_key_dir, needs_encrypt, &key)) return false;
+    if (!read_key(data_rec->metadata_key_dir, gen, &key)) return false;
 
     std::string crypto_blkdev;
     if (!create_crypto_blk_dev(kDmNameUserdata, data_rec->blk_device, is_legacy,
