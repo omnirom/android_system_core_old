@@ -16,6 +16,7 @@
 
 #include "Disk.h"
 #include "FsCrypt.h"
+#include "KeyUtil.h"
 #include "PrivateVolume.h"
 #include "PublicVolume.h"
 #include "Utils.h"
@@ -505,11 +506,12 @@ status_t Disk::partitionMixed(int8_t ratio) {
         return -EIO;
     }
 
-    std::string keyRaw;
-    if (ReadRandomBytes(cryptfs_get_keysize(), keyRaw) != OK) {
+    KeyBuffer key;
+    if (!generateStorageKey(cryptfs_get_keygen(), &key)) {
         LOG(ERROR) << "Failed to generate key";
         return -EIO;
     }
+    std::string keyRaw(key.begin(), key.end());
 
     std::string partGuid;
     StrToHex(partGuidRaw, partGuid);
