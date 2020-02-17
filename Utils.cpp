@@ -255,7 +255,7 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
         if (!IsFilesystemSupported("sdcardfs")) {
             gid = AID_MEDIA_RW;
         }
-    } else if (StartsWith(pathFromRoot, kAppMediaDir)) {
+    } else if (StartsWith(pathFromRoot, kAppObbDir)) {
         appDir = kAppObbDir;
         if (!IsFilesystemSupported("sdcardfs")) {
             gid = AID_EXT_OBB_RW;
