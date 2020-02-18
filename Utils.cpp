@@ -124,9 +124,8 @@ status_t DestroyDeviceNode(const std::string& path) {
     }
 }
 
-// Sets a default ACL where the owner and group can read/write/execute.
-// Other users aren't allowed anything.
-int SetDefault770Acl(const std::string& path, uid_t uid, gid_t gid) {
+// Sets a default ACL on the directory.
+int SetDefaultAcl(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
     if (IsFilesystemSupported("sdcardfs")) {
         // sdcardfs magically takes care of this
         return OK;
@@ -143,15 +142,21 @@ int SetDefault770Acl(const std::string& path, uid_t uid, gid_t gid) {
             reinterpret_cast<posix_acl_xattr_entry*>(buf.get() + sizeof(posix_acl_xattr_header));
 
     entry[0].e_tag = ACL_USER_OBJ;
-    entry[0].e_perm = ACL_READ | ACL_WRITE | ACL_EXECUTE;
+    // The existing mode_t mask has the ACL in the lower 9 bits:
+    // the lowest 3 for "other", the next 3 the group, the next 3 for the owner
+    // Use the mode_t masks to get these bits out, and shift them to get the
+    // correct value per entity.
+    //
+    // Eg if mode_t = 0700, rwx for the owner, then & S_IRWXU >> 6 results in 7
+    entry[0].e_perm = (mode & S_IRWXU) >> 6;
     entry[0].e_id = uid;
 
     entry[1].e_tag = ACL_GROUP_OBJ;
-    entry[1].e_perm = ACL_READ | ACL_WRITE | ACL_EXECUTE;
+    entry[1].e_perm = (mode & S_IRWXG) >> 3;
     entry[1].e_id = gid;
 
     entry[2].e_tag = ACL_OTHER;
-    entry[2].e_perm = 0;
+    entry[2].e_perm = mode & S_IRWXO;
     entry[2].e_id = 0;
 
     int ret = setxattr(path.c_str(), XATTR_NAME_POSIX_ACL_DEFAULT, acl_header, size, 0);
@@ -310,7 +315,7 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
             // installers and MTP, that require access here.
             //
             // See man (5) acl for more details.
-            ret = SetDefault770Acl(pathToCreate, uid, gid);
+            ret = SetDefaultAcl(pathToCreate, mode, uid, gid);
             if (ret != 0) {
                 return ret;
             }
@@ -1357,6 +1362,10 @@ status_t PrepareAndroidDirs(const std::string& volumeRoot) {
         PLOG(ERROR) << "Failed to create " << androidObbDir;
         return -errno;
     }
+    // Some other apps, like installers, have write access to the OBB directory
+    // to pre-download them. To make sure newly created folders in this directory
+    // have the right permissions, set a default ACL.
+    SetDefaultAcl(androidObbDir, mode, AID_MEDIA_RW, obbGid);
 
     if (fs_prepare_dir(androidMediaDir.c_str(), mode, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
         PLOG(ERROR) << "Failed to create " << androidMediaDir;
