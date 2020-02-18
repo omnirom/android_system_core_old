@@ -29,6 +29,7 @@
 #include <cutils/fs.h>
 #include <logwrap/logwrap.h>
 #include <private/android_filesystem_config.h>
+#include <private/android_projectid_config.h>
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -318,7 +319,13 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
     }
     std::string pathToCreate = root + appDir;
     int depth = 0;
-    bool withinCache = false;
+    // Derive initial project ID
+    if (appDir == kAppDataDir || appDir == kAppMediaDir) {
+        projectId = uid - AID_APP_START + PROJECT_ID_EXT_DATA_START;
+    } else if (appDir == kAppObbDir) {
+        projectId = uid - AID_APP_START + PROJECT_ID_EXT_OBB_START;
+    }
+
     while ((pos = leftToCreate.find('/')) != std::string::npos) {
         std::string component = leftToCreate.substr(0, pos + 1);
         leftToCreate = leftToCreate.erase(0, pos + 1);
@@ -329,12 +336,7 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
             // Android/data, eg Android/data/com.foo/cache
             // Note that this "sticks" - eg subdirs of this dir need the same
             // project ID.
-            withinCache = true;
-        }
-        if (withinCache) {
-            projectId = uid - AID_APP_START + AID_CACHE_GID_START;
-        } else {
-            projectId = uid - AID_APP_START + AID_EXT_GID_START;
+            projectId = uid - AID_APP_START + PROJECT_ID_EXT_CACHE_START;
         }
 
         if (fixupExisting && access(pathToCreate.c_str(), F_OK) == 0) {

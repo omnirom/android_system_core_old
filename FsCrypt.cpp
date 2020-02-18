@@ -40,6 +40,7 @@
 #include <unistd.h>
 
 #include <private/android_filesystem_config.h>
+#include <private/android_projectid_config.h>
 
 #include "android/os/IVold.h"
 
@@ -804,7 +805,8 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
         // Setup quota project ID and inheritance policy
         if (!IsFilesystemSupported("sdcardfs")) {
             if (SetQuotaInherit(media_ce_path) != 0) return false;
-            if (SetQuotaProjectId(media_ce_path, multiuser_get_uid(user_id, AID_MEDIA_RW)) != 0) {
+            if (SetQuotaProjectId(media_ce_path,
+                                  multiuser_get_uid(user_id, PROJECT_ID_EXT_DEFAULT)) != 0) {
                 return false;
             }
         }
