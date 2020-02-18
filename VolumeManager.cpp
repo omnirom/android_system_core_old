@@ -814,7 +814,7 @@ int VolumeManager::unmountAll() {
     return 0;
 }
 
-int VolumeManager::setupAppDir(const std::string& path, int32_t appUid) {
+int VolumeManager::setupAppDir(const std::string& path, int32_t appUid, bool fixupExistingOnly) {
     // Only offer to create directories for paths managed by vold
     if (!StartsWith(path, "/storage/")) {
         LOG(ERROR) << "Failed to find mounted volume for " << path;
@@ -859,8 +859,21 @@ int VolumeManager::setupAppDir(const std::string& path, int32_t appUid) {
 
     const std::string volumeRoot = volume->getRootPath();  // eg /data/media/0
 
+    if (fixupExistingOnly && (access(lowerPath.c_str(), F_OK) != 0)) {
+        // Nothing to fixup
+        return OK;
+    }
+
     // Create the app paths we need from the root
-    return PrepareAppDirFromRoot(lowerPath, volumeRoot, appUid);
+    return PrepareAppDirFromRoot(lowerPath, volumeRoot, appUid, fixupExistingOnly);
+}
+
+int VolumeManager::fixupAppDir(const std::string& path, int32_t appUid) {
+    if (IsFilesystemSupported("sdcardfs")) {
+        //sdcardfs magically does this for us
+        return OK;
+    }
+    return setupAppDir(path, appUid, true /* fixupExistingOnly */);
 }
 
 int VolumeManager::createObb(const std::string& sourcePath, const std::string& sourceKey,

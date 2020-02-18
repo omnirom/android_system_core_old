@@ -47,6 +47,7 @@
 #include <sys/xattr.h>
 #include <unistd.h>
 
+#include <filesystem>
 #include <list>
 #include <mutex>
 #include <regex>
@@ -228,7 +229,40 @@ int PrepareDirWithProjectId(const std::string& path, mode_t mode, uid_t uid, gid
     return ret;
 }
 
-int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int appUid) {
+static int FixupAppDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid, long projectId) {
+    namespace fs = std::filesystem;
+
+    // Setup the directory itself correctly
+    int ret = PrepareDirWithProjectId(path, mode, uid, gid, projectId);
+    if (ret != OK) {
+        return ret;
+    }
+
+    // Fixup all of its file entries
+    for (const auto& itEntry : fs::directory_iterator(path)) {
+        ret = lchown(itEntry.path().c_str(), uid, gid);
+        if (ret != 0) {
+            return ret;
+        }
+
+        ret = chmod(itEntry.path().c_str(), mode);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (!IsFilesystemSupported("sdcardfs")) {
+            ret = SetQuotaProjectId(itEntry.path(), projectId);
+            if (ret != 0) {
+                return ret;
+            }
+        }
+    }
+
+    return OK;
+}
+
+int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int appUid,
+                          bool fixupExisting) {
     long projectId;
     size_t pos;
     int ret = 0;
@@ -302,7 +336,15 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
         } else {
             projectId = uid - AID_APP_START + AID_EXT_GID_START;
         }
-        ret = PrepareDirWithProjectId(pathToCreate, mode, uid, gid, projectId);
+
+        if (fixupExisting && access(pathToCreate.c_str(), F_OK) == 0) {
+            // Fixup all files in this existing directory with the correct UID/GID
+            // and project ID.
+            ret = FixupAppDir(pathToCreate, mode, uid, gid, projectId);
+        } else {
+            ret = PrepareDirWithProjectId(pathToCreate, mode, uid, gid, projectId);
+        }
+
         if (ret != 0) {
             return ret;
         }

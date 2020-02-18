@@ -157,12 +157,23 @@ class VolumeManager {
      * requirements of the underlying filesystem and are of no concern to the
      * caller.
      *
+     * If fixupExistingOnly is set, we make sure to fixup any existing dirs and
+     * files in the passed in path, but only if that path exists; if it doesn't
+     * exist, this function doesn't create them.
+     *
      * Validates that given paths are absolute and that they contain no relative
      * "." or ".." paths or symlinks.  Last path segment is treated as filename
      * and ignored, unless the path ends with "/".  Also ensures that path
      * belongs to a volume managed by vold.
      */
-    int setupAppDir(const std::string& path, int32_t appUid);
+    int setupAppDir(const std::string& path, int32_t appUid, bool fixupExistingOnly = false);
+
+    /**
+     * Fixes up an existing application directory, as if it was created with
+     * setupAppDir() above. This includes fixing up the UID/GID, permissions and
+     * project IDs of the contained files and directories.
+     */
+    int fixupAppDir(const std::string& path, int32_t appUid);
 
     int createObb(const std::string& path, const std::string& key, int32_t ownerGid,
                   std::string* outVolId);
