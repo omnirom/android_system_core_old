@@ -36,6 +36,7 @@
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <thread>
 
 using android::base::StringPrintf;
 
@@ -68,8 +69,19 @@ status_t PrivateVolume::doCreate() {
 
     // Recover from stale vold by tearing down any old mappings
     auto& dm = dm::DeviceMapper::Instance();
-    if (!dm.DeleteDeviceIfExists(getId())) {
+    // TODO(b/149396179) there appears to be a race somewhere in the system where trying
+    // to delete the device fails with EBUSY; for now, work around this by retrying.
+    bool ret;
+    int tries = 10;
+    while (tries-- > 0) {
+        ret = dm.DeleteDeviceIfExists(getId());
+        if (ret || errno != EBUSY) {
+            break;
+        }
         PLOG(ERROR) << "Cannot remove dm device " << getId();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    if (!ret) {
         return -EIO;
     }
 
@@ -86,8 +98,19 @@ status_t PrivateVolume::doCreate() {
 
 status_t PrivateVolume::doDestroy() {
     auto& dm = dm::DeviceMapper::Instance();
-    if (!dm.DeleteDevice(getId())) {
+    // TODO(b/149396179) there appears to be a race somewhere in the system where trying
+    // to delete the device fails with EBUSY; for now, work around this by retrying.
+    bool ret;
+    int tries = 10;
+    while (tries-- > 0) {
+        ret = dm.DeleteDevice(getId());
+        if (ret || errno != EBUSY) {
+            break;
+        }
         PLOG(ERROR) << "Cannot remove dm device " << getId();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    if (!ret) {
         return -EIO;
     }
     return DestroyDeviceNode(mRawDevPath);
