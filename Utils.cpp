@@ -1339,24 +1339,26 @@ status_t PrepareAndroidDirs(const std::string& volumeRoot) {
 
     bool useSdcardFs = IsFilesystemSupported("sdcardfs");
 
-    if (fs_prepare_dir(androidDir.c_str(), 0771, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
+    // mode 0771 + sticky bit for inheriting GIDs
+    mode_t mode = S_IRWXU | S_IRWXG | S_IXOTH | S_ISGID;
+    if (fs_prepare_dir(androidDir.c_str(), mode, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
         PLOG(ERROR) << "Failed to create " << androidDir;
         return -errno;
     }
 
     gid_t dataGid = useSdcardFs ? AID_MEDIA_RW : AID_EXT_DATA_RW;
-    if (fs_prepare_dir(androidDataDir.c_str(), 0771, AID_MEDIA_RW, dataGid) != 0) {
+    if (fs_prepare_dir(androidDataDir.c_str(), mode, AID_MEDIA_RW, dataGid) != 0) {
         PLOG(ERROR) << "Failed to create " << androidDataDir;
         return -errno;
     }
 
     gid_t obbGid = useSdcardFs ? AID_MEDIA_RW : AID_EXT_OBB_RW;
-    if (fs_prepare_dir(androidObbDir.c_str(), 0771, AID_MEDIA_RW, obbGid) != 0) {
+    if (fs_prepare_dir(androidObbDir.c_str(), mode, AID_MEDIA_RW, obbGid) != 0) {
         PLOG(ERROR) << "Failed to create " << androidObbDir;
         return -errno;
     }
 
-    if (fs_prepare_dir(androidMediaDir.c_str(), 0771, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
+    if (fs_prepare_dir(androidMediaDir.c_str(), mode, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
         PLOG(ERROR) << "Failed to create " << androidMediaDir;
         return -errno;
     }
