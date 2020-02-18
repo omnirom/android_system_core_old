@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,26 +14,19 @@
  * limitations under the License.
  */
 
-#ifndef _METADATA_CRYPT_H
-#define _METADATA_CRYPT_H
+#pragma once
 
 #include <string>
 
 #include "KeyBuffer.h"
-#include "KeyUtil.h"
 
 namespace android {
 namespace vold {
 
-bool fscrypt_mount_metadata_encrypted(const std::string& block_device,
-                                      const std::string& mount_point, bool needs_encrypt);
+bool generate_volume_key(android::vold::KeyBuffer* key);
 
-bool defaultkey_volume_keygen(KeyGeneration* gen);
-
-bool defaultkey_setup_ext_volume(const std::string& label, const std::string& blk_device,
-                                 const android::vold::KeyBuffer& key,
-                                 std::string* out_crypto_blkdev);
+bool setup_ext_volume(const std::string& label, const std::string& blk_device,
+                      const android::vold::KeyBuffer& key, std::string* out_crypto_blkdev);
 
 }  // namespace vold
 }  // namespace android
-#endif
