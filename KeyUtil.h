@@ -17,7 +17,6 @@
 #ifndef ANDROID_VOLD_KEYUTIL_H
 #define ANDROID_VOLD_KEYUTIL_H
 
-#include "CryptoType.h"
 #include "KeyBuffer.h"
 #include "KeyStorage.h"
 
@@ -40,12 +39,6 @@ struct KeyGeneration {
 
 // Generate a key as specified in KeyGeneration
 bool generateStorageKey(const KeyGeneration& gen, KeyBuffer* key);
-
-// Returns KeyGeneration suitable for key as described in EncryptionOptions
-const KeyGeneration makeGen(const EncryptionOptions& options);
-
-// Returns KeyGeneration suitable for key as described in CryptoType
-const KeyGeneration makeGen(const CryptoType& crypto);
 
 // Returns a key with allow_gen false so generateStorageKey returns false;
 // this is used to indicate to retrieveOrGenerateKey that a key should not
