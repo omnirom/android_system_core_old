@@ -16,11 +16,11 @@
 
 #include "Disk.h"
 #include "FsCrypt.h"
-#include "KeyUtil.h"
 #include "PrivateVolume.h"
 #include "PublicVolume.h"
 #include "Utils.h"
 #include "VolumeBase.h"
+#include "VolumeEncryption.h"
 #include "VolumeManager.h"
 
 #include <android-base/file.h>
@@ -30,8 +30,6 @@
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <fscrypt/fscrypt.h>
-
-#include "cryptfs.h"
 
 #include <fcntl.h>
 #include <inttypes.h>
@@ -507,7 +505,7 @@ status_t Disk::partitionMixed(int8_t ratio) {
     }
 
     KeyBuffer key;
-    if (!generateStorageKey(cryptfs_get_keygen(), &key)) {
+    if (!generate_volume_key(&key)) {
         LOG(ERROR) << "Failed to generate key";
         return -EIO;
     }
