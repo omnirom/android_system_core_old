@@ -49,6 +49,7 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, int userId)
     mLabel = "emulated";
     mFuseMounted = false;
     mUseSdcardFs = IsFilesystemSupported("sdcardfs");
+    mAppDataIsolationEnabled = base::GetBoolProperty(kVoldAppDataIsolationEnabled, false);
 }
 
 EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const std::string& fsUuid,
@@ -59,6 +60,7 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const s
     mLabel = fsUuid;
     mFuseMounted = false;
     mUseSdcardFs = IsFilesystemSupported("sdcardfs");
+    mAppDataIsolationEnabled = base::GetBoolProperty(kVoldAppDataIsolationEnabled, false);
 }
 
 EmulatedVolume::~EmulatedVolume() {}
@@ -94,14 +96,19 @@ status_t EmulatedVolume::mountFuseBindMounts() {
     } else {
         androidSource = StringPrintf("/%s/%d/Android", mRawPath.c_str(), userId);
     }
-    std::string androidTarget(
-            StringPrintf("/mnt/user/%d/%s/%d/Android", userId, label.c_str(), userId));
 
-    auto status = doFuseBindMount(androidSource, androidTarget);
+    status_t status = OK;
+    // When app data isolation is enabled, obb/ will be mounted per app, otherwise we should
+    // bind mount the whole Android/ to speed up reading.
+    if (!mAppDataIsolationEnabled) {
+        std::string androidTarget(
+            StringPrintf("/mnt/user/%d/%s/%d/Android", userId, label.c_str(), userId));
+        status = doFuseBindMount(androidSource, androidTarget);
+    }
+
     if (status != OK) {
         return status;
     }
-
     // Installers get the same view as all other apps, with the sole exception that the
     // OBB dirs (Android/obb) are writable to them. On sdcardfs devices, this requires
     // a special bind mount, since app-private and OBB dirs share the same GID, but we
@@ -118,6 +125,19 @@ status_t EmulatedVolume::mountFuseBindMounts() {
     if (status != OK) {
         return status;
     }
+
+    if (mAppDataIsolationEnabled) {
+        // Starting from now, fuse is running, and zygote will bind app obb data directory
+        if (!VolumeManager::Instance()->addFuseMountedUser(userId)) {
+            return UNKNOWN_ERROR;
+        }
+
+        // As all new processes created by zygote will bind app obb data directory, we just need
+        // to have a snapshot of all existing processes and see if any existing process needs to
+        // remount obb data directory.
+        VolumeManager::Instance()->remountAppObb(userId);
+    }
+
     return OK;
 }
 
@@ -135,16 +155,22 @@ status_t EmulatedVolume::unmountFuseBindMounts() {
             // Intentional continue to try to unmount the other bind mount
         }
     }
+    // When app data isolation is enabled, kill all apps that obb/ is mounted, otherwise we should
+    // umount the whole Android/ dir.
+    if (mAppDataIsolationEnabled) {
+        std::string appObbDir(StringPrintf("%s/%d/Android/obb", getPath().c_str(), userId));
+        KillProcessesWithMountPrefix(appObbDir);
+    } else {
+        std::string androidTarget(
+                StringPrintf("/mnt/user/%d/%s/%d/Android", userId, label.c_str(), userId));
 
-    std::string androidTarget(
-            StringPrintf("/mnt/user/%d/%s/%d/Android", userId, label.c_str(), userId));
-
-    LOG(INFO) << "Unmounting " << androidTarget;
-    auto status = UnmountTree(androidTarget);
-    if (status != OK) {
-        return status;
+        LOG(INFO) << "Unmounting " << androidTarget;
+        auto status = UnmountTree(androidTarget);
+        if (status != OK) {
+            return status;
+        }
+        LOG(INFO) << "Unmounted " << androidTarget;
     }
-    LOG(INFO) << "Unmounted " << androidTarget;
 
     return OK;
 }
@@ -281,9 +307,15 @@ status_t EmulatedVolume::doUnmount() {
 
     if (mFuseMounted) {
         std::string label = getLabel();
+
+        // Update fuse mounted record
+        if (mAppDataIsolationEnabled &&
+                !VolumeManager::Instance()->removeFuseMountedUser(userId)) {
+            return UNKNOWN_ERROR;
+        }
+
         // Ignoring unmount return status because we do want to try to unmount
         // the rest cleanly.
-
         unmountFuseBindMounts();
         if (UnmountUserFuse(userId, getInternalPath(), label) != OK) {
             PLOG(INFO) << "UnmountUserFuse failed on emulated fuse volume";
