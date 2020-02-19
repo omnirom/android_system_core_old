@@ -145,6 +145,7 @@ cc_library_static {
         "model/PublicVolume.cpp",
         "model/StubVolume.cpp",
         "model/VolumeBase.cpp",
+        "model/VolumeEncryption.cpp",
     ],
     product_variables: {
         arc: {

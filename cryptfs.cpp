@@ -325,7 +325,7 @@ static const CryptoType& get_crypto_type() {
 }
 
 const KeyGeneration cryptfs_get_keygen() {
-    return makeGen(get_crypto_type());
+    return KeyGeneration{get_crypto_type().get_keysize(), true, false};
 }
 
 /* Should we use keymaster? */

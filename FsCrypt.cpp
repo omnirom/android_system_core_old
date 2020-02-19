@@ -65,7 +65,7 @@ using android::vold::BuildDataPath;
 using android::vold::IsFilesystemSupported;
 using android::vold::kEmptyAuthentication;
 using android::vold::KeyBuffer;
-using android::vold::makeGen;
+using android::vold::KeyGeneration;
 using android::vold::retrieveKey;
 using android::vold::retrieveOrGenerateKey;
 using android::vold::SetQuotaInherit;
@@ -96,6 +96,11 @@ std::map<userid_t, EncryptionPolicy> s_de_policies;
 std::map<userid_t, EncryptionPolicy> s_ce_policies;
 
 }  // namespace
+
+// Returns KeyGeneration suitable for key as described in EncryptionOptions
+static KeyGeneration makeGen(const EncryptionOptions& options) {
+    return KeyGeneration{FSCRYPT_MAX_KEY_SIZE, true, options.use_hw_wrapped_key};
+}
 
 static bool fscrypt_is_emulated() {
     return property_get_bool("persist.sys.emulate_fbe", false);

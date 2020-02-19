@@ -36,14 +36,6 @@
 namespace android {
 namespace vold {
 
-const KeyGeneration makeGen(const EncryptionOptions& options) {
-    return KeyGeneration{FSCRYPT_MAX_KEY_SIZE, true, options.use_hw_wrapped_key};
-}
-
-const KeyGeneration makeGen(const CryptoType& crypto) {
-    return KeyGeneration{crypto.get_keysize(), true, false};
-}
-
 const KeyGeneration neverGen() {
     return KeyGeneration{0, false, false};
 }
