@@ -234,13 +234,18 @@ static bool install_storage_key(const std::string& mountpoint, const EncryptionO
 
 // Retrieve the options to use for encryption policies on adoptable storage.
 static bool get_volume_file_encryption_options(EncryptionOptions* options) {
-    auto contents_mode =
-            android::base::GetProperty("ro.crypto.volume.contents_mode", "aes-256-xts");
+    // If we give the empty string, libfscrypt will use the default (currently XTS)
+    auto contents_mode = android::base::GetProperty("ro.crypto.volume.contents_mode", "");
+    // HEH as default was always a mistake. Use the libfscrypt default (CTS)
+    // for devices launching on versions above Android 10.
+    auto first_api_level = GetFirstApiLevel();
+    constexpr uint64_t pre_gki_level = 29;
     auto filenames_mode =
-            android::base::GetProperty("ro.crypto.volume.filenames_mode", "aes-256-heh");
+            android::base::GetProperty("ro.crypto.volume.filenames_mode",
+                                       first_api_level > pre_gki_level ? "" : "aes-256-heh");
     auto options_string = android::base::GetProperty("ro.crypto.volume.options",
-                                                     contents_mode + ":" + filenames_mode + ":v1");
-    if (!ParseOptions(options_string, options)) {
+                                                     contents_mode + ":" + filenames_mode);
+    if (!ParseOptionsForApiLevel(first_api_level, options_string, options)) {
         LOG(ERROR) << "Unable to parse volume encryption options: " << options_string;
         return false;
     }
