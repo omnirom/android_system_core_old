@@ -118,7 +118,7 @@ class VolumeManager {
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
 
     int remountUid(uid_t uid, int32_t remountMode);
-    int remountAppObb(userid_t userId);
+    int remountAppStorageDirs(userid_t userId);
 
     bool addFuseMountedUser(userid_t userId);
     bool removeFuseMountedUser(userid_t userId);
