@@ -795,7 +795,7 @@ binder::Status VoldNativeService::lockUserKey(int32_t userId) {
     return translateBool(fscrypt_lock_user_key(userId));
 }
 
-binder::Status VoldNativeService::prepareUserStorage(const std::unique_ptr<std::string>& uuid,
+binder::Status VoldNativeService::prepareUserStorage(const std::optional<std::string>& uuid,
                                                      int32_t userId, int32_t userSerial,
                                                      int32_t flags) {
     ENFORCE_SYSTEM_OR_ROOT;
@@ -807,7 +807,7 @@ binder::Status VoldNativeService::prepareUserStorage(const std::unique_ptr<std::
     return translateBool(fscrypt_prepare_user_storage(uuid_, userId, userSerial, flags));
 }
 
-binder::Status VoldNativeService::destroyUserStorage(const std::unique_ptr<std::string>& uuid,
+binder::Status VoldNativeService::destroyUserStorage(const std::optional<std::string>& uuid,
                                                      int32_t userId, int32_t flags) {
     ENFORCE_SYSTEM_OR_ROOT;
     std::string empty_string = "";
@@ -944,9 +944,9 @@ binder::Status VoldNativeService::mountIncFs(
               << result.logFd;
     using ParcelFileDescriptor = ::android::os::ParcelFileDescriptor;
     using unique_fd = ::android::base::unique_fd;
-    _aidl_return->cmd = std::make_unique<ParcelFileDescriptor>(unique_fd(result.cmdFd));
+    _aidl_return->cmd = ParcelFileDescriptor(unique_fd(result.cmdFd));
     if (result.logFd >= 0) {
-        _aidl_return->log = std::make_unique<ParcelFileDescriptor>(unique_fd(result.logFd));
+        _aidl_return->log = ParcelFileDescriptor(unique_fd(result.logFd));
     }
     return ok();
 }
