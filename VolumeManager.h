@@ -118,10 +118,7 @@ class VolumeManager {
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
 
     int remountUid(uid_t uid, int32_t remountMode);
-    int remountAppStorageDirs(userid_t userId);
-
-    bool addFuseMountedUser(userid_t userId);
-    bool removeFuseMountedUser(userid_t userId);
+    int remountAppStorageDirs(int uid, int pid, const std::vector<std::string>& packageNames);
 
     /* Reset all internal state, typically during framework boot */
     int reset();
@@ -230,9 +227,6 @@ class VolumeManager {
     int mNextObbId;
     int mNextStubId;
     bool mSecureKeyguardShowing;
-
-    // Set of all user id that fuse is ready to use.
-    std::unordered_set<userid_t> mFuseMountedUsers;
 };
 
 #endif

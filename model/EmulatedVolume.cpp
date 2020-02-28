@@ -125,19 +125,6 @@ status_t EmulatedVolume::mountFuseBindMounts() {
     if (status != OK) {
         return status;
     }
-
-    if (mAppDataIsolationEnabled) {
-        // Starting from now, fuse is running, and zygote will bind app obb & data directory
-        if (!VolumeManager::Instance()->addFuseMountedUser(userId)) {
-            return UNKNOWN_ERROR;
-        }
-
-        // As all new processes created by zygote will bind app obb data directory, we just need
-        // to have a snapshot of all existing processes and see if any existing process needs to
-        // remount obb data directory.
-        VolumeManager::Instance()->remountAppStorageDirs(userId);
-    }
-
     return OK;
 }
 
@@ -307,12 +294,6 @@ status_t EmulatedVolume::doUnmount() {
 
     if (mFuseMounted) {
         std::string label = getLabel();
-
-        // Update fuse mounted record
-        if (mAppDataIsolationEnabled &&
-                !VolumeManager::Instance()->removeFuseMountedUser(userId)) {
-            return UNKNOWN_ERROR;
-        }
 
         // Ignoring unmount return status because we do want to try to unmount
         // the rest cleanly.
