@@ -51,10 +51,15 @@ bool isFsKeyringSupported(void);
 // on the specified filesystem using the specified encryption policy version.
 //
 // For v1 policies, we use FS_IOC_ADD_ENCRYPTION_KEY if the kernel supports it.
-// Otherwise we add the key to the legacy global session keyring.
+// Otherwise we add the key to the global session keyring as a "logon" key.
 //
 // For v2 policies, we always use FS_IOC_ADD_ENCRYPTION_KEY; it's the only way
 // the kernel supports.
+//
+// If kernel supports FS_IOC_ADD_ENCRYPTION_KEY, also installs key of
+// fscrypt-provisioning type to the global session keyring. This makes it
+// possible to unmount and then remount mountpoint without losing the file-based
+// key.
 //
 // Returns %true on success, %false on failure.  On success also sets *policy
 // to the EncryptionPolicy used to refer to this key.
@@ -63,15 +68,19 @@ bool installKey(const std::string& mountpoint, const EncryptionOptions& options,
 
 // Evict a file-based encryption key from the kernel.
 //
-// We use FS_IOC_REMOVE_ENCRYPTION_KEY if the kernel supports it.  Otherwise we
-// remove the key from the legacy global session keyring.
+// This undoes the effect of installKey().
 //
-// In the latter case, the caller is responsible for dropping caches.
+// If the kernel doesn't support the filesystem-level keyring, the caller is
+// responsible for dropping caches.
 bool evictKey(const std::string& mountpoint, const EncryptionPolicy& policy);
 
 bool retrieveOrGenerateKey(const std::string& key_path, const std::string& tmp_path,
                            const KeyAuthentication& key_authentication, const KeyGeneration& gen,
                            KeyBuffer* key, bool keepOld = true);
+
+// Re-installs a file-based encryption key of fscrypt-provisioning type from the
+// global session keyring back into fs keyring of the mountpoint.
+bool reloadKeyFromSessionKeyring(const std::string& mountpoint, const EncryptionPolicy& policy);
 
 }  // namespace vold
 }  // namespace android
