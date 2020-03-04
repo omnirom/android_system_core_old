@@ -32,6 +32,7 @@
 #include <android-base/parseint.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
+#include <android-base/strings.h>
 #include <bootloader_message/bootloader_message.h>
 #include <cutils/android_reboot.h>
 #include <cutils/properties.h>
@@ -54,6 +55,7 @@
 #include <libgen.h>
 #include <linux/kdev_t.h>
 #include <math.h>
+#include <mntent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1396,8 +1398,46 @@ static int create_encrypted_random_key(const char* passwd, unsigned char* master
     return encrypt_master_key(passwd, salt, key_buf, master_key, crypt_ftr);
 }
 
+static void ensure_subdirectory_unmounted(const char *prefix) {
+    std::vector<std::string> umount_points;
+    std::unique_ptr<FILE, int (*)(FILE*)> mnts(setmntent("/proc/mounts", "r"), endmntent);
+    if (!mnts) {
+        SLOGW("could not read mount files");
+        return;
+    }
+
+    //Find sudirectory mount point
+    mntent* mentry;
+    std::string top_directory(prefix);
+    if (!android::base::EndsWith(prefix, "/")) {
+        top_directory = top_directory + "/";
+    }
+    while ((mentry = getmntent(mnts.get())) != nullptr) {
+        if (strcmp(mentry->mnt_dir, top_directory.c_str()) == 0) {
+            continue;
+        }
+
+        if (android::base::StartsWith(mentry->mnt_dir, top_directory)) {
+            SLOGW("found sub-directory mount %s - %s\n", prefix, mentry->mnt_dir);
+            umount_points.push_back(mentry->mnt_dir);
+        }
+    }
+
+    //Sort by path length to umount longest path first
+    std::sort(std::begin(umount_points), std::end(umount_points),
+        [](const std::string& s1, const std::string& s2) {return s1.length() > s2.length(); });
+
+    for (std::string& mount_point : umount_points) {
+        umount(mount_point.c_str());
+        SLOGW("umount sub-directory mount %s\n", mount_point.c_str());
+    }
+}
+
 static int wait_and_unmount(const char* mountpoint, bool kill) {
     int i, err, rc;
+
+    // Subdirectory mount will cause a failure of umount.
+    ensure_subdirectory_unmounted(mountpoint);
 #define WAIT_UNMOUNT_COUNT 20
 
     /*  Now umount the tmpfs filesystem */
