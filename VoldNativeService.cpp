@@ -866,19 +866,21 @@ binder::Status VoldNativeService::mountIncFs(
     CHECK_ARGUMENT_PATH(backingPath);
     CHECK_ARGUMENT_PATH(targetDir);
 
-    auto result = IncFs_Mount(backingPath.c_str(), targetDir.c_str(),
-                              {.flags = IncFsMountFlags(flags),
-                               .defaultReadTimeoutMs = INCFS_DEFAULT_READ_TIMEOUT_MS,
-                               .readLogBufferPages = 4});
-    if (result.cmd < 0) {
-        return translate(result.cmd);
+    auto control = IncFs_Mount(backingPath.c_str(), targetDir.c_str(),
+                               {.flags = IncFsMountFlags(flags),
+                                .defaultReadTimeoutMs = INCFS_DEFAULT_READ_TIMEOUT_MS,
+                                .readLogBufferPages = 4});
+    if (control == nullptr) {
+        return translate(-1);
     }
     using unique_fd = ::android::base::unique_fd;
-    _aidl_return->cmd.emplace(unique_fd(result.cmd));
-    _aidl_return->pendingReads.emplace(unique_fd(result.pendingReads));
-    if (result.logs >= 0) {
-        _aidl_return->log.emplace(unique_fd(result.logs));
+    _aidl_return->cmd.emplace(unique_fd(dup(IncFs_GetControlFd(control, CMD))));
+    _aidl_return->pendingReads.emplace(unique_fd(dup(IncFs_GetControlFd(control, PENDING_READS))));
+    auto logsFd = IncFs_GetControlFd(control, LOGS);
+    if (logsFd >= 0) {
+        _aidl_return->log.emplace(unique_fd(dup(logsFd)));
     }
+    IncFs_DeleteControl(control);
     return Ok();
 }
 
