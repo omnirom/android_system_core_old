@@ -87,8 +87,6 @@ const std::string prepare_subdirs_path = "/system/bin/vold_prepare_subdirs";
 const std::string systemwide_volume_key_dir =
     std::string() + DATA_MNT_POINT + "/misc/vold/volume_keys";
 
-bool s_systemwide_keys_initialized = false;
-
 // Some users are ephemeral, don't try to wipe their keys from disk
 std::set<userid_t> s_ephemeral_users;
 
@@ -363,15 +361,17 @@ static bool load_all_de_keys() {
             continue;
         }
         userid_t user_id = std::stoi(entry->d_name);
-        if (s_de_policies.count(user_id) == 0) {
-            auto key_path = de_dir + "/" + entry->d_name;
-            KeyBuffer de_key;
-            if (!retrieveKey(key_path, kEmptyAuthentication, &de_key)) return false;
-            EncryptionPolicy de_policy;
-            if (!install_storage_key(DATA_MNT_POINT, options, de_key, &de_policy)) return false;
-            s_de_policies[user_id] = de_policy;
-            LOG(DEBUG) << "Installed de key for user " << user_id;
+        auto key_path = de_dir + "/" + entry->d_name;
+        KeyBuffer de_key;
+        if (!retrieveKey(key_path, kEmptyAuthentication, &de_key)) return false;
+        EncryptionPolicy de_policy;
+        if (!install_storage_key(DATA_MNT_POINT, options, de_key, &de_policy)) return false;
+        auto ret = s_de_policies.insert({user_id, de_policy});
+        if (!ret.second && ret.first->second != de_policy) {
+            LOG(ERROR) << "DE policy for user" << user_id << " changed";
+            return false;
         }
+        LOG(DEBUG) << "Installed de key for user " << user_id;
     }
     // fscrypt:TODO: go through all DE directories, ensure that all user dirs have the
     // correct policy set on them, and that no rogue ones exist.
@@ -381,10 +381,6 @@ static bool load_all_de_keys() {
 bool fscrypt_initialize_systemwide_keys() {
     LOG(INFO) << "fscrypt_initialize_systemwide_keys";
 
-    if (s_systemwide_keys_initialized) {
-        LOG(INFO) << "Already initialized";
-        return true;
-    }
     EncryptionOptions options;
     if (!get_data_file_encryption_options(&options)) return false;
 
@@ -418,7 +414,6 @@ bool fscrypt_initialize_systemwide_keys() {
     LOG(INFO) << "Wrote per boot key reference to:" << per_boot_ref_filename;
 
     if (!android::vold::FsyncDirectory(device_key_dir)) return false;
-    s_systemwide_keys_initialized = true;
     return true;
 }
 
