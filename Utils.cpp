@@ -366,6 +366,15 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
             if (ret != 0) {
                 return ret;
             }
+
+            if (!IsFilesystemSupported("sdcardfs")) {
+                // Set project ID inheritance, so that future subdirectories inherit the
+                // same project ID
+                ret = SetQuotaInherit(pathToCreate);
+                if (ret != 0) {
+                    return ret;
+                }
+            }
         }
 
         depth++;
