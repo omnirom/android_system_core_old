@@ -155,7 +155,7 @@ static bool fscryptKeyring(key_serial_t* device_keyring) {
     return true;
 }
 
-// Add an encryption key to the legacy global session keyring.
+// Add an encryption key of type "logon" to the global session keyring.
 static bool installKeyLegacy(const KeyBuffer& key, const std::string& raw_ref) {
     // Place fscrypt_key into automatically zeroing buffer.
     KeyBuffer fsKeyBuffer(sizeof(fscrypt_key));
@@ -175,6 +175,32 @@ static bool installKeyLegacy(const KeyBuffer& key, const std::string& raw_ref) {
         LOG(DEBUG) << "Added key " << key_id << " (" << ref << ") to keyring " << device_keyring
                    << " in process " << getpid();
     }
+    return true;
+}
+
+// Installs fscrypt-provisioning key into session level kernel keyring.
+// This allows for the given key to be installed back into filesystem keyring.
+// For more context see reloadKeyFromSessionKeyring.
+static bool installProvisioningKey(const KeyBuffer& key, const std::string& ref,
+                                   const fscrypt_key_specifier& key_spec) {
+    key_serial_t device_keyring;
+    if (!fscryptKeyring(&device_keyring)) return false;
+
+    // Place fscrypt_provisioning_key_payload into automatically zeroing buffer.
+    KeyBuffer buf(sizeof(fscrypt_provisioning_key_payload) + key.size(), 0);
+    fscrypt_provisioning_key_payload& provisioning_key =
+            *reinterpret_cast<fscrypt_provisioning_key_payload*>(buf.data());
+    memcpy(provisioning_key.raw, key.data(), key.size());
+    provisioning_key.type = key_spec.type;
+
+    key_serial_t key_id = add_key("fscrypt-provisioning", ref.c_str(), (void*)&provisioning_key,
+                                  buf.size(), device_keyring);
+    if (key_id == -1) {
+        PLOG(ERROR) << "Failed to insert fscrypt-provisioning key for " << ref
+                    << " into session keyring";
+        return false;
+    }
+    LOG(DEBUG) << "Added fscrypt-provisioning key for " << ref << " to session keyring";
     return true;
 }
 
@@ -203,6 +229,34 @@ static bool buildKeySpecifier(fscrypt_key_specifier* spec, const EncryptionPolic
             LOG(ERROR) << "Invalid encryption policy version: " << policy.options.version;
             return false;
     }
+}
+
+// Installs key into keyring of a filesystem mounted on |mountpoint|.
+//
+// It's callers responsibility to fill key specifier, and either arg->raw or arg->key_id.
+//
+// In case arg->key_spec.type equals to FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER
+// arg->key_spec.u.identifier will be populated with raw key reference generated
+// by kernel.
+//
+// For documentation on difference between arg->raw and arg->key_id see
+// https://www.kernel.org/doc/html/latest/filesystems/fscrypt.html#fs-ioc-add-encryption-key
+static bool installFsKeyringKey(const std::string& mountpoint, const EncryptionOptions& options,
+                                fscrypt_add_key_arg* arg) {
+    if (options.use_hw_wrapped_key) arg->flags |= FSCRYPT_ADD_KEY_FLAG_WRAPPED;
+
+    android::base::unique_fd fd(open(mountpoint.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    if (fd == -1) {
+        PLOG(ERROR) << "Failed to open " << mountpoint << " to install key";
+        return false;
+    }
+
+    if (ioctl(fd, FS_IOC_ADD_ENCRYPTION_KEY, arg) != 0) {
+        PLOG(ERROR) << "Failed to install fscrypt key to " << mountpoint;
+        return false;
+    }
+
+    return true;
 }
 
 bool installKey(const std::string& mountpoint, const EncryptionOptions& options,
@@ -240,33 +294,24 @@ bool installKey(const std::string& mountpoint, const EncryptionOptions& options,
             return false;
     }
 
-    if (options.use_hw_wrapped_key) arg->flags |= FSCRYPT_ADD_KEY_FLAG_WRAPPED;
-    // Provide the raw key.
     arg->raw_size = key.size();
     memcpy(arg->raw, key.data(), key.size());
 
-    android::base::unique_fd fd(open(mountpoint.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
-    if (fd == -1) {
-        PLOG(ERROR) << "Failed to open " << mountpoint << " to install key";
-        return false;
-    }
-
-    if (ioctl(fd, FS_IOC_ADD_ENCRYPTION_KEY, arg) != 0) {
-        PLOG(ERROR) << "Failed to install fscrypt key to " << mountpoint;
-        return false;
-    }
+    if (!installFsKeyringKey(mountpoint, options, arg)) return false;
 
     if (arg->key_spec.type == FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER) {
         // Retrieve the key identifier that the kernel computed.
         policy->key_raw_ref =
                 std::string((char*)arg->key_spec.u.identifier, FSCRYPT_KEY_IDENTIFIER_SIZE);
     }
-    LOG(DEBUG) << "Installed fscrypt key with ref " << keyrefstring(policy->key_raw_ref) << " to "
-               << mountpoint;
+    std::string ref = keyrefstring(policy->key_raw_ref);
+    LOG(DEBUG) << "Installed fscrypt key with ref " << ref << " to " << mountpoint;
+
+    if (!installProvisioningKey(key, ref, arg->key_spec)) return false;
     return true;
 }
 
-// Remove an encryption key from the legacy global session keyring.
+// Remove an encryption key of type "logon" from the global session keyring.
 static bool evictKeyLegacy(const std::string& raw_ref) {
     key_serial_t device_keyring;
     if (!fscryptKeyring(&device_keyring)) return false;
@@ -287,6 +332,26 @@ static bool evictKeyLegacy(const std::string& raw_ref) {
         }
     }
     return success;
+}
+
+static bool evictProvisioningKey(const std::string& ref) {
+    key_serial_t device_keyring;
+    if (!fscryptKeyring(&device_keyring)) {
+        return false;
+    }
+
+    auto key_serial = keyctl_search(device_keyring, "fscrypt-provisioning", ref.c_str(), 0);
+    if (key_serial == -1 && errno != ENOKEY) {
+        PLOG(ERROR) << "Error searching session keyring for fscrypt-provisioning key for " << ref;
+        return false;
+    }
+
+    if (key_serial != -1 && keyctl_unlink(key_serial, device_keyring) != 0) {
+        PLOG(ERROR) << "Failed to unlink fscrypt-provisioning key for " << ref
+                    << " from session keyring";
+        return false;
+    }
+    return true;
 }
 
 bool evictKey(const std::string& mountpoint, const EncryptionPolicy& policy) {
@@ -322,6 +387,8 @@ bool evictKey(const std::string& mountpoint, const EncryptionPolicy& policy) {
         LOG(ERROR) << "Files still open after removing key with ref " << ref
                    << ".  These files were not locked!";
     }
+
+    if (!evictProvisioningKey(ref)) return false;
     return true;
 }
 
@@ -340,6 +407,32 @@ bool retrieveOrGenerateKey(const std::string& key_path, const std::string& tmp_p
         if (!generateStorageKey(gen, key)) return false;
         if (!storeKeyAtomically(key_path, tmp_path, key_authentication, *key)) return false;
     }
+    return true;
+}
+
+bool reloadKeyFromSessionKeyring(const std::string& mountpoint, const EncryptionPolicy& policy) {
+    key_serial_t device_keyring;
+    if (!fscryptKeyring(&device_keyring)) {
+        return false;
+    }
+
+    std::string ref = keyrefstring(policy.key_raw_ref);
+    auto key_serial = keyctl_search(device_keyring, "fscrypt-provisioning", ref.c_str(), 0);
+    if (key_serial == -1) {
+        PLOG(ERROR) << "Failed to find fscrypt-provisioning key for " << ref
+                    << " in session keyring";
+        return false;
+    }
+
+    LOG(DEBUG) << "Installing fscrypt-provisioning key for " << ref << " back into " << mountpoint
+               << " fs-keyring";
+
+    struct fscrypt_add_key_arg arg;
+    memset(&arg, 0, sizeof(arg));
+    if (!buildKeySpecifier(&arg.key_spec, policy)) return false;
+    arg.key_id = key_serial;
+    if (!installFsKeyringKey(mountpoint, policy.options, &arg)) return false;
+
     return true;
 }
 
