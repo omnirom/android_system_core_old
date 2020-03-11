@@ -807,14 +807,6 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             if (!prepare_dir(vendor_ce_path, 0771, AID_ROOT, AID_ROOT)) return false;
         }
         if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return false;
-        // Setup quota project ID and inheritance policy
-        if (!IsFilesystemSupported("sdcardfs")) {
-            if (SetQuotaInherit(media_ce_path) != 0) return false;
-            if (SetQuotaProjectId(media_ce_path,
-                                  multiuser_get_uid(user_id, PROJECT_ID_EXT_DEFAULT)) != 0) {
-                return false;
-            }
-        }
 
         if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
