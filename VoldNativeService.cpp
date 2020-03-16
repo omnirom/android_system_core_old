@@ -458,6 +458,14 @@ binder::Status VoldNativeService::remountUid(int32_t uid, int32_t remountMode) {
     return translate(VolumeManager::Instance()->remountUid(uid, remountMode));
 }
 
+binder::Status VoldNativeService::remountAppStorageDirs(int uid, int pid,
+        const std::vector<std::string>& packageNames) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->remountAppStorageDirs(uid, pid, packageNames));
+}
+
 binder::Status VoldNativeService::setupAppDir(const std::string& path, int32_t appUid) {
     ENFORCE_SYSTEM_OR_ROOT;
     CHECK_ARGUMENT_PATH(path);
