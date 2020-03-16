@@ -738,226 +738,142 @@ int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
             forkAndRemountChild, &mountMode) ? 0 : -1;
 }
 
-// Bind mount obb & data dir for an app if necessary.
-// How it works:
-// 1). Check if a pid is an app uid and not the FuseDaemon, if not then return.
-// 2). Get the mounts for that pid.
-// 3). If obb is already mounted then return, otherwise we need to mount obb for this pid.
-// 4). Get all packages and uid mounted for jit profile. These packages are all packages with
-// same uid or whitelisted apps.
-// 5a). If there's no package, it means it's not a process running app data isolation, so
-// just bind mount Android/obb & Android/data dir.
-// 5b). Otherwise, for each package, create obb dir if it's not created and bind mount it.
-// TODO: Should we get some reliable data from system server instead of scanning /proc ?
-static bool bindMountAppDataObbDir(uid_t uid, pid_t pid, int nsFd, const char* name, void* params) {
-    if (uid < AID_APP_START || uid > AID_APP_END) {
-        return true;
-    }
-    if (android::vold::IsFuseDaemon(pid)) {
-        return true;
-    }
-    async_safe_format_log(ANDROID_LOG_ERROR, "vold",
-                          "Start mounting obb and data for uid:%d, pid:%d", uid, pid);
 
-    userid_t userId = multiuser_get_user_id(uid);
+// Set the namespace the app process and remount its storage directories.
+static bool remountStorageDirs(int nsFd, const char* sources[], const char* targets[], int size) {
+    // This code is executed after a fork so it's very important that the set of
+    // methods we call here is strictly limited.
     if (setns(nsFd, CLONE_NEWNS) != 0) {
         async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to setns %s", strerror(errno));
         return false;
     }
 
-    std::string profiles_path(StringPrintf("/data/misc/profiles/cur/%d/", userId));
-    // We search both .../obb and .../obb/$PKG paths here.
-    std::string obb_path(StringPrintf("/storage/emulated/%d/Android/obb", userId));
-    int profiles_path_len = profiles_path.length();
-    int obb_path_len = obb_path.length();
-
-    // TODO: Refactor the code as a util function so we can reuse the mount parsing code.
-    std::string mounts_file(StringPrintf("/proc/%d/mounts", pid));
-    auto fp = std::unique_ptr<FILE, int (*)(FILE*)>(
-            setmntent(mounts_file.c_str(), "r"), endmntent);
-    if (!fp) {
-        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Error opening %s: %s",
-                              mounts_file.c_str(), strerror(errno));
-        return false;
-    }
-
-    // Check if obb directory is mounted, and get all packages of mounted app data directory.
-    // We only need to check obb directory and assume if obb is mounted, data is mounted also.
-    bool obb_mounted = false;
-    std::vector<std::string> pkg_name_list;
-    mntent* mentry;
-    while ((mentry = getmntent(fp.get())) != nullptr) {
-        if (strncmp(mentry->mnt_dir, profiles_path.c_str(), profiles_path_len) == 0) {
-            pkg_name_list.push_back(std::string(mentry->mnt_dir + profiles_path_len));
-        }
-        if (strncmp(mentry->mnt_dir, obb_path.c_str(), obb_path_len) == 0) {
-            obb_mounted = true;
-        }
-    }
-
-    // Obb mounted in zygote already, so skip it
-    if (obb_mounted) {
-        return true;
-    }
-
-    std::string obbSource, dataSource;
-    if (IsFilesystemSupported("sdcardfs")) {
-        obbSource = StringPrintf("/mnt/runtime/default/emulated/%d/Android/obb", userId);
-        dataSource = StringPrintf("/mnt/runtime/default/emulated/%d/Android/data", userId);
-    } else {
-        obbSource = StringPrintf("/mnt/pass_through/%d/emulated/%d/Android/obb", userId, userId);
-        dataSource = StringPrintf("/mnt/pass_through/%d/emulated/%d/Android/data", userId, userId);
-    }
-    std::string obbTarget(StringPrintf("/storage/emulated/%d/Android/obb", userId));
-    std::string dataTarget(StringPrintf("/storage/emulated/%d/Android/data", userId));
-
-    // TODO: Review if these checks are still necessary
-    auto status = EnsureDirExists(obbSource, 0771, AID_MEDIA_RW, AID_MEDIA_RW);
-    if (status != OK) {
-        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to create dir %s %s",
-                              obbSource.c_str(), strerror(-status));
-        return false;
-    }
-    status = EnsureDirExists(dataSource, 0771, AID_MEDIA_RW, AID_MEDIA_RW);
-    if (status != OK) {
-        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to create dir %s %s",
-                              dataSource.c_str(), strerror(-status));
-        return false;
-    }
-
-    // It means app data isolation is not applied to this, so we can just bind the whole obb
-    // directory instead.
-    if (pkg_name_list.empty()) {
-        async_safe_format_log(ANDROID_LOG_INFO, "vold",
-                              "Bind mounting whole obb and data directory for pid %d", pid);
-        auto status1 = BindMount(obbSource, obbTarget);
-        // Still bind mount data even obb fails, just slower to access obb dir
-        auto status2 = BindMount(dataSource, dataTarget);
-        if (status1 != OK) {
-            async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to mount %s %s %s",
-                                  obbSource.c_str(), obbTarget.c_str(), strerror(-status));
+    for (int i = 0; i < size; i++) {
+        if (TEMP_FAILURE_RETRY(mount(sources[i], targets[i], NULL, MS_BIND | MS_REC, NULL)) == -1) {
+            async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to mount %s to %s :%s",
+                                  sources[i], targets[i], strerror(errno));
             return false;
-        }
-        if (status2 != OK) {
-            async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to mount %s %s %s",
-                                  dataSource.c_str(), dataTarget.c_str(), strerror(-status));
-            return false;
-        }
-        return true;
-    }
-
-    // Bind mount each app's obb directory
-    for (const auto& pkg_name : pkg_name_list) {
-        std::string appObbSource, appDataSource;
-        if (IsFilesystemSupported("sdcardfs")) {
-            appObbSource = StringPrintf("/mnt/runtime/default/emulated/%d/Android/obb/%s",
-                    userId, pkg_name.c_str());
-            appDataSource = StringPrintf("/mnt/runtime/default/emulated/%d/Android/data/%s",
-                    userId, pkg_name.c_str());
-        } else {
-            appObbSource = StringPrintf("/mnt/pass_through/%d/emulated/%d/Android/obb/%s",
-                    userId, userId, pkg_name.c_str());
-            appDataSource = StringPrintf("/mnt/pass_through/%d/emulated/%d/Android/data/%s",
-                    userId, userId, pkg_name.c_str());
-        }
-        std::string appObbTarget(StringPrintf("/storage/emulated/%d/Android/obb/%s",
-                userId, pkg_name.c_str()));
-        std::string appDataTarget(StringPrintf("/storage/emulated/%d/Android/data/%s",
-                userId, pkg_name.c_str()));
-
-        status = EnsureDirExists(appObbSource, 0770, uid, AID_MEDIA_RW);
-        if (status != OK) {
-            async_safe_format_log(ANDROID_LOG_INFO, "vold", "Failed to ensure dir %s exists",
-                                  appObbSource.c_str());
-            continue;
-        }
-        status = EnsureDirExists(appDataSource, 0770, uid, AID_MEDIA_RW);
-        if (status != OK) {
-            async_safe_format_log(ANDROID_LOG_INFO, "vold", "Failed to ensure dir %s exists",
-                                  appDataSource.c_str());
-            continue;
-        }
-        async_safe_format_log(ANDROID_LOG_INFO, "vold",
-                              "Bind mounting app obb and data directory(%s) for pid %d",
-                              pkg_name.c_str(), pid);
-        auto status1 = BindMount(appObbSource, appObbTarget);
-        // Still bind mount data even obb fails, just slower to access obb dir
-        auto status2 = BindMount(appDataSource, appDataTarget);
-        if (status1 != OK) {
-            async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to mount %s %s %s",
-                                  obbSource.c_str(), obbTarget.c_str(), strerror(-status));
-            continue;
-        }
-        if (status2 != OK) {
-            async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to mount %s %s %s",
-                                  appDataSource.c_str(), appDataTarget.c_str(), strerror(-status));
-            continue;
         }
     }
     return true;
 }
 
-int VolumeManager::remountAppStorageDirs(userid_t userId) {
-    if (!GetBoolProperty(android::vold::kPropFuse, false)) {
-        return 0;
+static std::string getStorageDirSrc(userid_t userId, const std::string& dirName,
+        const std::string& packageName) {
+    if (IsFilesystemSupported("sdcardfs")) {
+        return StringPrintf("/mnt/runtime/default/emulated/%d/%s/%s",
+                userId, dirName.c_str(), packageName.c_str());
+    } else {
+        return StringPrintf("/mnt/pass_through/%d/emulated/%d/%s/%s",
+                userId, userId, dirName.c_str(), packageName.c_str());
     }
-    LOG(INFO) << "Start remounting app obb and data";
-    pid_t child;
-    if (!(child = fork())) {
-        // Child process
-        if (daemon(0, 0) == -1) {
-            PLOG(FATAL) << "Cannot create daemon";
+}
+
+static std::string getStorageDirTarget(userid_t userId, std::string dirName,
+        std::string packageName) {
+    return StringPrintf("/storage/emulated/%d/%s/%s",
+            userId, dirName.c_str(), packageName.c_str());
+}
+
+// Fork the process and remount storage
+static bool forkAndRemountStorage(int uid, int pid, const std::vector<std::string>& packageNames) {
+    userid_t userId = multiuser_get_user_id(uid);
+    std::string mnt_path = StringPrintf("/proc/%d/ns/mnt", pid);
+    android::base::unique_fd nsFd(
+            TEMP_FAILURE_RETRY(open(mnt_path.c_str(), O_RDONLY | O_CLOEXEC)));
+    if (nsFd == -1) {
+        PLOG(ERROR) << "Unable to open " << mnt_path.c_str();
+        return false;
+    }
+    // Storing both Android/obb and Android/data paths.
+    int size = packageNames.size() * 2;
+
+    std::unique_ptr<std::string[]> sources(new std::string[size]);
+    std::unique_ptr<std::string[]> targets(new std::string[size]);
+    std::unique_ptr<const char*[]> sources_uptr(new const char*[size]);
+    std::unique_ptr<const char*[]> targets_uptr(new const char*[size]);
+    const char** sources_cstr = sources_uptr.get();
+    const char** targets_cstr = targets_uptr.get();
+
+    for (int i = 0; i < size; i += 2) {
+        std::string const& packageName = packageNames[i/2];
+        sources[i] = getStorageDirSrc(userId, "Android/data", packageName);
+        targets[i] = getStorageDirTarget(userId, "Android/data", packageName);
+        sources[i+1] = getStorageDirSrc(userId, "Android/obb", packageName);
+        targets[i+1] = getStorageDirTarget(userId, "Android/obb", packageName);
+
+        sources_cstr[i] = sources[i].c_str();
+        targets_cstr[i] = targets[i].c_str();
+        sources_cstr[i+1] = sources[i+1].c_str();
+        targets_cstr[i+1] = targets[i+1].c_str();
+    }
+
+    for (int i = 0; i < size; i++) {
+        auto status = EnsureDirExists(sources_cstr[i], 0771, AID_MEDIA_RW, AID_MEDIA_RW);
+        if (status != OK) {
+            PLOG(ERROR) << "Failed to create dir: " << sources_cstr[i];
+            return false;
         }
-        // TODO(149548518): Refactor the code so minimize the work after fork to prevent deadlock.
-        if (scanProcProcesses(0, userId, bindMountAppDataObbDir, nullptr)) {
-            // As some forked zygote processes may not setuid and recognized as an app yet, sleep
-            // 3s and try again to catch 'em all.
-            usleep(3 * 1000 * 1000);  // 3s
-            async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Retry remounting app obb");
-            scanProcProcesses(0, userId, bindMountAppDataObbDir, nullptr);
+        status = EnsureDirExists(targets_cstr[i], 0771, AID_MEDIA_RW, AID_MEDIA_RW);
+        if (status != OK) {
+            PLOG(ERROR) << "Failed to create dir: " << targets_cstr[i];
+            return false;
+        }
+    }
+
+    pid_t child;
+    // Fork a child to mount Android/obb android Android/data dirs, as we don't want it to affect
+    // original vold process mount namespace.
+    if (!(child = fork())) {
+        if (remountStorageDirs(nsFd, sources_cstr, targets_cstr, size)) {
             _exit(0);
         } else {
             _exit(1);
         }
     }
+
     if (child == -1) {
         PLOG(ERROR) << "Failed to fork";
-        return -1;
-    } else if (child == 0) {
-        // Parent
-        int stat_loc;
-        for (;;) {
-            if (waitpid(child, &stat_loc, 0) != -1 || errno != EINTR) {
-                break;
-            }
+        return false;
+    } else {
+        int status;
+        if (TEMP_FAILURE_RETRY(waitpid(child, &status, 0)) == -1) {
+            PLOG(ERROR) << "Failed to waitpid: " << child;
+            return false;
+        }
+        if (!WIFEXITED(status)) {
+            PLOG(ERROR) << "Process did not exit normally, status: " << status;
+            return false;
+        }
+        if (WEXITSTATUS(status)) {
+            PLOG(ERROR) << "Process exited with code: " << WEXITSTATUS(status);
+            return false;
         }
     }
+    return true;
+}
+
+int VolumeManager::remountAppStorageDirs(int uid, int pid,
+        const std::vector<std::string>& packageNames) {
+    if (!GetBoolProperty(android::vold::kPropFuse, false)) {
+        return 0;
+    }
+    // Only run the remount if fuse is mounted for that user.
+    userid_t userId = multiuser_get_user_id(uid);
+    bool fuseMounted = false;
+    for (auto& vol : mInternalEmulatedVolumes) {
+        if (vol->getMountUserId() == userId && vol->getState() == VolumeBase::State::kMounted) {
+            auto* emulatedVol = static_cast<android::vold::EmulatedVolume*>(vol.get());
+            if (emulatedVol) {
+                fuseMounted = emulatedVol->isFuseMounted();
+            }
+            break;
+        }
+    }
+    if (fuseMounted) {
+        forkAndRemountStorage(uid, pid, packageNames);
+    }
     return 0;
-}
-
-bool VolumeManager::updateFuseMountedProperty() {
-    if (mFuseMountedUsers.size() == 0) {
-        android::base::SetProperty("vold.fuse_running_users", "");
-        return true;
-    }
-    std::stringstream stream;
-    char const * sep = "";
-    for (const auto& userId : mFuseMountedUsers) {
-        stream << sep;
-        stream << userId;
-        sep = ", ";
-    }
-    return android::base::SetProperty("vold.fuse_running_users", stream.str());
-}
-
-bool VolumeManager::addFuseMountedUser(userid_t userId) {
-    mFuseMountedUsers.insert(userId);
-    return updateFuseMountedProperty();
-}
-
-bool VolumeManager::removeFuseMountedUser(userid_t userId) {
-    mFuseMountedUsers.erase(userId);
-    return updateFuseMountedProperty();
 }
 
 int VolumeManager::reset() {
@@ -975,8 +891,6 @@ int VolumeManager::reset() {
     updateVirtualDisk();
     mAddedUsers.clear();
     mStartedUsers.clear();
-    mFuseMountedUsers.clear();
-    updateFuseMountedProperty();
     return 0;
 }
 
@@ -996,8 +910,6 @@ int VolumeManager::shutdown() {
     mInternalEmulatedVolumes.clear();
     mDisks.clear();
     mPendingDisks.clear();
-    mFuseMountedUsers.clear();
-    updateFuseMountedProperty();
     android::vold::sSleepOnUnmount = true;
     return 0;
 }
