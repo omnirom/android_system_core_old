@@ -63,6 +63,9 @@ class EmulatedVolume : public VolumeBase {
     /* Whether we mounted FUSE for this volume */
     bool mFuseMounted;
 
+    /* Whether we mounted Android/ for this volume */
+    bool mAndroidMounted;
+
     /* Whether to use sdcardfs for this volume */
     bool mUseSdcardFs;
 
