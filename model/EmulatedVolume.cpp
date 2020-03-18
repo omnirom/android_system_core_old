@@ -48,6 +48,7 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, int userId)
     mRawPath = rawPath;
     mLabel = "emulated";
     mFuseMounted = false;
+    mAndroidMounted = false;
     mUseSdcardFs = IsFilesystemSupported("sdcardfs");
     mAppDataIsolationEnabled = base::GetBoolProperty(kVoldAppDataIsolationEnabled, false);
 }
@@ -59,6 +60,7 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const s
     mRawPath = rawPath;
     mLabel = fsUuid;
     mFuseMounted = false;
+    mAndroidMounted = false;
     mUseSdcardFs = IsFilesystemSupported("sdcardfs");
     mAppDataIsolationEnabled = base::GetBoolProperty(kVoldAppDataIsolationEnabled, false);
 }
@@ -87,6 +89,8 @@ static status_t doFuseBindMount(const std::string& source, const std::string& ta
 }
 
 status_t EmulatedVolume::mountFuseBindMounts() {
+    CHECK(!mAndroidMounted);
+
     std::string androidSource;
     std::string label = getLabel();
     int userId = getMountUserId();
@@ -109,6 +113,8 @@ status_t EmulatedVolume::mountFuseBindMounts() {
     if (status != OK) {
         return status;
     }
+    mAndroidMounted = true;
+
     // Installers get the same view as all other apps, with the sole exception that the
     // OBB dirs (Android/obb) are writable to them. On sdcardfs devices, this requires
     // a special bind mount, since app-private and OBB dirs share the same GID, but we
@@ -129,6 +135,8 @@ status_t EmulatedVolume::mountFuseBindMounts() {
 }
 
 status_t EmulatedVolume::unmountFuseBindMounts() {
+    CHECK(mAndroidMounted);
+
     std::string label = getLabel();
     int userId = getMountUserId();
 
@@ -158,7 +166,6 @@ status_t EmulatedVolume::unmountFuseBindMounts() {
         }
         LOG(INFO) << "Unmounted " << androidTarget;
     }
-
     return OK;
 }
 
@@ -297,7 +304,10 @@ status_t EmulatedVolume::doUnmount() {
 
         // Ignoring unmount return status because we do want to try to unmount
         // the rest cleanly.
-        unmountFuseBindMounts();
+        if (mAndroidMounted) {
+            unmountFuseBindMounts();
+            mAndroidMounted = false;
+        }
         if (UnmountUserFuse(userId, getInternalPath(), label) != OK) {
             PLOG(INFO) << "UnmountUserFuse failed on emulated fuse volume";
             return -errno;
