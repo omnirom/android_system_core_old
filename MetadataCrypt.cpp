@@ -336,6 +336,11 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
 
     LOG(DEBUG) << "Mounting metadata-encrypted filesystem:" << mount_point;
     mount_via_fs_mgr(mount_point.c_str(), crypto_blkdev.c_str());
+
+    // Record that there's at least one fstab entry with metadata encryption
+    if (!android::base::SetProperty("ro.crypto.metadata.enabled", "true")) {
+        LOG(WARNING) << "failed to set ro.crypto.metadata.enabled";  // This isn't fatal
+    }
     return true;
 }
 
