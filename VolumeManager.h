@@ -130,6 +130,8 @@ class VolumeManager {
     int updateVirtualDisk();
     int setDebug(bool enable);
 
+    bool forkAndRemountStorage(int uid, int pid, const std::vector<std::string>& packageNames);
+
     static VolumeManager* Instance();
 
     /*
