@@ -48,6 +48,7 @@ class EmulatedVolume : public VolumeBase {
     status_t doUnmount() override;
 
   private:
+    status_t unmountSdcardFs();
     status_t mountFuseBindMounts();
     status_t unmountFuseBindMounts();
 
@@ -62,9 +63,6 @@ class EmulatedVolume : public VolumeBase {
 
     /* Whether we mounted FUSE for this volume */
     bool mFuseMounted;
-
-    /* Whether we mounted Android/ for this volume */
-    bool mAndroidMounted;
 
     /* Whether to use sdcardfs for this volume */
     bool mUseSdcardFs;
