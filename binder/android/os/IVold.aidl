@@ -128,8 +128,8 @@ interface IVold {
 
     FileDescriptor openAppFuseFile(int uid, int mountId, int fileId, int flags);
 
-    int incFsVersion();
-    IncrementalFileSystemControlParcel mountIncFs(@utf8InCpp String imagePath, @utf8InCpp String targetDir, int flags);
+    boolean incFsEnabled();
+    IncrementalFileSystemControlParcel mountIncFs(@utf8InCpp String backingPath, @utf8InCpp String targetDir, int flags);
     void unmountIncFs(@utf8InCpp String dir);
     void bindMount(@utf8InCpp String sourceDir, @utf8InCpp String targetDir);
 
