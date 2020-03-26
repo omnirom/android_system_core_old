@@ -131,6 +131,7 @@ cc_library_static {
         "ScryptParameters.cpp",
         "Utils.cpp",
         "VoldNativeService.cpp",
+        "VoldNativeServiceValidation.cpp",
         "VoldUtil.cpp",
         "VolumeManager.cpp",
         "cryptfs.cpp",
