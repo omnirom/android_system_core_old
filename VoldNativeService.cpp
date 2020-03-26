@@ -927,26 +927,26 @@ binder::Status VoldNativeService::resetCheckpoint() {
     return ok();
 }
 
-binder::Status VoldNativeService::incFsVersion(int32_t* _aidl_return) {
-    *_aidl_return = IncFs_Version();
+binder::Status VoldNativeService::incFsEnabled(bool* _aidl_return) {
+    *_aidl_return = IncFs_IsEnabled();
     return ok();
 }
 
 binder::Status VoldNativeService::mountIncFs(
-        const std::string& imagePath, const std::string& targetDir, int32_t flags,
+        const std::string& backingPath, const std::string& targetDir, int32_t flags,
         ::android::os::incremental::IncrementalFileSystemControlParcel* _aidl_return) {
-    auto result = IncFs_Mount(imagePath.c_str(), targetDir.c_str(), flags,
-                              INCFS_DEFAULT_READ_TIMEOUT_MS, 0777);
-    if (result.cmdFd < 0) {
-        return translate(result.cmdFd);
+    auto result = IncFs_Mount(backingPath.c_str(), targetDir.c_str(),
+                              {.flags = IncFsMountFlags(flags),
+                               .defaultReadTimeoutMs = INCFS_DEFAULT_READ_TIMEOUT_MS,
+                               .readLogBufferPages = 4});
+    if (result.cmd < 0) {
+        return translate(result.cmd);
     }
-    LOG(INFO) << "VoldNativeService::mountIncFs: everything is fine! " << result.cmdFd << "/"
-              << result.logFd;
-    using ParcelFileDescriptor = ::android::os::ParcelFileDescriptor;
     using unique_fd = ::android::base::unique_fd;
-    _aidl_return->cmd = ParcelFileDescriptor(unique_fd(result.cmdFd));
-    if (result.logFd >= 0) {
-        _aidl_return->log = ParcelFileDescriptor(unique_fd(result.logFd));
+    _aidl_return->cmd.emplace(unique_fd(result.cmd));
+    _aidl_return->pendingReads.emplace(unique_fd(result.pendingReads));
+    if (result.logs >= 0) {
+        _aidl_return->log.emplace(unique_fd(result.logs));
     }
     return ok();
 }
