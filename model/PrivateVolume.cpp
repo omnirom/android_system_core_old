@@ -43,6 +43,7 @@ using android::base::StringPrintf;
 namespace android {
 namespace vold {
 
+static const unsigned int kMajorBlockLoop = 7;
 static const unsigned int kMajorBlockMmc = 179;
 
 PrivateVolume::PrivateVolume(dev_t device, const KeyBuffer& keyRaw)
@@ -207,7 +208,9 @@ status_t PrivateVolume::doFormat(const std::string& fsType) {
     if (fsType == "auto") {
         // For now, assume that all MMC devices are flash-based SD cards, and
         // give everyone else ext4 because sysfs rotational isn't reliable.
-        if ((major(mRawDevice) == kMajorBlockMmc) && f2fs::IsSupported()) {
+        // Additionally, prefer f2fs for loop-bases devices
+        if ((major(mRawDevice) == kMajorBlockMmc || major(mRawDevice) == kMajorBlockLoop) &&
+            f2fs::IsSupported()) {
             resolvedFsType = "f2fs";
         } else {
             resolvedFsType = "ext4";
