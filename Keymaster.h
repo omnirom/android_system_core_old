@@ -128,9 +128,9 @@ class Keymaster {
                              km::AuthorizationSet* outParams);
     bool isSecure();
 
-    // Tell Keymaster that early boot has ended and early boot-only keys can no longer be created or
-    // used.
-    void earlyBootEnded();
+    // Tell all Keymaster instances that early boot has ended and early boot-only keys can no longer
+    // be created or used.
+    static void earlyBootEnded();
 
   private:
     sp<KmDevice> mDevice;
