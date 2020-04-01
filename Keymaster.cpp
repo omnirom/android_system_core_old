@@ -229,13 +229,19 @@ bool Keymaster::isSecure() {
 }
 
 void Keymaster::earlyBootEnded() {
-    auto error = mDevice->earlyBootEnded();
-    if (!error.isOk()) {
-        LOG(ERROR) << "earlyBootEnded failed: " << error.description();
-    }
-    km::V4_1_ErrorCode km_error = error;
-    if (km_error != km::V4_1_ErrorCode::OK && km_error != km::V4_1_ErrorCode::UNIMPLEMENTED) {
-        LOG(ERROR) << "Error reporting early boot ending to keymaster: " << int32_t(km_error);
+    auto devices = KmDevice::enumerateAvailableDevices();
+    for (auto& dev : devices) {
+        auto error = dev->earlyBootEnded();
+        if (!error.isOk()) {
+            LOG(ERROR) << "earlyBootEnded call failed: " << error.description() << " for "
+                       << dev->halVersion().keymasterName;
+        }
+        km::V4_1_ErrorCode km_error = error;
+        if (km_error != km::V4_1_ErrorCode::OK && km_error != km::V4_1_ErrorCode::UNIMPLEMENTED) {
+            LOG(ERROR) << "Error reporting early boot ending to keymaster: "
+                       << static_cast<int32_t>(km_error) << " for "
+                       << dev->halVersion().keymasterName;
+        }
     }
 }
 
