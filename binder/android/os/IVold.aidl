@@ -135,6 +135,7 @@ interface IVold {
     boolean incFsEnabled();
     IncrementalFileSystemControlParcel mountIncFs(@utf8InCpp String backingPath, @utf8InCpp String targetDir, int flags);
     void unmountIncFs(@utf8InCpp String dir);
+    void setIncFsMountOptions(in IncrementalFileSystemControlParcel control, boolean enableReadLogs);
     void bindMount(@utf8InCpp String sourceDir, @utf8InCpp String targetDir);
 
     const int ENCRYPTION_FLAG_NO_UI = 4;
