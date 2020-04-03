@@ -776,7 +776,8 @@ static std::string getStorageDirTarget(userid_t userId, std::string dirName,
 }
 
 // Fork the process and remount storage
-static bool forkAndRemountStorage(int uid, int pid, const std::vector<std::string>& packageNames) {
+bool VolumeManager::forkAndRemountStorage(int uid, int pid,
+                                          const std::vector<std::string>& packageNames) {
     userid_t userId = multiuser_get_user_id(uid);
     std::string mnt_path = StringPrintf("/proc/%d/ns/mnt", pid);
     android::base::unique_fd nsFd(
@@ -814,7 +815,8 @@ static bool forkAndRemountStorage(int uid, int pid, const std::vector<std::strin
             PLOG(ERROR) << "Failed to create dir: " << sources_cstr[i];
             return false;
         }
-        status = EnsureDirExists(targets_cstr[i], 0771, AID_MEDIA_RW, AID_MEDIA_RW);
+        // Make sure /storage/emulated/... paths are setup correctly
+        status = setupAppDir(targets_cstr[i], uid, false /* fixupExistingOnly */);
         if (status != OK) {
             PLOG(ERROR) << "Failed to create dir: " << targets_cstr[i];
             return false;
