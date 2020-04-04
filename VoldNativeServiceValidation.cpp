@@ -39,11 +39,10 @@ binder::Status Exception(uint32_t code, const std::string& msg) {
 }
 
 binder::Status CheckPermission(const char* permission) {
-    pid_t pid;
-    uid_t uid;
+    int32_t pid;
+    int32_t uid;
 
-    if (checkCallingPermission(String16(permission), reinterpret_cast<int32_t*>(&pid),
-                               reinterpret_cast<int32_t*>(&uid))) {
+    if (checkCallingPermission(String16(permission), &pid, &uid)) {
         return Ok();
     } else {
         return Exception(binder::Status::EX_SECURITY,
