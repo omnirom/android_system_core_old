@@ -53,7 +53,6 @@ namespace vold {
 namespace {
 
 constexpr const char* kDump = "android.permission.DUMP";
-constexpr const char* kDataUsageStats = "android.permission.LOADER_USAGE_STATS";
 
 static binder::Status error(const std::string& msg) {
     PLOG(ERROR) << msg;
@@ -920,11 +919,9 @@ binder::Status VoldNativeService::unmountIncFs(const std::string& dir) {
 binder::Status VoldNativeService::setIncFsMountOptions(
         const ::android::os::incremental::IncrementalFileSystemControlParcel& control,
         bool enableReadLogs) {
-    auto status = CheckPermission(kDataUsageStats);
-    if (!status.isOk()) {
-        return status;
-    }
+    ENFORCE_SYSTEM_OR_ROOT;
 
+    auto status = Ok();
     auto incfsControl = IncFs_CreateControl(dup(control.cmd.get()), dup(control.pendingReads.get()),
                                             dup(control.log.get()));
     if (auto error = IncFs_SetOptions(
