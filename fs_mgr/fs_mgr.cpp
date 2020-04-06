@@ -78,6 +78,7 @@
 #define F2FS_FSCK_BIN   "/system/bin/fsck.f2fs"
 #define MKSWAP_BIN      "/system/bin/mkswap"
 #define TUNE2FS_BIN     "/system/bin/tune2fs"
+#define RESIZE2FS_BIN "/system/bin/resize2fs"
 
 #define FSCK_LOG_FILE   "/dev/fscklogs/log"
 
@@ -95,7 +96,9 @@
 
 using android::base::Basename;
 using android::base::GetBoolProperty;
+using android::base::Readlink;
 using android::base::Realpath;
+using android::base::SetProperty;
 using android::base::StartsWith;
 using android::base::Timer;
 using android::base::unique_fd;
@@ -126,6 +129,7 @@ enum FsStatFlags {
     FS_STAT_ENABLE_ENCRYPTION_FAILED = 0x40000,
     FS_STAT_ENABLE_VERITY_FAILED = 0x80000,
     FS_STAT_ENABLE_CASEFOLD_FAILED = 0x100000,
+    FS_STAT_ENABLE_METADATA_CSUM_FAILED = 0x200000,
 };
 
 static void log_fs_stat(const std::string& blk_device, int fs_stat) {
@@ -176,6 +180,7 @@ static void check_fs(const std::string& blk_device, const std::string& fs_type,
         return;
     }
 
+    Timer t;
     /* Check for the types of filesystems we know how to check */
     if (is_extfs(fs_type)) {
         /*
@@ -251,15 +256,19 @@ static void check_fs(const std::string& blk_device, const std::string& fs_type,
             }
         }
     } else if (is_f2fs(fs_type)) {
-        const char* f2fs_fsck_argv[] = {F2FS_FSCK_BIN, "-a", blk_device.c_str()};
-        const char* f2fs_fsck_forced_argv[] = {F2FS_FSCK_BIN, "-f", blk_device.c_str()};
+        const char* f2fs_fsck_argv[] = {F2FS_FSCK_BIN,     "-a", "-c", "10000", "--debug-cache",
+                                        blk_device.c_str()};
+        const char* f2fs_fsck_forced_argv[] = {
+                F2FS_FSCK_BIN, "-f", "-c", "10000", "--debug-cache", blk_device.c_str()};
 
         if (should_force_check(*fs_stat)) {
-            LINFO << "Running " << F2FS_FSCK_BIN << " -f " << realpath(blk_device);
+            LINFO << "Running " << F2FS_FSCK_BIN << " -f -c 10000 --debug-cache"
+                  << realpath(blk_device);
             ret = logwrap_fork_execvp(ARRAY_SIZE(f2fs_fsck_forced_argv), f2fs_fsck_forced_argv,
                                       &status, false, LOG_KLOG | LOG_FILE, false, FSCK_LOG_FILE);
         } else {
-            LINFO << "Running " << F2FS_FSCK_BIN << " -a " << realpath(blk_device);
+            LINFO << "Running " << F2FS_FSCK_BIN << " -a -c 10000 --debug-cache"
+                  << realpath(blk_device);
             ret = logwrap_fork_execvp(ARRAY_SIZE(f2fs_fsck_argv), f2fs_fsck_argv, &status, false,
                                       LOG_KLOG | LOG_FILE, false, FSCK_LOG_FILE);
         }
@@ -268,7 +277,8 @@ static void check_fs(const std::string& blk_device, const std::string& fs_type,
             LERROR << "Failed trying to run " << F2FS_FSCK_BIN;
         }
     }
-
+    android::base::SetProperty("ro.boottime.init.fsck." + Basename(target),
+                               std::to_string(t.duration().count()));
     return;
 }
 
@@ -336,7 +346,7 @@ static bool tune2fs_available(void) {
     return access(TUNE2FS_BIN, X_OK) == 0;
 }
 
-static bool run_tune2fs(const char* argv[], int argc) {
+static bool run_command(const char* argv[], int argc) {
     int ret;
 
     ret = logwrap_fork_execvp(argc, argv, nullptr, false, LOG_KLOG, false, nullptr);
@@ -377,7 +387,7 @@ static void tune_quota(const std::string& blk_device, const FstabEntry& entry,
         argv[2] = "-Q^usrquota,^grpquota,^prjquota";
     }
 
-    if (!run_tune2fs(argv, ARRAY_SIZE(argv))) {
+    if (!run_command(argv, ARRAY_SIZE(argv))) {
         LERROR << "Failed to run " TUNE2FS_BIN " to " << (want_quota ? "enable" : "disable")
                << " quotas on " << blk_device;
         *fs_stat |= FS_STAT_TOGGLE_QUOTAS_FAILED;
@@ -419,7 +429,7 @@ static void tune_reserved_size(const std::string& blk_device, const FstabEntry& 
     const char* argv[] = {
             TUNE2FS_BIN,       "-r", reserved_blocks_str.c_str(), "-g", reserved_gid_str.c_str(),
             blk_device.c_str()};
-    if (!run_tune2fs(argv, ARRAY_SIZE(argv))) {
+    if (!run_command(argv, ARRAY_SIZE(argv))) {
         LERROR << "Failed to run " TUNE2FS_BIN " to set the number of reserved blocks on "
                << blk_device;
         *fs_stat |= FS_STAT_SET_RESERVED_BLOCKS_FAILED;
@@ -463,7 +473,7 @@ static void tune_encrypt(const std::string& blk_device, const FstabEntry& entry,
     const char* argv[] = {TUNE2FS_BIN, flag_arg.c_str(), blk_device.c_str()};
 
     LINFO << "Enabling ext4 flags " << flags << " on " << blk_device;
-    if (!run_tune2fs(argv, ARRAY_SIZE(argv))) {
+    if (!run_command(argv, ARRAY_SIZE(argv))) {
         LERROR << "Failed to run " TUNE2FS_BIN " to enable "
                << "ext4 flags " << flags << " on " << blk_device;
         *fs_stat |= FS_STAT_ENABLE_ENCRYPTION_FAILED;
@@ -500,7 +510,7 @@ static void tune_verity(const std::string& blk_device, const FstabEntry& entry,
     LINFO << "Enabling ext4 verity on " << blk_device;
 
     const char* argv[] = {TUNE2FS_BIN, "-O", "verity", blk_device.c_str()};
-    if (!run_tune2fs(argv, ARRAY_SIZE(argv))) {
+    if (!run_command(argv, ARRAY_SIZE(argv))) {
         LERROR << "Failed to run " TUNE2FS_BIN " to enable "
                << "ext4 verity on " << blk_device;
         *fs_stat |= FS_STAT_ENABLE_VERITY_FAILED;
@@ -510,8 +520,7 @@ static void tune_verity(const std::string& blk_device, const FstabEntry& entry,
 // Enable casefold if needed.
 static void tune_casefold(const std::string& blk_device, const struct ext4_super_block* sb,
                           int* fs_stat) {
-    bool has_casefold =
-            (sb->s_feature_ro_compat & cpu_to_le32(EXT4_FEATURE_INCOMPAT_CASEFOLD)) != 0;
+    bool has_casefold = (sb->s_feature_incompat & cpu_to_le32(EXT4_FEATURE_INCOMPAT_CASEFOLD)) != 0;
     bool wants_casefold = android::base::GetBoolProperty("ro.emulated_storage.casefold", false);
 
     if (!wants_casefold || has_casefold) return;
@@ -536,10 +545,54 @@ static void tune_casefold(const std::string& blk_device, const struct ext4_super
     LINFO << "Enabling ext4 casefold on " << blk_device;
 
     const char* argv[] = {TUNE2FS_BIN, "-O", "casefold", "-E", "encoding=utf8", blk_device.c_str()};
-    if (!run_tune2fs(argv, ARRAY_SIZE(argv))) {
+    if (!run_command(argv, ARRAY_SIZE(argv))) {
         LERROR << "Failed to run " TUNE2FS_BIN " to enable "
                << "ext4 casefold on " << blk_device;
         *fs_stat |= FS_STAT_ENABLE_CASEFOLD_FAILED;
+    }
+}
+
+static bool resize2fs_available(void) {
+    return access(RESIZE2FS_BIN, X_OK) == 0;
+}
+
+// Enable metadata_csum
+static void tune_metadata_csum(const std::string& blk_device, const FstabEntry& entry,
+                               const struct ext4_super_block* sb, int* fs_stat) {
+    bool has_meta_csum =
+            (sb->s_feature_ro_compat & cpu_to_le32(EXT4_FEATURE_RO_COMPAT_METADATA_CSUM)) != 0;
+    bool want_meta_csum = entry.fs_mgr_flags.ext_meta_csum;
+
+    if (has_meta_csum || !want_meta_csum) return;
+
+    if (!tune2fs_available()) {
+        LERROR << "Unable to enable metadata_csum on " << blk_device
+               << " because " TUNE2FS_BIN " is missing";
+        return;
+    }
+    if (!resize2fs_available()) {
+        LERROR << "Unable to enable metadata_csum on " << blk_device
+               << " because " RESIZE2FS_BIN " is missing";
+        return;
+    }
+
+    LINFO << "Enabling ext4 metadata_csum on " << blk_device;
+
+    // requires to give last_fsck_time to current to avoid insane time.
+    // otherwise, tune2fs won't enable metadata_csum.
+    std::string now = std::to_string(time(0));
+    const char* tune2fs_args[] = {TUNE2FS_BIN, "-O",        "metadata_csum,64bit,extent",
+                                  "-T",        now.c_str(), blk_device.c_str()};
+    const char* resize2fs_args[] = {RESIZE2FS_BIN, "-b", blk_device.c_str()};
+
+    if (!run_command(tune2fs_args, ARRAY_SIZE(tune2fs_args))) {
+        LERROR << "Failed to run " TUNE2FS_BIN " to enable "
+               << "ext4 metadata_csum on " << blk_device;
+        *fs_stat |= FS_STAT_ENABLE_METADATA_CSUM_FAILED;
+    } else if (!run_command(resize2fs_args, ARRAY_SIZE(resize2fs_args))) {
+        LERROR << "Failed to run " RESIZE2FS_BIN " to enable "
+               << "ext4 metadata_csum on " << blk_device;
+        *fs_stat |= FS_STAT_ENABLE_METADATA_CSUM_FAILED;
     }
 }
 
@@ -633,7 +686,7 @@ static int prepare_fs_for_mount(const std::string& blk_device, const FstabEntry&
 
     if (is_extfs(entry.fs_type) &&
         (entry.reserved_size != 0 || entry.fs_mgr_flags.file_encryption ||
-         entry.fs_mgr_flags.fs_verity)) {
+         entry.fs_mgr_flags.fs_verity || entry.fs_mgr_flags.ext_meta_csum)) {
         struct ext4_super_block sb;
 
         if (read_ext4_superblock(blk_device, &sb, &fs_stat)) {
@@ -641,6 +694,7 @@ static int prepare_fs_for_mount(const std::string& blk_device, const FstabEntry&
             tune_encrypt(blk_device, entry, &sb, &fs_stat);
             tune_verity(blk_device, entry, &sb, &fs_stat);
             tune_casefold(blk_device, &sb, &fs_stat);
+            tune_metadata_csum(blk_device, entry, &sb, &fs_stat);
         }
     }
 
@@ -1551,6 +1605,61 @@ static bool fs_mgr_unmount_all_data_mounts(const std::string& block_device) {
     }
 }
 
+static bool UnwindDmDeviceStack(const std::string& block_device,
+                                std::vector<std::string>* dm_stack) {
+    if (!StartsWith(block_device, "/dev/block/")) {
+        LWARNING << block_device << " is not a block device";
+        return false;
+    }
+    std::string current = block_device;
+    DeviceMapper& dm = DeviceMapper::Instance();
+    while (true) {
+        dm_stack->push_back(current);
+        if (!dm.IsDmBlockDevice(current)) {
+            break;
+        }
+        auto parent = dm.GetParentBlockDeviceByPath(current);
+        if (!parent) {
+            return false;
+        }
+        current = *parent;
+    }
+    return true;
+}
+
+FstabEntry* fs_mgr_get_mounted_entry_for_userdata(Fstab* fstab, const FstabEntry& mounted_entry) {
+    if (mounted_entry.mount_point != "/data") {
+        LERROR << mounted_entry.mount_point << " is not /data";
+        return nullptr;
+    }
+    std::vector<std::string> dm_stack;
+    if (!UnwindDmDeviceStack(mounted_entry.blk_device, &dm_stack)) {
+        LERROR << "Failed to unwind dm-device stack for " << mounted_entry.blk_device;
+        return nullptr;
+    }
+    for (auto& entry : *fstab) {
+        if (entry.mount_point != "/data") {
+            continue;
+        }
+        std::string block_device;
+        if (entry.fs_mgr_flags.logical) {
+            if (!fs_mgr_update_logical_partition(&entry)) {
+                LERROR << "Failed to update logic partition " << entry.blk_device;
+                continue;
+            }
+            block_device = entry.blk_device;
+        } else if (!Readlink(entry.blk_device, &block_device)) {
+            PWARNING << "Failed to read link " << entry.blk_device;
+            block_device = entry.blk_device;
+        }
+        if (std::find(dm_stack.begin(), dm_stack.end(), block_device) != dm_stack.end()) {
+            return &entry;
+        }
+    }
+    LERROR << "Didn't find entry that was used to mount /data onto " << mounted_entry.blk_device;
+    return nullptr;
+}
+
 // TODO(b/143970043): return different error codes based on which step failed.
 int fs_mgr_remount_userdata_into_checkpointing(Fstab* fstab) {
     Fstab proc_mounts;
@@ -1559,16 +1668,13 @@ int fs_mgr_remount_userdata_into_checkpointing(Fstab* fstab) {
         return -1;
     }
     std::string block_device;
-    if (auto entry = GetEntryForMountPoint(&proc_mounts, "/data"); entry != nullptr) {
-        // Note: we don't care about a userdata wrapper here, since it's safe
-        // to remount on top of the bow device instead, there will be no
-        // conflicts.
-        block_device = entry->blk_device;
-    } else {
+    auto mounted_entry = GetEntryForMountPoint(&proc_mounts, "/data");
+    if (mounted_entry == nullptr) {
         LERROR << "/data is not mounted";
         return -1;
     }
-    auto fstab_entry = GetMountedEntryForUserdata(fstab);
+    block_device = mounted_entry->blk_device;
+    auto fstab_entry = fs_mgr_get_mounted_entry_for_userdata(fstab, *mounted_entry);
     if (fstab_entry == nullptr) {
         LERROR << "Can't find /data in fstab";
         return -1;

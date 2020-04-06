@@ -30,6 +30,7 @@
 
 #include <android-base/file.h>
 #include <android-base/parseint.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <libgsi/libgsi.h>
@@ -176,6 +177,7 @@ void ParseFsMgrFlags(const std::string& flags, FstabEntry* entry) {
         CheckFlag("first_stage_mount", first_stage_mount);
         CheckFlag("slotselect_other", slot_select_other);
         CheckFlag("fsverity", fs_verity);
+        CheckFlag("metadata_csum", ext_meta_csum);
         CheckFlag("wrappedkey", wrapped_key);
 
 #undef CheckFlag
@@ -654,6 +656,21 @@ void TransformFstabForDsu(Fstab* fstab, const std::vector<std::string>& dsu_part
     }
 }
 
+void EnableMandatoryFlags(Fstab* fstab) {
+    // Devices launched in R and after should enable fs_verity on userdata. The flag causes tune2fs
+    // to enable the feature. A better alternative would be to enable on mkfs at the beginning.
+    if (android::base::GetIntProperty("ro.product.first_api_level", 0) >= 30) {
+        std::vector<FstabEntry*> data_entries = GetEntriesForMountPoint(fstab, "/data");
+        for (auto&& entry : data_entries) {
+            // Besides ext4, f2fs is also supported. But the image is already created with verity
+            // turned on when it was first introduced.
+            if (entry->fs_type == "ext4") {
+                entry->fs_mgr_flags.fs_verity = true;
+            }
+        }
+    }
+}
+
 bool ReadFstabFromFile(const std::string& path, Fstab* fstab) {
     auto fstab_file = std::unique_ptr<FILE, decltype(&fclose)>{fopen(path.c_str(), "re"), fclose};
     if (!fstab_file) {
@@ -674,6 +691,7 @@ bool ReadFstabFromFile(const std::string& path, Fstab* fstab) {
     }
 
     SkipMountingPartitions(fstab);
+    EnableMandatoryFlags(fstab);
 
     return true;
 }
@@ -795,89 +813,6 @@ std::vector<FstabEntry*> GetEntriesForMountPoint(Fstab* fstab, const std::string
     }
 
     return entries;
-}
-
-static std::string ResolveBlockDevice(const std::string& block_device) {
-    if (!StartsWith(block_device, "/dev/block/")) {
-        LWARNING << block_device << " is not a block device";
-        return block_device;
-    }
-    std::string name = block_device.substr(5);
-    if (!StartsWith(name, "block/dm-")) {
-        // Not a dm-device, but might be a symlink. Optimistically try to readlink.
-        std::string result;
-        if (Readlink(block_device, &result)) {
-            return result;
-        } else if (errno == EINVAL) {
-            // After all, it wasn't a symlink.
-            return block_device;
-        } else {
-            LERROR << "Failed to readlink " << block_device;
-            return "";
-        }
-    }
-    // It's a dm-device, let's find what's inside!
-    std::string sys_dir = "/sys/" + name;
-    while (true) {
-        std::string slaves_dir = sys_dir + "/slaves";
-        std::unique_ptr<DIR, decltype(&closedir)> dir(opendir(slaves_dir.c_str()), closedir);
-        if (!dir) {
-            LERROR << "Failed to open " << slaves_dir;
-            return "";
-        }
-        std::string sub_device_name = "";
-        for (auto entry = readdir(dir.get()); entry; entry = readdir(dir.get())) {
-            if (entry->d_type != DT_LNK) continue;
-            if (!sub_device_name.empty()) {
-                LERROR << "Too many slaves in " << slaves_dir;
-                return "";
-            }
-            sub_device_name = entry->d_name;
-        }
-        if (sub_device_name.empty()) {
-            LERROR << "No slaves in " << slaves_dir;
-            return "";
-        }
-        if (!StartsWith(sub_device_name, "dm-")) {
-            // Not a dm-device! We can stop now.
-            return "/dev/block/" + sub_device_name;
-        }
-        // Still a dm-device, keep digging.
-        sys_dir = "/sys/block/" + sub_device_name;
-    }
-}
-
-FstabEntry* GetMountedEntryForUserdata(Fstab* fstab) {
-    Fstab mounts;
-    if (!ReadFstabFromFile("/proc/mounts", &mounts)) {
-        LERROR << "Failed to read /proc/mounts";
-        return nullptr;
-    }
-    auto mounted_entry = GetEntryForMountPoint(&mounts, "/data");
-    if (mounted_entry == nullptr) {
-        LWARNING << "/data is not mounted";
-        return nullptr;
-    }
-    std::string resolved_block_device = ResolveBlockDevice(mounted_entry->blk_device);
-    if (resolved_block_device.empty()) {
-        return nullptr;
-    }
-    LINFO << "/data is mounted on " << resolved_block_device;
-    for (auto& entry : *fstab) {
-        if (entry.mount_point != "/data") {
-            continue;
-        }
-        std::string block_device;
-        if (!Readlink(entry.blk_device, &block_device)) {
-            LWARNING << "Failed to readlink " << entry.blk_device;
-            block_device = entry.blk_device;
-        }
-        if (block_device == resolved_block_device) {
-            return &entry;
-        }
-    }
-    LERROR << "Didn't find entry that was used to mount /data";
-    return nullptr;
 }
 
 std::set<std::string> GetBootDevices() {
