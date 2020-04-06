@@ -49,6 +49,7 @@ namespace vold {
 
 using android::fs_mgr::FstabEntry;
 using android::fs_mgr::GetEntryForMountPoint;
+using android::fscrypt::GetFirstApiLevel;
 using android::vold::KeyBuffer;
 using namespace android::dm;
 
