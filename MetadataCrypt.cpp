@@ -58,7 +58,7 @@ using namespace android::dm;
 // Parsed from metadata options
 struct CryptoOptions {
     struct CryptoType cipher = invalid_crypto_type;
-    bool is_legacy = false;
+    bool use_legacy_options_format = false;
     bool set_dun = true;  // Non-legacy driver always sets DUN
     bool use_hw_wrapped_key = false;
 };
@@ -207,7 +207,7 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const std::string&
 
     auto target = std::make_unique<DmTargetDefaultKey>(0, *nr_sec, options.cipher.get_kernel_name(),
                                                        hex_key, blk_device, 0);
-    if (options.is_legacy) target->SetIsLegacy();
+    if (options.use_legacy_options_format) target->SetUseLegacyOptionsFormat();
     if (options.set_dun) target->SetSetDun();
     if (options.use_hw_wrapped_key) target->SetWrappedKeyV0();
 
@@ -283,25 +283,30 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
         return false;
     }
 
-    bool is_legacy;
-    if (!DmTargetDefaultKey::IsLegacy(&is_legacy)) return false;
+    constexpr unsigned int pre_gki_level = 29;
+    unsigned int options_format_version = android::base::GetUintProperty<unsigned int>(
+            "ro.crypto.dm_default_key.options_format.version",
+            (GetFirstApiLevel() <= pre_gki_level ? 1 : 2));
 
     CryptoOptions options;
-    if (is_legacy) {
+    if (options_format_version == 1) {
         if (!data_rec->metadata_encryption.empty()) {
             LOG(ERROR) << "metadata_encryption options cannot be set in legacy mode";
             return false;
         }
         options.cipher = legacy_aes_256_xts;
-        options.is_legacy = true;
+        options.use_legacy_options_format = true;
         options.set_dun = android::base::GetBoolProperty("ro.crypto.set_dun", false);
         if (!options.set_dun && data_rec->fs_mgr_flags.checkpoint_blk) {
             LOG(ERROR)
                     << "Block checkpoints and metadata encryption require ro.crypto.set_dun option";
             return false;
         }
-    } else {
+    } else if (options_format_version == 2) {
         if (!parse_options(data_rec->metadata_encryption, &options)) return false;
+    } else {
+        LOG(ERROR) << "Unknown options_format_version: " << options_format_version;
+        return false;
     }
 
     auto gen = needs_encrypt ? makeGen(options) : neverGen();
