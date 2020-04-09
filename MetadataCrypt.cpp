@@ -87,13 +87,9 @@ const KeyGeneration makeGen(const CryptoOptions& options) {
 }
 
 static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
-    // We're about to mount data not verified by verified boot.  Tell Keymaster that early boot has
-    // ended.
-    //
-    // TODO(paulcrowley): Make a Keymaster singleton or something, so we don't have to repeatedly
-    // open and initialize the service.
-    ::android::vold::Keymaster keymaster;
-    keymaster.earlyBootEnded();
+    // We're about to mount data not verified by verified boot.  Tell Keymaster instances that early
+    // boot has ended.
+    ::android::vold::Keymaster::earlyBootEnded();
 
     // fs_mgr_do_mount runs fsck. Use setexeccon to run trusted
     // partitions in the fsck domain.
