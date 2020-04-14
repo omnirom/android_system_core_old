@@ -85,7 +85,12 @@ status_t Format(const std::string& source) {
         cmd.push_back("-O");
         cmd.push_back("encrypt");
     }
-
+    if (android::base::GetBoolProperty("vold.has_compress", false)) {
+        cmd.push_back("-O");
+        cmd.push_back("compression");
+        cmd.push_back("-O");
+        cmd.push_back("extra_attr");
+    }
     cmd.push_back("-O");
     cmd.push_back("verity");
 
