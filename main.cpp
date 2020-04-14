@@ -41,8 +41,14 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quota,
-                          bool* has_reserved);
+typedef struct vold_configs {
+    bool has_adoptable : 1;
+    bool has_quota : 1;
+    bool has_reserved : 1;
+    bool has_compress : 1;
+} VoldConfigs;
+
+static int process_config(VolumeManager* vm, VoldConfigs* configs);
 static void coldboot(const char* path);
 static void parse_args(int argc, char** argv);
 
@@ -100,11 +106,8 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    bool has_adoptable;
-    bool has_quota;
-    bool has_reserved;
-
-    if (process_config(vm, &has_adoptable, &has_quota, &has_reserved)) {
+    VoldConfigs configs = {};
+    if (process_config(vm, &configs)) {
         PLOG(ERROR) << "Error reading configuration... continuing anyways";
     }
 
@@ -128,9 +131,9 @@ int main(int argc, char** argv) {
 
     // This call should go after listeners are started to avoid
     // a deadlock between vold and init (see b/34278978 for details)
-    android::base::SetProperty("vold.has_adoptable", has_adoptable ? "1" : "0");
-    android::base::SetProperty("vold.has_quota", has_quota ? "1" : "0");
-    android::base::SetProperty("vold.has_reserved", has_reserved ? "1" : "0");
+    android::base::SetProperty("vold.has_quota", configs.has_quota ? "1" : "0");
+    android::base::SetProperty("vold.has_reserved", configs.has_reserved ? "1" : "0");
+    android::base::SetProperty("vold.has_compress", configs.has_compress ? "1" : "0");
 
     // Do coldboot here so it won't block booting,
     // also the cold boot is needed in case we have flash drive
@@ -213,8 +216,7 @@ static void coldboot(const char* path) {
     }
 }
 
-static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quota,
-                          bool* has_reserved) {
+static int process_config(VolumeManager* vm, VoldConfigs* configs) {
     ATRACE_NAME("process_config");
 
     if (!ReadDefaultFstab(&fstab_default)) {
@@ -223,15 +225,19 @@ static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quot
     }
 
     /* Loop through entries looking for ones that vold manages */
-    *has_adoptable = false;
-    *has_quota = false;
-    *has_reserved = false;
+    configs->has_adoptable = false;
+    configs->has_quota = false;
+    configs->has_reserved = false;
+    configs->has_compress = false;
     for (auto& entry : fstab_default) {
         if (entry.fs_mgr_flags.quota) {
-            *has_quota = true;
+            configs->has_quota = true;
         }
         if (entry.reserved_size > 0) {
-            *has_reserved = true;
+            configs->has_reserved = true;
+        }
+        if (entry.fs_mgr_flags.fs_compress) {
+            configs->has_compress = true;
         }
 
         /* Make sure logical partitions have an updated blk_device. */
@@ -251,7 +257,7 @@ static int process_config(VolumeManager* vm, bool* has_adoptable, bool* has_quot
 
             if (entry.is_encryptable()) {
                 flags |= android::vold::Disk::Flags::kAdoptable;
-                *has_adoptable = true;
+                configs->has_adoptable = true;
             }
             if (entry.fs_mgr_flags.no_emulated_sd ||
                 android::base::GetBoolProperty("vold.debug.default_primary", false)) {
