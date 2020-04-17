@@ -90,8 +90,9 @@ status_t Format(const std::string& source) {
     cmd.push_back("verity");
 
     const bool needs_casefold =
-            android::base::GetBoolProperty("ro.emulated_storage.casefold", false);
-    const bool needs_projid = android::base::GetBoolProperty("ro.emulated_storage.projid", false);
+            android::base::GetBoolProperty("external_storage.casefold.enabled", false);
+    const bool needs_projid =
+            android::base::GetBoolProperty("external_storage.projid.enabled", false);
     if (needs_projid) {
         cmd.push_back("-O");
         cmd.push_back("project_quota,extra_attr");
