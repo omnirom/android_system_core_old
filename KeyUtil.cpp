@@ -27,6 +27,7 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <keyutils.h>
 
 #include <fscrypt_uapi.h>
@@ -87,6 +88,7 @@ bool isFsKeyringSupported(void) {
             }
             LOG(DEBUG) << "Detected support for FS_IOC_ADD_ENCRYPTION_KEY";
             supported = true;
+            android::base::SetProperty("ro.crypto.uses_fs_ioc_add_encryption_key", "true");
         }
         // There's no need to check for FS_IOC_REMOVE_ENCRYPTION_KEY, since it's
         // guaranteed to be available if FS_IOC_ADD_ENCRYPTION_KEY is.  There's
