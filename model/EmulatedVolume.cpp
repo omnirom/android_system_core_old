@@ -141,12 +141,49 @@ status_t EmulatedVolume::mountFuseBindMounts() {
     // a special bind mount, since app-private and OBB dirs share the same GID, but we
     // only want to give access to the latter.
     if (mUseSdcardFs) {
-        std::string installerSource(
-                StringPrintf("/mnt/runtime/write/%s/%d/Android/obb", label.c_str(), userId));
-        std::string installerTarget(
-                StringPrintf("/mnt/installer/%d/%s/%d/Android/obb", userId, label.c_str(), userId));
+        std::string obbSource(StringPrintf("/mnt/runtime/write/%s/%d/Android/obb",
+                label.c_str(), userId));
+        std::string obbInstallerTarget(StringPrintf("/mnt/installer/%d/%s/%d/Android/obb",
+                userId, label.c_str(), userId));
 
-        status = doFuseBindMount(installerSource, installerTarget, pathsToUnmount);
+        status = doFuseBindMount(obbSource, obbInstallerTarget, pathsToUnmount);
+        if (status != OK) {
+            return status;
+        }
+    } else if (mAppDataIsolationEnabled) {
+        std::string obbSource(StringPrintf("%s/obb", androidSource.c_str()));
+        std::string obbInstallerTarget(StringPrintf("/mnt/installer/%d/%s/%d/Android/obb",
+                userId, label.c_str(), userId));
+
+        status = doFuseBindMount(obbSource, obbInstallerTarget, pathsToUnmount);
+        if (status != OK) {
+            return status;
+        }
+    }
+
+    // /mnt/androidwriteable is similar to /mnt/installer, but it's for
+    // MOUNT_EXTERNAL_ANDROID_WRITABLE apps and it can also access DATA (Android/data) dirs.
+    if (mAppDataIsolationEnabled) {
+        std::string obbSource = mUseSdcardFs ?
+            StringPrintf("/mnt/runtime/write/%s/%d/Android/obb", label.c_str(), userId)
+            : StringPrintf("%s/obb", androidSource.c_str());
+
+        std::string obbAndroidWritableTarget(
+                StringPrintf("/mnt/androidwritable/%d/%s/%d/Android/obb",
+                userId, label.c_str(), userId));
+
+        status = doFuseBindMount(obbSource, obbAndroidWritableTarget, pathsToUnmount);
+        if (status != OK) {
+            return status;
+        }
+
+        std::string dataSource = mUseSdcardFs ?
+                StringPrintf("/mnt/runtime/write/%s/%d/Android/data", label.c_str(), userId)
+                : StringPrintf("%s/data", androidSource.c_str());
+        std::string dataTarget(StringPrintf("/mnt/androidwritable/%d/%s/%d/Android/data",
+                userId, label.c_str(), userId));
+
+        status = doFuseBindMount(dataSource, dataTarget, pathsToUnmount);
         if (status != OK) {
             return status;
         }
@@ -159,7 +196,7 @@ status_t EmulatedVolume::unmountFuseBindMounts() {
     std::string label = getLabel();
     int userId = getMountUserId();
 
-    if (mUseSdcardFs) {
+    if (mUseSdcardFs || mAppDataIsolationEnabled) {
         std::string installerTarget(
                 StringPrintf("/mnt/installer/%d/%s/%d/Android/obb", userId, label.c_str(), userId));
         LOG(INFO) << "Unmounting " << installerTarget;
@@ -169,6 +206,25 @@ status_t EmulatedVolume::unmountFuseBindMounts() {
             // Intentional continue to try to unmount the other bind mount
         }
     }
+    if (mAppDataIsolationEnabled) {
+        std::string obbTarget( StringPrintf("/mnt/androidwritable/%d/%s/%d/Android/obb",
+                userId, label.c_str(), userId));
+        LOG(INFO) << "Unmounting " << obbTarget;
+        auto status = UnmountTree(obbTarget);
+        if (status != OK) {
+            LOG(ERROR) << "Failed to unmount " << obbTarget;
+            // Intentional continue to try to unmount the other bind mount
+        }
+        std::string dataTarget(StringPrintf("/mnt/androidwritable/%d/%s/%d/Android/data",
+                userId, label.c_str(), userId));
+        LOG(INFO) << "Unmounting " << dataTarget;
+        status = UnmountTree(dataTarget);
+        if (status != OK) {
+            LOG(ERROR) << "Failed to unmount " << dataTarget;
+            // Intentional continue to try to unmount the other bind mount
+        }
+    }
+
     // When app data isolation is enabled, kill all apps that obb/ is mounted, otherwise we should
     // umount the whole Android/ dir.
     if (mAppDataIsolationEnabled) {
