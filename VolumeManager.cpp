@@ -1012,6 +1012,12 @@ int VolumeManager::setupAppDir(const std::string& path, int32_t appUid, bool fix
         return OK;
     }
 
+    if (volume->getType() == VolumeBase::Type::kPublic) {
+        // On public volumes, we don't need to setup permissions, as everything goes through
+        // FUSE; just create the dirs and be done with it.
+        return fs_mkdirs(lowerPath.c_str(), 0700);
+    }
+
     // Create the app paths we need from the root
     return PrepareAppDirFromRoot(lowerPath, volumeRoot, appUid, fixupExistingOnly);
 }
