@@ -131,6 +131,7 @@ int main(int argc, char** argv) {
 
     // This call should go after listeners are started to avoid
     // a deadlock between vold and init (see b/34278978 for details)
+    android::base::SetProperty("vold.has_adoptable", configs.has_adoptable ? "1" : "0");
     android::base::SetProperty("vold.has_quota", configs.has_quota ? "1" : "0");
     android::base::SetProperty("vold.has_reserved", configs.has_reserved ? "1" : "0");
     android::base::SetProperty("vold.has_compress", configs.has_compress ? "1" : "0");
