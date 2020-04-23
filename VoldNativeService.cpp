@@ -41,7 +41,7 @@
 #include "VoldUtil.h"
 #include "VolumeManager.h"
 #include "cryptfs.h"
-#include "incfs_ndk.h"
+#include "incfs.h"
 
 using android::base::StringPrintf;
 using std::endl;
@@ -879,7 +879,7 @@ binder::Status VoldNativeService::resetCheckpoint() {
 binder::Status VoldNativeService::incFsEnabled(bool* _aidl_return) {
     ENFORCE_SYSTEM_OR_ROOT;
 
-    *_aidl_return = IncFs_IsEnabled();
+    *_aidl_return = incfs::enabled();
     return Ok();
 }
 
@@ -890,22 +890,19 @@ binder::Status VoldNativeService::mountIncFs(
     CHECK_ARGUMENT_PATH(backingPath);
     CHECK_ARGUMENT_PATH(targetDir);
 
-    auto control = IncFs_Mount(backingPath.c_str(), targetDir.c_str(),
-                               {.flags = IncFsMountFlags(flags),
-                                .defaultReadTimeoutMs = INCFS_DEFAULT_READ_TIMEOUT_MS,
-                                // Mount with read logs disabled.
-                                .readLogBufferPages = 0});
-    if (control == nullptr) {
-        return translate(-1);
+    auto control = incfs::mount(backingPath, targetDir,
+                                {.flags = IncFsMountFlags(flags),
+                                 .defaultReadTimeoutMs = INCFS_DEFAULT_READ_TIMEOUT_MS,
+                                 // Mount with read logs disabled.
+                                 .readLogBufferPages = 0});
+    if (!control) {
+        return translate(-errno);
     }
-    using unique_fd = ::android::base::unique_fd;
-    _aidl_return->cmd.reset(unique_fd(dup(IncFs_GetControlFd(control, CMD))));
-    _aidl_return->pendingReads.reset(unique_fd(dup(IncFs_GetControlFd(control, PENDING_READS))));
-    auto logsFd = IncFs_GetControlFd(control, LOGS);
-    if (logsFd >= 0) {
-        _aidl_return->log.reset(unique_fd(dup(logsFd)));
-    }
-    IncFs_DeleteControl(control);
+    auto fds = control.releaseFds();
+    using android::base::unique_fd;
+    _aidl_return->cmd.reset(unique_fd(fds[CMD].release()));
+    _aidl_return->pendingReads.reset(unique_fd(fds[PENDING_READS].release()));
+    _aidl_return->log.reset(unique_fd(fds[LOGS].release()));
     return Ok();
 }
 
@@ -913,7 +910,7 @@ binder::Status VoldNativeService::unmountIncFs(const std::string& dir) {
     ENFORCE_SYSTEM_OR_ROOT;
     CHECK_ARGUMENT_PATH(dir);
 
-    return translate(IncFs_Unmount(dir.c_str()));
+    return translate(incfs::unmount(dir));
 }
 
 binder::Status VoldNativeService::setIncFsMountOptions(
@@ -921,19 +918,24 @@ binder::Status VoldNativeService::setIncFsMountOptions(
         bool enableReadLogs) {
     ENFORCE_SYSTEM_OR_ROOT;
 
-    auto status = Ok();
-    auto incfsControl = IncFs_CreateControl(dup(control.cmd.get()), dup(control.pendingReads.get()),
-                                            dup(control.log.get()));
-    if (auto error = IncFs_SetOptions(
+    auto incfsControl =
+            incfs::createControl(control.cmd.get(), control.pendingReads.get(), control.log.get());
+    auto cleanupFunc = [](auto incfsControl) {
+        for (auto& fd : incfsControl->releaseFds()) {
+            (void)fd.release();
+        }
+    };
+    auto cleanup =
+            std::unique_ptr<incfs::Control, decltype(cleanupFunc)>(&incfsControl, cleanupFunc);
+    if (auto error = incfs::setOptions(
                 incfsControl,
                 {.defaultReadTimeoutMs = INCFS_DEFAULT_READ_TIMEOUT_MS,
                  .readLogBufferPages = enableReadLogs ? INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES : 0});
         error < 0) {
-        status = binder::Status::fromServiceSpecificError(error);
+        return binder::Status::fromServiceSpecificError(error);
     }
-    IncFs_DeleteControl(incfsControl);
 
-    return status;
+    return Ok();
 }
 
 binder::Status VoldNativeService::bindMount(const std::string& sourceDir,
@@ -942,7 +944,7 @@ binder::Status VoldNativeService::bindMount(const std::string& sourceDir,
     CHECK_ARGUMENT_PATH(sourceDir);
     CHECK_ARGUMENT_PATH(targetDir);
 
-    return translate(IncFs_BindMount(sourceDir.c_str(), targetDir.c_str()));
+    return translate(incfs::bindMount(sourceDir, targetDir));
 }
 
 }  // namespace vold
