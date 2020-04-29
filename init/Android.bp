@@ -28,7 +28,6 @@ init_common_sources = [
     "rlimit_parser.cpp",
     "service.cpp",
     "service_list.cpp",
-    "service_lock.cpp",
     "service_parser.cpp",
     "service_utils.cpp",
     "subcontext.cpp",
@@ -37,6 +36,7 @@ init_common_sources = [
     "util.cpp",
 ]
 init_device_sources = [
+    "block_dev_initializer.cpp",
     "bootchart.cpp",
     "builtins.cpp",
     "devices.cpp",
@@ -241,6 +241,7 @@ cc_test {
         "firmware_handler_test.cpp",
         "init_test.cpp",
         "keychords_test.cpp",
+        "oneshot_on_test.cpp",
         "persistent_properties_test.cpp",
         "property_service_test.cpp",
         "property_type_test.cpp",
@@ -257,7 +258,7 @@ cc_test {
     test_suites: [
         "cts",
         "device-tests",
-        "vts",
+        "vts10",
     ],
 }
 

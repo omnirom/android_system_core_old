@@ -16,6 +16,11 @@ on early-init
     # Disable sysrq from keyboard
     write /proc/sys/kernel/sysrq 0
 
+    # Android doesn't need kernel module autoloading, and it causes SELinux
+    # denials.  So disable it by setting modprobe to the empty string.  Note: to
+    # explicitly set a sysctl to an empty string, a trailing newline is needed.
+    write /proc/sys/kernel/modprobe \n
+
     # Set the security context of /adb_keys if present.
     restorecon /adb_keys
 
@@ -330,7 +335,7 @@ on init
     chown system system /dev/freezer/frozen/freezer.state
     chown system system /dev/freezer/frozen/cgroup.procs
 
-    chmod 0444 /dev/freezer/frozen/freezer.state
+    chmod 0664 /dev/freezer/frozen/freezer.state
 
     # make the PSI monitor accessible to others
     chown system system /proc/pressure/memory
@@ -744,9 +749,10 @@ on post-fs-data
     mkdir /data/incremental 0771 system system encryption=Require
 
     # Create directories for statsd
-    mkdir /data/misc/stats-data/ 0770 statsd system
-    mkdir /data/misc/stats-service/ 0770 statsd system
     mkdir /data/misc/stats-active-metric/ 0770 statsd system
+    mkdir /data/misc/stats-data/ 0770 statsd system
+    mkdir /data/misc/stats-metadata/ 0770 statsd system
+    mkdir /data/misc/stats-service/ 0770 statsd system
     mkdir /data/misc/train-info/ 0770 statsd system
 
     # Wait for apexd to finish activating APEXes before starting more processes.
@@ -1074,6 +1080,12 @@ on userspace-reboot-fs-remount
   start vold
   exec - system system -- /system/bin/vdc checkpoint resetCheckpoint
   exec - system system -- /system/bin/vdc checkpoint markBootAttempt
+  # Unmount /data_mirror mounts in the reverse order of corresponding mounts.
+  umount /data_mirror/data_ce/null/0
+  umount /data_mirror/data_ce/null
+  umount /data_mirror/data_de/null
+  umount /data_mirror/cur_profiles
+  umount /data_mirror
   remount_userdata
   start bootanim
 

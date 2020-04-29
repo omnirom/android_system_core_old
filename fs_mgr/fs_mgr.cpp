@@ -96,7 +96,7 @@
 
 using android::base::Basename;
 using android::base::GetBoolProperty;
-using android::base::Readlink;
+using android::base::GetUintProperty;
 using android::base::Realpath;
 using android::base::SetProperty;
 using android::base::StartsWith;
@@ -737,15 +737,33 @@ static int __mount(const std::string& source, const std::string& target, const F
     unsigned long mountflags = entry.flags;
     int ret = 0;
     int save_errno = 0;
+    int gc_allowance = 0;
+    std::string opts;
+    bool try_f2fs_gc_allowance = is_f2fs(entry.fs_type) && entry.fs_checkpoint_opts.length() > 0;
+    Timer t;
+
     do {
+        if (save_errno == EINVAL && try_f2fs_gc_allowance) {
+            PINFO << "Kernel does not support checkpoint=disable:[n]%, trying without.";
+            try_f2fs_gc_allowance = false;
+        }
+        if (try_f2fs_gc_allowance) {
+            opts = entry.fs_options + entry.fs_checkpoint_opts + ":" +
+                   std::to_string(gc_allowance) + "%";
+        } else {
+            opts = entry.fs_options;
+        }
         if (save_errno == EAGAIN) {
             PINFO << "Retrying mount (source=" << source << ",target=" << target
-                  << ",type=" << entry.fs_type << ")=" << ret << "(" << save_errno << ")";
+                  << ",type=" << entry.fs_type << ", gc_allowance=" << gc_allowance << "%)=" << ret
+                  << "(" << save_errno << ")";
         }
         ret = mount(source.c_str(), target.c_str(), entry.fs_type.c_str(), mountflags,
-                    entry.fs_options.c_str());
+                    opts.c_str());
         save_errno = errno;
-    } while (ret && save_errno == EAGAIN);
+        if (try_f2fs_gc_allowance) gc_allowance += 10;
+    } while ((ret && save_errno == EAGAIN && gc_allowance <= 100) ||
+             (ret && save_errno == EINVAL && try_f2fs_gc_allowance));
     const char* target_missing = "";
     const char* source_missing = "";
     if (save_errno == ENOENT) {
@@ -761,6 +779,8 @@ static int __mount(const std::string& source, const std::string& target, const F
     if ((ret == 0) && (mountflags & MS_RDONLY) != 0) {
         fs_mgr_set_blk_ro(source);
     }
+    android::base::SetProperty("ro.boottime.init.mount." + Basename(target),
+                               std::to_string(t.duration().count()));
     errno = save_errno;
     return ret;
 }
@@ -1075,7 +1095,7 @@ class CheckpointManager {
     bool UpdateCheckpointPartition(FstabEntry* entry, const std::string& block_device) {
         if (entry->fs_mgr_flags.checkpoint_fs) {
             if (is_f2fs(entry->fs_type)) {
-                entry->fs_options += ",checkpoint=disable";
+                entry->fs_checkpoint_opts = ",checkpoint=disable";
             } else {
                 LERROR << entry->fs_type << " does not implement checkpoints.";
             }
@@ -1562,11 +1582,16 @@ int fs_mgr_umount_all(android::fs_mgr::Fstab* fstab) {
     return ret;
 }
 
-static bool fs_mgr_unmount_all_data_mounts(const std::string& block_device) {
-    LINFO << __FUNCTION__ << "(): about to umount everything on top of " << block_device;
+static std::chrono::milliseconds GetMillisProperty(const std::string& name,
+                                                   std::chrono::milliseconds default_value) {
+    auto value = GetUintProperty(name, static_cast<uint64_t>(default_value.count()));
+    return std::chrono::milliseconds(std::move(value));
+}
+
+static bool fs_mgr_unmount_all_data_mounts(const std::string& data_block_device) {
+    LINFO << __FUNCTION__ << "(): about to umount everything on top of " << data_block_device;
     Timer t;
-    // TODO(b/135984674): should be configured via a read-only property.
-    std::chrono::milliseconds timeout = 5s;
+    auto timeout = GetMillisProperty("init.userspace_reboot.userdata_remount.timeoutmillis", 5s);
     while (true) {
         bool umount_done = true;
         Fstab proc_mounts;
@@ -1576,7 +1601,13 @@ static bool fs_mgr_unmount_all_data_mounts(const std::string& block_device) {
         }
         // Now proceed with other bind mounts on top of /data.
         for (const auto& entry : proc_mounts) {
-            if (entry.blk_device == block_device) {
+            std::string block_device;
+            if (StartsWith(entry.blk_device, "/dev/block") &&
+                !Realpath(entry.blk_device, &block_device)) {
+                PWARNING << __FUNCTION__ << "(): failed to realpath " << entry.blk_device;
+                block_device = entry.blk_device;
+            }
+            if (data_block_device == block_device) {
                 if (umount2(entry.mount_point.c_str(), 0) != 0) {
                     PERROR << __FUNCTION__ << "(): Failed to umount " << entry.mount_point;
                     umount_done = false;
@@ -1588,7 +1619,8 @@ static bool fs_mgr_unmount_all_data_mounts(const std::string& block_device) {
             return true;
         }
         if (t.duration() > timeout) {
-            LERROR << __FUNCTION__ << "(): Timed out unmounting all mounts on " << block_device;
+            LERROR << __FUNCTION__ << "(): Timed out unmounting all mounts on "
+                   << data_block_device;
             Fstab remaining_mounts;
             if (!ReadFstabFromFile("/proc/mounts", &remaining_mounts)) {
                 LERROR << __FUNCTION__ << "(): Can't read /proc/mounts";
@@ -1627,14 +1659,11 @@ static bool UnwindDmDeviceStack(const std::string& block_device,
     return true;
 }
 
-FstabEntry* fs_mgr_get_mounted_entry_for_userdata(Fstab* fstab, const FstabEntry& mounted_entry) {
-    if (mounted_entry.mount_point != "/data") {
-        LERROR << mounted_entry.mount_point << " is not /data";
-        return nullptr;
-    }
+FstabEntry* fs_mgr_get_mounted_entry_for_userdata(Fstab* fstab,
+                                                  const std::string& data_block_device) {
     std::vector<std::string> dm_stack;
-    if (!UnwindDmDeviceStack(mounted_entry.blk_device, &dm_stack)) {
-        LERROR << "Failed to unwind dm-device stack for " << mounted_entry.blk_device;
+    if (!UnwindDmDeviceStack(data_block_device, &dm_stack)) {
+        LERROR << "Failed to unwind dm-device stack for " << data_block_device;
         return nullptr;
     }
     for (auto& entry : *fstab) {
@@ -1648,15 +1677,15 @@ FstabEntry* fs_mgr_get_mounted_entry_for_userdata(Fstab* fstab, const FstabEntry
                 continue;
             }
             block_device = entry.blk_device;
-        } else if (!Readlink(entry.blk_device, &block_device)) {
-            PWARNING << "Failed to read link " << entry.blk_device;
+        } else if (!Realpath(entry.blk_device, &block_device)) {
+            PWARNING << "Failed to realpath " << entry.blk_device;
             block_device = entry.blk_device;
         }
         if (std::find(dm_stack.begin(), dm_stack.end(), block_device) != dm_stack.end()) {
             return &entry;
         }
     }
-    LERROR << "Didn't find entry that was used to mount /data onto " << mounted_entry.blk_device;
+    LERROR << "Didn't find entry that was used to mount /data onto " << data_block_device;
     return nullptr;
 }
 
@@ -1667,14 +1696,17 @@ int fs_mgr_remount_userdata_into_checkpointing(Fstab* fstab) {
         LERROR << "Can't read /proc/mounts";
         return -1;
     }
-    std::string block_device;
     auto mounted_entry = GetEntryForMountPoint(&proc_mounts, "/data");
     if (mounted_entry == nullptr) {
         LERROR << "/data is not mounted";
         return -1;
     }
-    block_device = mounted_entry->blk_device;
-    auto fstab_entry = fs_mgr_get_mounted_entry_for_userdata(fstab, *mounted_entry);
+    std::string block_device;
+    if (!Realpath(mounted_entry->blk_device, &block_device)) {
+        PERROR << "Failed to realpath " << mounted_entry->blk_device;
+        return -1;
+    }
+    auto fstab_entry = fs_mgr_get_mounted_entry_for_userdata(fstab, block_device);
     if (fstab_entry == nullptr) {
         LERROR << "Can't find /data in fstab";
         return -1;

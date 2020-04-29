@@ -142,8 +142,6 @@ cc_library {
         "load_file.cpp",
         "native_handle.cpp",
         "record_stream.cpp",
-        "strdup16to8.cpp",
-        "strdup8to16.cpp",
         "strlcpy.c",
         "threads.cpp",
     ],
@@ -329,7 +327,7 @@ cc_test {
 
 cc_test {
     name: "KernelLibcutilsTest",
-    test_suites: ["general-tests", "vts-core"],
+    test_suites: ["general-tests", "vts"],
     defaults: ["libcutils_test_static_defaults"],
     test_config: "KernelLibcutilsTest.xml",
 }

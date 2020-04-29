@@ -29,7 +29,6 @@
 #define POS_NUM_ELEMENTS 1
 #define POS_TIMESTAMP (POS_NUM_ELEMENTS + sizeof(uint8_t))
 #define POS_ATOM_ID (POS_TIMESTAMP + sizeof(uint8_t) + sizeof(uint64_t))
-#define POS_FIRST_FIELD (POS_ATOM_ID + sizeof(uint8_t) + sizeof(uint32_t))
 
 /* LIMITS */
 #define MAX_ANNOTATION_COUNT 15
@@ -48,6 +47,7 @@
 #define ERROR_TOO_MANY_FIELDS 0x200
 #define ERROR_INVALID_VALUE_TYPE 0x400
 #define ERROR_STRING_NOT_NULL_TERMINATED 0x800
+#define ERROR_ATOM_ID_INVALID_POSITION 0x2000
 
 /* TYPE IDS */
 #define INT32_TYPE 0x00
@@ -66,8 +66,11 @@
 // within a buf. Also includes other required fields.
 struct AStatsEvent {
     uint8_t* buf;
-    size_t lastFieldPos;  // location of last field within the buf
-    size_t size;          // number of valid bytes within buffer
+    // Location of last field within the buf. Here, field denotes either a
+    // metadata field (e.g. timestamp) or an atom field.
+    size_t lastFieldPos;
+    // Number of valid bytes within the buffer.
+    size_t size;
     uint32_t numElements;
     uint32_t atomId;
     uint32_t errors;
@@ -85,20 +88,16 @@ static int64_t get_elapsed_realtime_ns() {
 AStatsEvent* AStatsEvent_obtain() {
     AStatsEvent* event = malloc(sizeof(AStatsEvent));
     event->buf = (uint8_t*)calloc(MAX_EVENT_PAYLOAD, 1);
-    event->buf[0] = OBJECT_TYPE;
+    event->lastFieldPos = 0;
+    event->size = 2;  // reserve first two bytes for outer event type and number of elements
+    event->numElements = 0;
     event->atomId = 0;
     event->errors = 0;
     event->truncate = true;  // truncate for both pulled and pushed atoms
     event->built = false;
 
-    // place the timestamp
-    uint64_t timestampNs = get_elapsed_realtime_ns();
-    event->buf[POS_TIMESTAMP] = INT64_TYPE;
-    memcpy(&event->buf[POS_TIMESTAMP + sizeof(uint8_t)], &timestampNs, sizeof(timestampNs));
-
-    event->numElements = 1;
-    event->lastFieldPos = 0;  // 0 since we haven't written a field yet
-    event->size = POS_FIRST_FIELD;
+    event->buf[0] = OBJECT_TYPE;
+    AStatsEvent_writeInt64(event, get_elapsed_realtime_ns());  // write the timestamp
 
     return event;
 }
@@ -109,10 +108,14 @@ void AStatsEvent_release(AStatsEvent* event) {
 }
 
 void AStatsEvent_setAtomId(AStatsEvent* event, uint32_t atomId) {
+    if (event->atomId != 0) return;
+    if (event->numElements != 1) {
+        event->errors |= ERROR_ATOM_ID_INVALID_POSITION;
+        return;
+    }
+
     event->atomId = atomId;
-    event->buf[POS_ATOM_ID] = INT32_TYPE;
-    memcpy(&event->buf[POS_ATOM_ID + sizeof(uint8_t)], &atomId, sizeof(atomId));
-    event->numElements++;
+    AStatsEvent_writeInt32(event, atomId);
 }
 
 // Overwrites the timestamp populated in AStatsEvent_obtain with a custom
@@ -192,36 +195,26 @@ static void start_field(AStatsEvent* event, uint8_t typeId) {
 }
 
 void AStatsEvent_writeInt32(AStatsEvent* event, int32_t value) {
-    if (event->errors) return;
-
     start_field(event, INT32_TYPE);
     append_int32(event, value);
 }
 
 void AStatsEvent_writeInt64(AStatsEvent* event, int64_t value) {
-    if (event->errors) return;
-
     start_field(event, INT64_TYPE);
     append_int64(event, value);
 }
 
 void AStatsEvent_writeFloat(AStatsEvent* event, float value) {
-    if (event->errors) return;
-
     start_field(event, FLOAT_TYPE);
     append_float(event, value);
 }
 
 void AStatsEvent_writeBool(AStatsEvent* event, bool value) {
-    if (event->errors) return;
-
     start_field(event, BOOL_TYPE);
     append_bool(event, value);
 }
 
 void AStatsEvent_writeByteArray(AStatsEvent* event, const uint8_t* buf, size_t numBytes) {
-    if (event->errors) return;
-
     start_field(event, BYTE_ARRAY_TYPE);
     append_int32(event, numBytes);
     append_byte_array(event, buf, numBytes);
@@ -229,8 +222,6 @@ void AStatsEvent_writeByteArray(AStatsEvent* event, const uint8_t* buf, size_t n
 
 // Value is assumed to be encoded using UTF8
 void AStatsEvent_writeString(AStatsEvent* event, const char* value) {
-    if (event->errors) return;
-
     start_field(event, STRING_TYPE);
     append_string(event, value);
 }
@@ -238,8 +229,10 @@ void AStatsEvent_writeString(AStatsEvent* event, const char* value) {
 // Tags are assumed to be encoded using UTF8
 void AStatsEvent_writeAttributionChain(AStatsEvent* event, const uint32_t* uids,
                                        const char* const* tags, uint8_t numNodes) {
-    if (numNodes > MAX_BYTE_VALUE) event->errors |= ERROR_ATTRIBUTION_CHAIN_TOO_LONG;
-    if (event->errors) return;
+    if (numNodes > MAX_BYTE_VALUE) {
+        event->errors |= ERROR_ATTRIBUTION_CHAIN_TOO_LONG;
+        return;
+    }
 
     start_field(event, ATTRIBUTION_CHAIN_TYPE);
     append_byte(event, numNodes);
@@ -265,9 +258,13 @@ static void increment_annotation_count(AStatsEvent* event) {
 }
 
 void AStatsEvent_addBoolAnnotation(AStatsEvent* event, uint8_t annotationId, bool value) {
-    if (event->lastFieldPos == 0) event->errors |= ERROR_ANNOTATION_DOES_NOT_FOLLOW_FIELD;
-    if (annotationId > MAX_BYTE_VALUE) event->errors |= ERROR_ANNOTATION_ID_TOO_LARGE;
-    if (event->errors) return;
+    if (event->numElements < 2) {
+        event->errors |= ERROR_ANNOTATION_DOES_NOT_FOLLOW_FIELD;
+        return;
+    } else if (annotationId > MAX_BYTE_VALUE) {
+        event->errors |= ERROR_ANNOTATION_ID_TOO_LARGE;
+        return;
+    }
 
     append_byte(event, annotationId);
     append_byte(event, BOOL_TYPE);
@@ -276,9 +273,13 @@ void AStatsEvent_addBoolAnnotation(AStatsEvent* event, uint8_t annotationId, boo
 }
 
 void AStatsEvent_addInt32Annotation(AStatsEvent* event, uint8_t annotationId, int32_t value) {
-    if (event->lastFieldPos == 0) event->errors |= ERROR_ANNOTATION_DOES_NOT_FOLLOW_FIELD;
-    if (annotationId > MAX_BYTE_VALUE) event->errors |= ERROR_ANNOTATION_ID_TOO_LARGE;
-    if (event->errors) return;
+    if (event->numElements < 2) {
+        event->errors |= ERROR_ANNOTATION_DOES_NOT_FOLLOW_FIELD;
+        return;
+    } else if (annotationId > MAX_BYTE_VALUE) {
+        event->errors |= ERROR_ANNOTATION_ID_TOO_LARGE;
+        return;
+    }
 
     append_byte(event, annotationId);
     append_byte(event, INT32_TYPE);
@@ -306,22 +307,22 @@ void AStatsEvent_truncateBuffer(AStatsEvent* event, bool truncate) {
 void AStatsEvent_build(AStatsEvent* event) {
     if (event->built) return;
 
-    if (event->atomId == 0) event->errors |= ERROR_NO_ATOM_ID;
-
-    if (event->numElements > MAX_BYTE_VALUE) {
-        event->errors |= ERROR_TOO_MANY_FIELDS;
-    } else {
-        event->buf[POS_NUM_ELEMENTS] = event->numElements;
-    }
+    if (event->numElements > MAX_BYTE_VALUE) event->errors |= ERROR_TOO_MANY_FIELDS;
 
     // If there are errors, rewrite buffer.
     if (event->errors) {
-        event->buf[POS_NUM_ELEMENTS] = 3;
-        event->buf[POS_FIRST_FIELD] = ERROR_TYPE;
-        memcpy(&event->buf[POS_FIRST_FIELD + sizeof(uint8_t)], &event->errors,
-               sizeof(event->errors));
-        event->size = POS_FIRST_FIELD + sizeof(uint8_t) + sizeof(uint32_t);
+        // Discard everything after the atom id (including atom-level
+        // annotations). This leaves only two elements (timestamp and atom id).
+        event->numElements = 2;
+        // Reset number of atom-level annotations to 0.
+        event->buf[POS_ATOM_ID] = INT32_TYPE;
+        // Now, write errors to the buffer immediately after the atom id.
+        event->size = POS_ATOM_ID + sizeof(uint8_t) + sizeof(uint32_t);
+        start_field(event, ERROR_TYPE);
+        append_int32(event, event->errors);
     }
+
+    event->buf[POS_NUM_ELEMENTS] = event->numElements;
 
     // Truncate the buffer to the appropriate length in order to limit our
     // memory usage.

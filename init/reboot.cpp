@@ -61,6 +61,7 @@
 #include "builtin_arguments.h"
 #include "init.h"
 #include "mount_namespace.h"
+#include "property_service.h"
 #include "reboot_utils.h"
 #include "service.h"
 #include "service_list.h"
@@ -73,6 +74,7 @@ using namespace std::literals;
 
 using android::base::boot_clock;
 using android::base::GetBoolProperty;
+using android::base::GetUintProperty;
 using android::base::SetProperty;
 using android::base::Split;
 using android::base::Timer;
@@ -87,7 +89,7 @@ static bool shutting_down = false;
 
 static const std::set<std::string> kDebuggingServices{"tombstoned", "logd", "adbd", "console"};
 
-static std::vector<Service*> GetDebuggingServices(bool only_post_data) REQUIRES(service_lock) {
+static std::vector<Service*> GetDebuggingServices(bool only_post_data) {
     std::vector<Service*> ret;
     ret.reserve(kDebuggingServices.size());
     for (const auto& s : ServiceList::GetInstance()) {
@@ -102,7 +104,15 @@ static void PersistRebootReason(const char* reason, bool write_to_property) {
     if (write_to_property) {
         SetProperty(LAST_REBOOT_REASON_PROPERTY, reason);
     }
-    WriteStringToFile(reason, LAST_REBOOT_REASON_FILE);
+    auto fd = unique_fd(TEMP_FAILURE_RETRY(open(
+            LAST_REBOOT_REASON_FILE, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_BINARY, 0666)));
+    if (!fd.ok()) {
+        PLOG(ERROR) << "Could not open '" << LAST_REBOOT_REASON_FILE
+                    << "' to persist reboot reason";
+        return;
+    }
+    WriteStringToFd(reason, fd);
+    fsync(fd.get());
 }
 
 // represents umount status during reboot / shutdown.
@@ -183,7 +193,7 @@ class MountEntry {
 };
 
 // Turn off backlight while we are performing power down cleanup activities.
-static void TurnOffBacklight() REQUIRES(service_lock) {
+static void TurnOffBacklight() {
     Service* service = ServiceList::GetInstance().FindService("blank_screen");
     if (service == nullptr) {
         LOG(WARNING) << "cannot find blank_screen in TurnOffBacklight";
@@ -317,9 +327,9 @@ void RebootMonitorThread(unsigned int cmd, const std::string& reboot_target,
                          bool* reboot_monitor_run) {
     unsigned int remaining_shutdown_time = 0;
 
-    // 30 seconds more than the timeout passed to the thread as there is a final Umount pass
+    // 300 seconds more than the timeout passed to the thread as there is a final Umount pass
     // after the timeout is reached.
-    constexpr unsigned int shutdown_watchdog_timeout_default = 30;
+    constexpr unsigned int shutdown_watchdog_timeout_default = 300;
     auto shutdown_watchdog_timeout = android::base::GetUintProperty(
             "ro.build.shutdown.watchdog.timeout", shutdown_watchdog_timeout_default);
     remaining_shutdown_time = shutdown_watchdog_timeout + shutdown_timeout.count() / 1000;
@@ -545,26 +555,6 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     Timer t;
     LOG(INFO) << "Reboot start, reason: " << reason << ", reboot_target: " << reboot_target;
 
-    // Ensure last reboot reason is reduced to canonical
-    // alias reported in bootloader or system boot reason.
-    size_t skip = 0;
-    std::vector<std::string> reasons = Split(reason, ",");
-    if (reasons.size() >= 2 && reasons[0] == "reboot" &&
-        (reasons[1] == "recovery" || reasons[1] == "bootloader" || reasons[1] == "cold" ||
-         reasons[1] == "hard" || reasons[1] == "warm")) {
-        skip = strlen("reboot,");
-    }
-    PersistRebootReason(reason.c_str() + skip, true);
-    sync();
-
-    // If /data isn't mounted then we can skip the extra reboot steps below, since we don't need to
-    // worry about unmounting it.
-    if (!IsDataMounted()) {
-        sync();
-        RebootSystem(cmd, reboot_target);
-        abort();
-    }
-
     bool is_thermal_shutdown = cmd == ANDROID_RB_THERMOFF;
 
     auto shutdown_timeout = 0ms;
@@ -597,7 +587,25 @@ static void DoReboot(unsigned int cmd, const std::string& reason, const std::str
     // Start reboot monitor thread
     sem_post(&reboot_semaphore);
 
-    auto lock = std::lock_guard{service_lock};
+    // Ensure last reboot reason is reduced to canonical
+    // alias reported in bootloader or system boot reason.
+    size_t skip = 0;
+    std::vector<std::string> reasons = Split(reason, ",");
+    if (reasons.size() >= 2 && reasons[0] == "reboot" &&
+        (reasons[1] == "recovery" || reasons[1] == "bootloader" || reasons[1] == "cold" ||
+         reasons[1] == "hard" || reasons[1] == "warm")) {
+        skip = strlen("reboot,");
+    }
+    PersistRebootReason(reason.c_str() + skip, true);
+
+    // If /data isn't mounted then we can skip the extra reboot steps below, since we don't need to
+    // worry about unmounting it.
+    if (!IsDataMounted()) {
+        sync();
+        RebootSystem(cmd, reboot_target);
+        abort();
+    }
+
     // watchdogd is a vendor specific component but should be alive to complete shutdown safely.
     const std::set<std::string> to_starts{"watchdogd"};
     std::vector<Service*> stop_first;
@@ -717,21 +725,15 @@ static void EnterShutdown() {
     // Skip wait for prop if it is in progress
     ResetWaitForProp();
     // Clear EXEC flag if there is one pending
-    auto lock = std::lock_guard{service_lock};
     for (const auto& s : ServiceList::GetInstance()) {
         s->UnSetExec();
     }
-    // We no longer process messages about properties changing coming from property service, so we
-    // need to tell property service to stop sending us these messages, otherwise it'll fill the
-    // buffers and block indefinitely, causing future property sets, including those that init makes
-    // during shutdown in Service::NotifyStateChange() to also block indefinitely.
-    SendStopSendingMessagesMessage();
 }
 
 static void LeaveShutdown() {
     LOG(INFO) << "Leaving shutdown mode";
     shutting_down = false;
-    SendStartSendingMessagesMessage();
+    StartSendingMessages();
 }
 
 static Result<void> UnmountAllApexes() {
@@ -744,6 +746,12 @@ static Result<void> UnmountAllApexes() {
         return {};
     }
     return Error() << "'/system/bin/apexd --unmount-all' failed : " << status;
+}
+
+static std::chrono::milliseconds GetMillisProperty(const std::string& name,
+                                                   std::chrono::milliseconds default_value) {
+    auto value = GetUintProperty(name, static_cast<uint64_t>(default_value.count()));
+    return std::chrono::milliseconds(std::move(value));
 }
 
 static Result<void> DoUserspaceReboot() {
@@ -761,7 +769,6 @@ static Result<void> DoUserspaceReboot() {
         return Error() << "Failed to set sys.init.userspace_reboot.in_progress property";
     }
     EnterShutdown();
-    auto lock = std::lock_guard{service_lock};
     if (!SetProperty("sys.powerctl", "")) {
         return Error() << "Failed to reset sys.powerctl property";
     }
@@ -784,10 +791,13 @@ static Result<void> DoUserspaceReboot() {
         sync();
         LOG(INFO) << "sync() took " << sync_timer;
     }
-    // TODO(b/135984674): do we need shutdown animation for userspace reboot?
-    // TODO(b/135984674): control userspace timeout via read-only property?
-    StopServicesAndLogViolations(stop_first, 10s, true /* SIGTERM */);
-    if (int r = StopServicesAndLogViolations(stop_first, 20s, false /* SIGKILL */); r > 0) {
+    auto sigterm_timeout = GetMillisProperty("init.userspace_reboot.sigterm.timeoutmillis", 5s);
+    auto sigkill_timeout = GetMillisProperty("init.userspace_reboot.sigkill.timeoutmillis", 10s);
+    LOG(INFO) << "Timeout to terminate services : " << sigterm_timeout.count() << "ms"
+              << "Timeout to kill services: " << sigkill_timeout.count() << "ms";
+    StopServicesAndLogViolations(stop_first, sigterm_timeout, true /* SIGTERM */);
+    if (int r = StopServicesAndLogViolations(stop_first, sigkill_timeout, false /* SIGKILL */);
+        r > 0) {
         // TODO(b/135984674): store information about offending services for debugging.
         return Error() << r << " post-data services are still running";
     }
@@ -797,8 +807,8 @@ static Result<void> DoUserspaceReboot() {
     if (auto result = CallVdc("volume", "reset"); !result.ok()) {
         return result;
     }
-    if (int r = StopServicesAndLogViolations(GetDebuggingServices(true /* only_post_data */), 5s,
-                                             false /* SIGKILL */);
+    if (int r = StopServicesAndLogViolations(GetDebuggingServices(true /* only_post_data */),
+                                             sigkill_timeout, false /* SIGKILL */);
         r > 0) {
         // TODO(b/135984674): store information about offending services for debugging.
         return Error() << r << " debugging services are still running";
@@ -842,8 +852,8 @@ static void UserspaceRebootWatchdogThread() {
         return;
     }
     LOG(INFO) << "Starting userspace reboot watchdog";
-    // TODO(b/135984674): this should be configured via a read-only sysprop.
-    std::chrono::milliseconds timeout = 60s;
+    auto timeout = GetMillisProperty("init.userspace_reboot.watchdog.timeoutmillis", 5min);
+    LOG(INFO) << "UserspaceRebootWatchdog timeout: " << timeout.count() << "ms";
     if (!WaitForProperty("sys.boot_completed", "1", timeout)) {
         LOG(ERROR) << "Failed to boot in " << timeout.count() << "ms. Switching to full reboot";
         // In this case device is in a boot loop. Only way to recover is to do dirty reboot.
@@ -922,7 +932,6 @@ void HandlePowerctlMessage(const std::string& command) {
                 run_fsck = true;
             } else if (cmd_params[1] == "thermal") {
                 // Turn off sources of heat immediately.
-                auto lock = std::lock_guard{service_lock};
                 TurnOffBacklight();
                 // run_fsck is false to avoid delay
                 cmd = ANDROID_RB_THERMOFF;
@@ -992,6 +1001,10 @@ void HandlePowerctlMessage(const std::string& command) {
         LOG(ERROR) << "powerctl: unrecognized command '" << command << "'";
         return;
     }
+
+    // We do not want to process any messages (queue'ing triggers, shutdown messages, control
+    // messages, etc) from properties during reboot.
+    StopSendingMessages();
 
     if (userspace_reboot) {
         HandleUserspaceReboot();

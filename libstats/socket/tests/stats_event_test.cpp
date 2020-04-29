@@ -32,6 +32,7 @@
 #define ERROR_TOO_MANY_FIELDS 0x200
 #define ERROR_INVALID_VALUE_TYPE 0x400
 #define ERROR_STRING_NOT_NULL_TERMINATED 0x800
+#define ERROR_ATOM_ID_INVALID_POSITION 0x2000
 
 /* TYPE IDS */
 #define INT32_TYPE 0x00
@@ -89,7 +90,7 @@ void checkAnnotation(uint8_t** buffer, uint8_t annotationId, uint8_t typeId, T a
 }
 
 void checkMetadata(uint8_t** buffer, uint8_t numElements, int64_t startTime, int64_t endTime,
-                   uint32_t atomId) {
+                   uint32_t atomId, uint8_t numAtomLevelAnnotations = 0) {
     // All events start with OBJECT_TYPE id.
     checkTypeHeader(buffer, OBJECT_TYPE);
 
@@ -104,7 +105,7 @@ void checkMetadata(uint8_t** buffer, uint8_t numElements, int64_t startTime, int
     EXPECT_LE(timestamp, endTime);
 
     // Check atom id
-    checkTypeHeader(buffer, INT32_TYPE);
+    checkTypeHeader(buffer, INT32_TYPE, numAtomLevelAnnotations);
     checkScalar(buffer, atomId);
 }
 
@@ -240,7 +241,7 @@ TEST(StatsEventTest, TestAttributionChains) {
     AStatsEvent_release(event);
 }
 
-TEST(StatsEventTest, TestAnnotations) {
+TEST(StatsEventTest, TestFieldAnnotations) {
     uint32_t atomId = 100;
 
     // first element information
@@ -259,7 +260,7 @@ TEST(StatsEventTest, TestAnnotations) {
 
     int64_t startTime = android::elapsedRealtimeNano();
     AStatsEvent* event = AStatsEvent_obtain();
-    AStatsEvent_setAtomId(event, 100);
+    AStatsEvent_setAtomId(event, atomId);
     AStatsEvent_writeBool(event, boolValue);
     AStatsEvent_addBoolAnnotation(event, boolAnnotation1Id, boolAnnotation1Value);
     AStatsEvent_addInt32Annotation(event, boolAnnotation2Id, boolAnnotation2Value);
@@ -292,6 +293,45 @@ TEST(StatsEventTest, TestAnnotations) {
     AStatsEvent_release(event);
 }
 
+TEST(StatsEventTest, TestAtomLevelAnnotations) {
+    uint32_t atomId = 100;
+    // atom-level annotation information
+    uint8_t boolAnnotationId = 1;
+    uint8_t int32AnnotationId = 2;
+    bool boolAnnotationValue = false;
+    int32_t int32AnnotationValue = 5;
+
+    float fieldValue = -3.5;
+
+    int64_t startTime = android::elapsedRealtimeNano();
+    AStatsEvent* event = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(event, atomId);
+    AStatsEvent_addBoolAnnotation(event, boolAnnotationId, boolAnnotationValue);
+    AStatsEvent_addInt32Annotation(event, int32AnnotationId, int32AnnotationValue);
+    AStatsEvent_writeFloat(event, fieldValue);
+    AStatsEvent_build(event);
+    int64_t endTime = android::elapsedRealtimeNano();
+
+    size_t bufferSize;
+    uint8_t* buffer = AStatsEvent_getBuffer(event, &bufferSize);
+    uint8_t* bufferEnd = buffer + bufferSize;
+
+    checkMetadata(&buffer, /*numElements=*/1, startTime, endTime, atomId,
+                  /*numAtomLevelAnnotations=*/2);
+
+    // check atom-level annotations
+    checkAnnotation(&buffer, boolAnnotationId, BOOL_TYPE, boolAnnotationValue);
+    checkAnnotation(&buffer, int32AnnotationId, INT32_TYPE, int32AnnotationValue);
+
+    // check first element
+    checkTypeHeader(&buffer, FLOAT_TYPE);
+    checkScalar(&buffer, fieldValue);
+
+    EXPECT_EQ(buffer, bufferEnd);  // ensure that we have read the entire buffer
+    EXPECT_EQ(AStatsEvent_getErrors(event), 0);
+    AStatsEvent_release(event);
+}
+
 TEST(StatsEventTest, TestNoAtomIdError) {
     AStatsEvent* event = AStatsEvent_obtain();
     // Don't set the atom id in order to trigger the error.
@@ -315,6 +355,19 @@ TEST(StatsEventTest, TestOverflowError) {
 
     uint32_t errors = AStatsEvent_getErrors(event);
     EXPECT_NE(errors | ERROR_OVERFLOW, 0);
+
+    AStatsEvent_release(event);
+}
+
+TEST(StatsEventTest, TestAtomIdInvalidPositionError) {
+    AStatsEvent* event = AStatsEvent_obtain();
+    AStatsEvent_writeInt32(event, 0);
+    AStatsEvent_setAtomId(event, 100);
+    AStatsEvent_writeBool(event, true);
+    AStatsEvent_build(event);
+
+    uint32_t errors = AStatsEvent_getErrors(event);
+    EXPECT_NE(errors | ERROR_ATOM_ID_INVALID_POSITION, 0);
 
     AStatsEvent_release(event);
 }

@@ -22,6 +22,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/eventfd.h>
 #include <sys/mount.h>
 #include <sys/signalfd.h>
 #include <sys/types.h>
@@ -86,6 +87,7 @@ using namespace std::chrono_literals;
 using namespace std::string_literals;
 
 using android::base::boot_clock;
+using android::base::ConsumePrefix;
 using android::base::GetProperty;
 using android::base::ReadFileToString;
 using android::base::SetProperty;
@@ -114,35 +116,40 @@ static int property_fd = -1;
 
 static std::unique_ptr<Subcontext> subcontext;
 
+struct PendingControlMessage {
+    std::string message;
+    std::string name;
+    pid_t pid;
+    int fd;
+};
+static std::mutex pending_control_messages_lock;
+static std::queue<PendingControlMessage> pending_control_messages;
+
 // Init epolls various FDs to wait for various inputs.  It previously waited on property changes
 // with a blocking socket that contained the information related to the change, however, it was easy
 // to fill that socket and deadlock the system.  Now we use locks to handle the property changes
 // directly in the property thread, however we still must wake the epoll to inform init that there
 // is a change to process, so we use this FD.  It is non-blocking, since we do not care how many
-// times WakeEpoll() is called, only that the epoll will wake.
-static int wake_epoll_fd = -1;
+// times WakeMainInitThread() is called, only that the epoll will wake.
+static int wake_main_thread_fd = -1;
 static void InstallInitNotifier(Epoll* epoll) {
-    int sockets[2];
-    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0, sockets) != 0) {
-        PLOG(FATAL) << "Failed to socketpair() between property_service and init";
+    wake_main_thread_fd = eventfd(0, EFD_CLOEXEC);
+    if (wake_main_thread_fd == -1) {
+        PLOG(FATAL) << "Failed to create eventfd for waking init";
     }
-    int epoll_fd = sockets[0];
-    wake_epoll_fd = sockets[1];
-
-    auto drain_socket = [epoll_fd] {
-        char buf[512];
-        while (read(epoll_fd, buf, sizeof(buf)) > 0) {
-        }
+    auto clear_eventfd = [] {
+        uint64_t counter;
+        TEMP_FAILURE_RETRY(read(wake_main_thread_fd, &counter, sizeof(counter)));
     };
 
-    if (auto result = epoll->RegisterHandler(epoll_fd, drain_socket); !result) {
+    if (auto result = epoll->RegisterHandler(wake_main_thread_fd, clear_eventfd); !result.ok()) {
         LOG(FATAL) << result.error();
     }
 }
 
-static void WakeEpoll() {
-    constexpr char value[] = "1";
-    write(wake_epoll_fd, value, sizeof(value));
+static void WakeMainInitThread() {
+    uint64_t counter = 1;
+    TEMP_FAILURE_RETRY(write(wake_main_thread_fd, &counter, sizeof(counter)));
 }
 
 static class PropWaiterState {
@@ -186,7 +193,7 @@ static class PropWaiterState {
                 LOG(INFO) << "Wait for property '" << wait_prop_name_ << "=" << wait_prop_value_
                           << "' took " << *waiting_for_prop_;
                 ResetWaitForPropLocked();
-                WakeEpoll();
+                WakeMainInitThread();
             }
         }
     }
@@ -234,7 +241,7 @@ static class ShutdownState {
         auto lock = std::lock_guard{shutdown_command_lock_};
         shutdown_command_ = command;
         do_shutdown_ = true;
-        WakeEpoll();
+        WakeMainInitThread();
     }
 
     std::optional<std::string> CheckShutdown() {
@@ -253,7 +260,6 @@ static class ShutdownState {
 } shutdown_state;
 
 void DumpState() {
-    auto lock = std::lock_guard{service_lock};
     ServiceList::GetInstance().DumpState();
     ActionManager::GetInstance().DumpState();
 }
@@ -319,7 +325,7 @@ void PropertyChanged(const std::string& name, const std::string& value) {
 
     if (property_triggers_enabled) {
         ActionManager::GetInstance().QueuePropertyChange(name, value);
-        WakeEpoll();
+        WakeMainInitThread();
     }
 
     prop_waiter_state.CheckAndResetWait(name, value);
@@ -327,7 +333,6 @@ void PropertyChanged(const std::string& name, const std::string& value) {
 
 static std::optional<boot_clock::time_point> HandleProcessActions() {
     std::optional<boot_clock::time_point> next_process_action_time;
-    auto lock = std::lock_guard{service_lock};
     for (const auto& s : ServiceList::GetInstance()) {
         if ((s->flags() & SVC_RUNNING) && s->timeout_period()) {
             auto timeout_time = s->time_started() + *s->timeout_period();
@@ -356,7 +361,7 @@ static std::optional<boot_clock::time_point> HandleProcessActions() {
     return next_process_action_time;
 }
 
-static Result<void> DoControlStart(Service* service) REQUIRES(service_lock) {
+static Result<void> DoControlStart(Service* service) {
     return service->Start();
 }
 
@@ -365,7 +370,7 @@ static Result<void> DoControlStop(Service* service) {
     return {};
 }
 
-static Result<void> DoControlRestart(Service* service) REQUIRES(service_lock) {
+static Result<void> DoControlRestart(Service* service) {
     service->Restart();
     return {};
 }
@@ -375,39 +380,26 @@ enum class ControlTarget {
     INTERFACE,  // action gets called for every service that holds this interface
 };
 
-struct ControlMessageFunction {
-    ControlTarget target;
-    std::function<Result<void>(Service*)> action;
-};
+using ControlMessageFunction = std::function<Result<void>(Service*)>;
 
-static const std::map<std::string, ControlMessageFunction>& get_control_message_map() {
+static const std::map<std::string, ControlMessageFunction, std::less<>>& GetControlMessageMap() {
     // clang-format off
-    static const std::map<std::string, ControlMessageFunction> control_message_functions = {
-        {"sigstop_on",        {ControlTarget::SERVICE,
-                               [](auto* service) { service->set_sigstop(true); return Result<void>{}; }}},
-        {"sigstop_off",       {ControlTarget::SERVICE,
-                               [](auto* service) { service->set_sigstop(false); return Result<void>{}; }}},
-        {"start",             {ControlTarget::SERVICE,   DoControlStart}},
-        {"stop",              {ControlTarget::SERVICE,   DoControlStop}},
-        {"restart",           {ControlTarget::SERVICE,   DoControlRestart}},
-        {"interface_start",   {ControlTarget::INTERFACE, DoControlStart}},
-        {"interface_stop",    {ControlTarget::INTERFACE, DoControlStop}},
-        {"interface_restart", {ControlTarget::INTERFACE, DoControlRestart}},
+    static const std::map<std::string, ControlMessageFunction, std::less<>> control_message_functions = {
+        {"sigstop_on",        [](auto* service) { service->set_sigstop(true); return Result<void>{}; }},
+        {"sigstop_off",       [](auto* service) { service->set_sigstop(false); return Result<void>{}; }},
+        {"oneshot_on",        [](auto* service) { service->set_oneshot(true); return Result<void>{}; }},
+        {"oneshot_off",       [](auto* service) { service->set_oneshot(false); return Result<void>{}; }},
+        {"start",             DoControlStart},
+        {"stop",              DoControlStop},
+        {"restart",           DoControlRestart},
     };
     // clang-format on
 
     return control_message_functions;
 }
 
-bool HandleControlMessage(const std::string& msg, const std::string& name, pid_t from_pid) {
-    const auto& map = get_control_message_map();
-    const auto it = map.find(msg);
-
-    if (it == map.end()) {
-        LOG(ERROR) << "Unknown control msg '" << msg << "'";
-        return false;
-    }
-
+static bool HandleControlMessage(std::string_view message, const std::string& name,
+                                 pid_t from_pid) {
     std::string cmdline_path = StringPrintf("proc/%d/cmdline", from_pid);
     std::string process_cmdline;
     if (ReadFileToString(cmdline_path, &process_cmdline)) {
@@ -417,41 +409,76 @@ bool HandleControlMessage(const std::string& msg, const std::string& name, pid_t
         process_cmdline = "unknown process";
     }
 
-    const ControlMessageFunction& function = it->second;
-
-    auto lock = std::lock_guard{service_lock};
-
-    Service* svc = nullptr;
-
-    switch (function.target) {
-        case ControlTarget::SERVICE:
-            svc = ServiceList::GetInstance().FindService(name);
-            break;
-        case ControlTarget::INTERFACE:
-            svc = ServiceList::GetInstance().FindInterface(name);
-            break;
-        default:
-            LOG(ERROR) << "Invalid function target from static map key ctl." << msg << ": "
-                       << static_cast<std::underlying_type<ControlTarget>::type>(function.target);
-            return false;
+    Service* service = nullptr;
+    auto action = message;
+    if (ConsumePrefix(&action, "interface_")) {
+        service = ServiceList::GetInstance().FindInterface(name);
+    } else {
+        service = ServiceList::GetInstance().FindService(name);
     }
 
-    if (svc == nullptr) {
-        LOG(ERROR) << "Control message: Could not find '" << name << "' for ctl." << msg
+    if (service == nullptr) {
+        LOG(ERROR) << "Control message: Could not find '" << name << "' for ctl." << message
                    << " from pid: " << from_pid << " (" << process_cmdline << ")";
         return false;
     }
 
-    if (auto result = function.action(svc); !result.ok()) {
-        LOG(ERROR) << "Control message: Could not ctl." << msg << " for '" << name
+    const auto& map = GetControlMessageMap();
+    const auto it = map.find(action);
+    if (it == map.end()) {
+        LOG(ERROR) << "Unknown control msg '" << message << "'";
+        return false;
+    }
+    const auto& function = it->second;
+
+    if (auto result = function(service); !result.ok()) {
+        LOG(ERROR) << "Control message: Could not ctl." << message << " for '" << name
                    << "' from pid: " << from_pid << " (" << process_cmdline
                    << "): " << result.error();
         return false;
     }
 
-    LOG(INFO) << "Control message: Processed ctl." << msg << " for '" << name
+    LOG(INFO) << "Control message: Processed ctl." << message << " for '" << name
               << "' from pid: " << from_pid << " (" << process_cmdline << ")";
     return true;
+}
+
+bool QueueControlMessage(const std::string& message, const std::string& name, pid_t pid, int fd) {
+    auto lock = std::lock_guard{pending_control_messages_lock};
+    if (pending_control_messages.size() > 100) {
+        LOG(ERROR) << "Too many pending control messages, dropped '" << message << "' for '" << name
+                   << "' from pid: " << pid;
+        return false;
+    }
+    pending_control_messages.push({message, name, pid, fd});
+    WakeMainInitThread();
+    return true;
+}
+
+static void HandleControlMessages() {
+    auto lock = std::unique_lock{pending_control_messages_lock};
+    // Init historically would only execute handle one property message, including control messages
+    // in each iteration of its main loop.  We retain this behavior here to prevent starvation of
+    // other actions in the main loop.
+    if (!pending_control_messages.empty()) {
+        auto control_message = pending_control_messages.front();
+        pending_control_messages.pop();
+        lock.unlock();
+
+        bool success = HandleControlMessage(control_message.message, control_message.name,
+                                            control_message.pid);
+
+        uint32_t response = success ? PROP_SUCCESS : PROP_ERROR_HANDLE_CONTROL_MESSAGE;
+        if (control_message.fd != -1) {
+            TEMP_FAILURE_RETRY(send(control_message.fd, &response, sizeof(response), 0));
+            close(control_message.fd);
+        }
+        lock.lock();
+    }
+    // If we still have items to process, make sure we wake back up to do so.
+    if (!pending_control_messages.empty()) {
+        WakeMainInitThread();
+    }
 }
 
 static Result<void> wait_for_coldboot_done_action(const BuiltinArguments& args) {
@@ -603,7 +630,6 @@ void HandleKeychord(const std::vector<int>& keycodes) {
     }
 
     auto found = false;
-    auto lock = std::lock_guard{service_lock};
     for (const auto& service : ServiceList::GetInstance()) {
         auto svc = service.get();
         if (svc->keycodes() == keycodes) {
@@ -674,22 +700,6 @@ void SendLoadPersistentPropertiesMessage() {
     }
 }
 
-void SendStopSendingMessagesMessage() {
-    auto init_message = InitMessage{};
-    init_message.set_stop_sending_messages(true);
-    if (auto result = SendMessage(property_fd, init_message); !result.ok()) {
-        LOG(ERROR) << "Failed to send 'stop sending messages' message: " << result.error();
-    }
-}
-
-void SendStartSendingMessagesMessage() {
-    auto init_message = InitMessage{};
-    init_message.set_start_sending_messages(true);
-    if (auto result = SendMessage(property_fd, init_message); !result.ok()) {
-        LOG(ERROR) << "Failed to send 'start sending messages' message: " << result.error();
-    }
-}
-
 int SecondStageMain(int argc, char** argv) {
     if (REBOOT_BOOTLOADER_ON_PANIC) {
         InstallRebootSignalHandlers();
@@ -703,8 +713,15 @@ int SecondStageMain(int argc, char** argv) {
     InitKernelLogging(argv);
     LOG(INFO) << "init second stage started!";
 
-    // Will handle EPIPE at the time of write by checking the errno
-    signal(SIGPIPE, SIG_IGN);
+    // Init should not crash because of a dependence on any other process, therefore we ignore
+    // SIGPIPE and handle EPIPE at the call site directly.  Note that setting a signal to SIG_IGN
+    // is inherited across exec, but custom signal handlers are not.  Since we do not want to
+    // ignore SIGPIPE for child processes, we set a no-op function for the signal handler instead.
+    {
+        struct sigaction action = {.sa_flags = SA_RESTART};
+        action.sa_handler = [](int) {};
+        sigaction(SIGPIPE, &action, nullptr);
+    }
 
     if (DeferOverlayfsMount()) {
         Fstab fstab;
@@ -849,7 +866,6 @@ int SecondStageMain(int argc, char** argv) {
     Keychords keychords;
     am.QueueBuiltinAction(
             [&epoll, &keychords](const BuiltinArguments& args) -> Result<void> {
-                auto lock = std::lock_guard{service_lock};
                 for (const auto& svc : ServiceList::GetInstance()) {
                     keychords.Register(svc->keycodes());
                 }
@@ -915,6 +931,9 @@ int SecondStageMain(int argc, char** argv) {
             for (const auto& function : *pending_functions) {
                 (*function)();
             }
+        }
+        if (!IsShuttingDown()) {
+            HandleControlMessages();
         }
     }
 

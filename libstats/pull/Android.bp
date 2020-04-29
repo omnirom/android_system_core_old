@@ -30,11 +30,11 @@ cc_defaults {
     shared_libs: [
         "libbinder_ndk",
         "liblog",
-        "statsd-aidl-ndk_platform",
         "libstatssocket",
     ],
     static_libs: [
         "libutils",
+        "statsd-aidl-ndk_platform",
     ],
 }
 cc_library_shared {
@@ -53,6 +53,13 @@ cc_library_shared {
         "com.android.os.statsd",
         "test_com.android.os.statsd",
     ],
+
+    stl: "libc++_static",
+
+    // TODO(b/151102177): Enable it when the build error is fixed.
+    header_abi_checker: {
+        enabled: false,
+    },
 }
 
 // ONLY USE IN TESTS.
@@ -63,5 +70,27 @@ cc_library_static {
     ],
     visibility: [
         "//frameworks/base/apex/statsd/tests/libstatspull",
+    ],
+}
+
+// Note: These unit tests only test PullAtomMetadata.
+// For full E2E tests of libstatspull, use LibStatsPullTests
+cc_test {
+    name: "libstatspull_test",
+    srcs: [
+        "tests/pull_atom_metadata_test.cpp",
+    ],
+    shared_libs: [
+        "libstatspull",
+        "libstatssocket",
+    ],
+    test_suites: ["general-tests"],
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wno-missing-field-initializers",
+        "-Wno-unused-variable",
+        "-Wno-unused-function",
+        "-Wno-unused-parameter",
     ],
 }
