@@ -49,6 +49,7 @@ class PrivateVolume : public VolumeBase {
     status_t doCreate() override;
     status_t doDestroy() override;
     status_t doMount() override;
+    void doPostMount() override;
     status_t doUnmount() override;
     status_t doFormat(const std::string& fsType) override;
 
