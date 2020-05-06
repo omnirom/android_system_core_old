@@ -242,7 +242,8 @@ static int process_config(VolumeManager* vm, VoldConfigs* configs) {
         }
 
         /* Make sure logical partitions have an updated blk_device. */
-        if (entry.fs_mgr_flags.logical && !fs_mgr_update_logical_partition(&entry)) {
+        if (entry.fs_mgr_flags.logical && !fs_mgr_update_logical_partition(&entry) &&
+            !entry.fs_mgr_flags.no_fail) {
             PLOG(FATAL) << "could not find logical partition " << entry.blk_device;
         }
 
