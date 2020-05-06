@@ -232,8 +232,13 @@ status_t VolumeBase::mount() {
     status_t res = doMount();
     setState(res == OK ? State::kMounted : State::kUnmountable);
 
+    if (res == OK) {
+        doPostMount();
+    }
     return res;
 }
+
+void VolumeBase::doPostMount() {}
 
 status_t VolumeBase::unmount() {
     if (mState != State::kMounted) {
