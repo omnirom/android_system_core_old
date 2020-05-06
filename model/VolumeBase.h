@@ -120,6 +120,7 @@ class VolumeBase {
     virtual status_t doCreate();
     virtual status_t doDestroy();
     virtual status_t doMount() = 0;
+    virtual void doPostMount();
     virtual status_t doUnmount() = 0;
     virtual status_t doFormat(const std::string& fsType);
 
