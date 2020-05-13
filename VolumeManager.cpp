@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <mntent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -739,8 +740,10 @@ int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
 }
 
 
-// Set the namespace the app process and remount its storage directories.
-static bool remountStorageDirs(int nsFd, const char* sources[], const char* targets[], int size) {
+// In each app's namespace, mount tmpfs on obb and data dir, and bind mount obb and data
+// package dirs.
+static bool remountStorageDirs(int nsFd, const char* android_data_dir, const char* android_obb_dir,
+        int uid, const char* sources[], const char* targets[], int size) {
     // This code is executed after a fork so it's very important that the set of
     // methods we call here is strictly limited.
     if (setns(nsFd, CLONE_NEWNS) != 0) {
@@ -748,7 +751,27 @@ static bool remountStorageDirs(int nsFd, const char* sources[], const char* targ
         return false;
     }
 
+    // Mount tmpfs on Android/data and Android/obb
+    if (TEMP_FAILURE_RETRY(mount("tmpfs", android_data_dir, "tmpfs",
+            MS_NOSUID | MS_NODEV | MS_NOEXEC, "uid=0,gid=0,mode=0751")) == -1) {
+        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to mount tmpfs to %s :%s",
+                        android_data_dir, strerror(errno));
+        return false;
+    }
+    if (TEMP_FAILURE_RETRY(mount("tmpfs", android_obb_dir, "tmpfs",
+            MS_NOSUID | MS_NODEV | MS_NOEXEC, "uid=0,gid=0,mode=0751")) == -1) {
+        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to mount tmpfs to %s :%s",
+                android_obb_dir, strerror(errno));
+        return false;
+    }
+
     for (int i = 0; i < size; i++) {
+        // Create package dir and bind mount it to the actual one.
+        if (TEMP_FAILURE_RETRY(mkdir(targets[i], 0700)) == -1) {
+            async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to mkdir %s %s",
+                    targets[i], strerror(errno));
+            return false;
+        }
         if (TEMP_FAILURE_RETRY(mount(sources[i], targets[i], NULL, MS_BIND | MS_REC, NULL)) == -1) {
             async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to mount %s to %s :%s",
                                   sources[i], targets[i], strerror(errno));
@@ -823,11 +846,17 @@ bool VolumeManager::forkAndRemountStorage(int uid, int pid,
         }
     }
 
+    char android_data_dir[PATH_MAX];
+    char android_obb_dir[PATH_MAX];
+    snprintf(android_data_dir, PATH_MAX, "/storage/emulated/%d/Android/data", userId);
+    snprintf(android_obb_dir, PATH_MAX, "/storage/emulated/%d/Android/obb", userId);
+
     pid_t child;
     // Fork a child to mount Android/obb android Android/data dirs, as we don't want it to affect
     // original vold process mount namespace.
     if (!(child = fork())) {
-        if (remountStorageDirs(nsFd, sources_cstr, targets_cstr, size)) {
+        if (remountStorageDirs(nsFd, android_data_dir, android_obb_dir, uid,
+                sources_cstr, targets_cstr, size)) {
             _exit(0);
         } else {
             _exit(1);
