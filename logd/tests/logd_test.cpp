@@ -246,7 +246,7 @@ static void dump_log_msg(const char* prefix, log_msg* msg, int lid) {
     std::cerr << std::flush;
     fflush(stdout);
     fflush(stderr);
-    EXPECT_EQ(sizeof(logger_entry), msg->entry.hdr_size);
+    EXPECT_GE(msg->entry.hdr_size, sizeof(logger_entry));
 
     fprintf(stderr, "%s: [%u] ", prefix, msg->len());
     fprintf(stderr, "hdr_size=%u ", msg->entry.hdr_size);
@@ -582,6 +582,7 @@ TEST(logd, timeout_start_epoch) {
         "dumpAndClose lids=0,1,2,3,4,5 timeout=6 start=0.000000000");
 }
 
+#ifdef ENABLE_FLAKY_TESTS
 // b/26447386 refined behavior
 TEST(logd, timeout) {
 #ifdef __ANDROID__
@@ -716,6 +717,7 @@ TEST(logd, timeout) {
     GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif
 }
+#endif
 
 // b/27242723 confirmed fixed
 TEST(logd, SNDTIMEO) {
