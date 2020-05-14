@@ -78,6 +78,7 @@ using android::vold::BindMount;
 using android::vold::CreateDir;
 using android::vold::DeleteDirContents;
 using android::vold::DeleteDirContentsAndDir;
+using android::vold::IsVirtioBlkDevice;
 using android::vold::Symlink;
 using android::vold::Unlink;
 using android::vold::UnmountTree;
@@ -94,8 +95,6 @@ static const std::string kEmptyString("");
 static const unsigned int kSizeVirtualDisk = 536870912;
 
 static const unsigned int kMajorBlockMmc = 179;
-static const unsigned int kMajorBlockExperimentalMin = 240;
-static const unsigned int kMajorBlockExperimentalMax = 254;
 
 VolumeManager* VolumeManager::sInstance = NULL;
 
@@ -214,12 +213,10 @@ void VolumeManager::handleBlockEvent(NetlinkEvent* evt) {
             for (const auto& source : mDiskSources) {
                 if (source->matches(eventPath)) {
                     // For now, assume that MMC and virtio-blk (the latter is
-                    // emulator-specific; see Disk.cpp for details) devices are SD,
-                    // and that everything else is USB
+                    // specific to virtual platforms; see Utils.cpp for details)
+                    // devices are SD, and that everything else is USB
                     int flags = source->getFlags();
-                    if (major == kMajorBlockMmc || (android::vold::IsRunningInEmulator() &&
-                                                    major >= (int)kMajorBlockExperimentalMin &&
-                                                    major <= (int)kMajorBlockExperimentalMax)) {
+                    if (major == kMajorBlockMmc || IsVirtioBlkDevice(major)) {
                         flags |= android::vold::Disk::Flags::kSd;
                     } else {
                         flags |= android::vold::Disk::Flags::kUsb;
