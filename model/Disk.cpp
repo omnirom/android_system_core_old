@@ -73,8 +73,6 @@ static const unsigned int kMajorBlockScsiN = 133;
 static const unsigned int kMajorBlockScsiO = 134;
 static const unsigned int kMajorBlockScsiP = 135;
 static const unsigned int kMajorBlockMmc = 179;
-static const unsigned int kMajorBlockExperimentalMin = 240;
-static const unsigned int kMajorBlockExperimentalMax = 254;
 static const unsigned int kMajorBlockDynamicMin = 234;
 static const unsigned int kMajorBlockDynamicMax = 512;
 
@@ -87,33 +85,6 @@ enum class Table {
     kMbr,
     kGpt,
 };
-
-static bool isVirtioBlkDevice(unsigned int major) {
-    /*
-     * The new emulator's "ranchu" virtual board no longer includes a goldfish
-     * MMC-based SD card device; instead, it emulates SD cards with virtio-blk,
-     * which has been supported by upstream kernel and QEMU for quite a while.
-     * Unfortunately, the virtio-blk block device driver does not use a fixed
-     * major number, but relies on the kernel to assign one from a specific
-     * range of block majors, which are allocated for "LOCAL/EXPERIMENAL USE"
-     * per Documentation/devices.txt. This is true even for the latest Linux
-     * kernel (4.4; see init() in drivers/block/virtio_blk.c).
-     *
-     * This makes it difficult for vold to detect a virtio-blk based SD card.
-     * The current solution checks two conditions (both must be met):
-     *
-     *  a) If the running environment is the emulator;
-     *  b) If the major number is an experimental block device major number (for
-     *     x86/x86_64 3.10 ranchu kernels, virtio-blk always gets major number
-     *     253, but it is safer to match the range than just one value).
-     *
-     * Other conditions could be used, too, e.g. the hardware name should be
-     * "ranchu", the device's sysfs path should end with "/block/vd[d-z]", etc.
-     * But just having a) and b) is enough for now.
-     */
-    return IsRunningInEmulator() && major >= kMajorBlockExperimentalMin &&
-           major <= kMajorBlockExperimentalMax;
-}
 
 static bool isNvmeBlkDevice(unsigned int major, const std::string& sysPath) {
     return sysPath.find("nvme") != std::string::npos && major >= kMajorBlockDynamicMin &&
@@ -322,7 +293,7 @@ status_t Disk::readMetadata() {
             break;
         }
         default: {
-            if (isVirtioBlkDevice(majorId)) {
+            if (IsVirtioBlkDevice(majorId)) {
                 LOG(DEBUG) << "Recognized experimental block major ID " << majorId
                            << " as virtio-blk (emulator's virtual SD card device)";
                 mLabel = "Virtual";
@@ -627,7 +598,7 @@ int Disk::getMaxMinors() {
             return std::stoi(tmp);
         }
         default: {
-            if (isVirtioBlkDevice(majorId)) {
+            if (IsVirtioBlkDevice(majorId)) {
                 // drivers/block/virtio_blk.c has "#define PART_BITS 4", so max is
                 // 2^4 - 1 = 15
                 return 15;
