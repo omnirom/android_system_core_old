@@ -38,6 +38,7 @@
 #include <sys/wait.h>
 
 using android::base::StringPrintf;
+using android::vold::IsVirtioBlkDevice;
 
 namespace android {
 namespace vold {
@@ -178,7 +179,8 @@ status_t PrivateVolume::doFormat(const std::string& fsType) {
     if (fsType == "auto") {
         // For now, assume that all MMC devices are flash-based SD cards, and
         // give everyone else ext4 because sysfs rotational isn't reliable.
-        if ((major(mRawDevice) == kMajorBlockMmc) && f2fs::IsSupported()) {
+        if ((major(mRawDevice) == kMajorBlockMmc ||
+             IsVirtioBlkDevice(major(mRawDevice))) && f2fs::IsSupported()) {
             resolvedFsType = "f2fs";
         } else {
             resolvedFsType = "ext4";
