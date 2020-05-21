@@ -132,7 +132,7 @@ status_t DestroyDeviceNode(const std::string& path) {
 
 // Sets a default ACL on the directory.
 int SetDefaultAcl(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
-    if (IsFilesystemSupported("sdcardfs")) {
+    if (IsSdcardfsUsed()) {
         // sdcardfs magically takes care of this
         return OK;
     }
@@ -227,7 +227,7 @@ int PrepareDirWithProjectId(const std::string& path, mode_t mode, uid_t uid, gid
         return ret;
     }
 
-    if (!IsFilesystemSupported("sdcardfs")) {
+    if (!IsSdcardfsUsed()) {
         ret = SetQuotaProjectId(path, projectId);
     }
 
@@ -255,7 +255,7 @@ static int FixupAppDir(const std::string& path, mode_t mode, uid_t uid, gid_t gi
             return ret;
         }
 
-        if (!IsFilesystemSupported("sdcardfs")) {
+        if (!IsSdcardfsUsed()) {
             ret = SetQuotaProjectId(itEntry.path(), projectId);
             if (ret != 0) {
                 return ret;
@@ -271,6 +271,7 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
     long projectId;
     size_t pos;
     int ret = 0;
+    bool sdcardfsSupport = IsSdcardfsUsed();
 
     // Make sure the Android/ directories exist and are setup correctly
     ret = PrepareAndroidDirs(root);
@@ -291,17 +292,17 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
     // Check that the next part matches one of the allowed Android/ dirs
     if (StartsWith(pathFromRoot, kAppDataDir)) {
         appDir = kAppDataDir;
-        if (!IsFilesystemSupported("sdcardfs")) {
+        if (!sdcardfsSupport) {
             gid = AID_EXT_DATA_RW;
         }
     } else if (StartsWith(pathFromRoot, kAppMediaDir)) {
         appDir = kAppMediaDir;
-        if (!IsFilesystemSupported("sdcardfs")) {
+        if (!sdcardfsSupport) {
             gid = AID_MEDIA_RW;
         }
     } else if (StartsWith(pathFromRoot, kAppObbDir)) {
         appDir = kAppObbDir;
-        if (!IsFilesystemSupported("sdcardfs")) {
+        if (!sdcardfsSupport) {
             gid = AID_EXT_OBB_RW;
         }
     } else {
@@ -368,7 +369,7 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
                 return ret;
             }
 
-            if (!IsFilesystemSupported("sdcardfs")) {
+            if (!sdcardfsSupport) {
                 // Set project ID inheritance, so that future subdirectories inherit the
                 // same project ID
                 ret = SetQuotaInherit(pathToCreate);
@@ -943,6 +944,11 @@ bool IsFilesystemSupported(const std::string& fsType) {
     return supported.find(fsType + "\n") != std::string::npos;
 }
 
+bool IsSdcardfsUsed() {
+    return IsFilesystemSupported("sdcardfs") &&
+           base::GetBoolProperty(kExternalStorageSdcardfs, true);
+}
+
 status_t WipeBlockDevice(const std::string& path) {
     status_t res = -1;
     const char* c_path = path.c_str();
@@ -1426,7 +1432,7 @@ status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
         return -errno;
     }
 
-    if (IsFilesystemSupported("sdcardfs")) {
+    if (IsSdcardfsUsed()) {
         std::string sdcardfs_path(
                 StringPrintf("/mnt/runtime/full/%s", relative_upper_path.c_str()));
 
@@ -1478,7 +1484,7 @@ status_t PrepareAndroidDirs(const std::string& volumeRoot) {
     std::string androidObbDir = volumeRoot + kAppObbDir;
     std::string androidMediaDir = volumeRoot + kAppMediaDir;
 
-    bool useSdcardFs = IsFilesystemSupported("sdcardfs");
+    bool useSdcardFs = IsSdcardfsUsed();
 
     // mode 0771 + sticky bit for inheriting GIDs
     mode_t mode = S_IRWXU | S_IRWXG | S_IXOTH | S_ISGID;
