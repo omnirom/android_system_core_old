@@ -83,6 +83,7 @@ using android::vold::DeleteDirContents;
 using android::vold::DeleteDirContentsAndDir;
 using android::vold::EnsureDirExists;
 using android::vold::IsFilesystemSupported;
+using android::vold::IsSdcardfsUsed;
 using android::vold::IsVirtioBlkDevice;
 using android::vold::PrepareAndroidDirs;
 using android::vold::PrepareAppDirFromRoot;
@@ -780,7 +781,7 @@ static bool remountStorageDirs(int nsFd, const char* android_data_dir, const cha
 
 static std::string getStorageDirSrc(userid_t userId, const std::string& dirName,
         const std::string& packageName) {
-    if (IsFilesystemSupported("sdcardfs")) {
+    if (IsSdcardfsUsed()) {
         return StringPrintf("/mnt/runtime/default/emulated/%d/%s/%s",
                 userId, dirName.c_str(), packageName.c_str());
     } else {
@@ -1049,7 +1050,7 @@ int VolumeManager::setupAppDir(const std::string& path, int32_t appUid, bool fix
 }
 
 int VolumeManager::fixupAppDir(const std::string& path, int32_t appUid) {
-    if (IsFilesystemSupported("sdcardfs")) {
+    if (IsSdcardfsUsed()) {
         //sdcardfs magically does this for us
         return OK;
     }
