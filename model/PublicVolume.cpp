@@ -51,7 +51,7 @@ PublicVolume::PublicVolume(dev_t device) : VolumeBase(Type::kPublic), mDevice(de
     setId(StringPrintf("public:%u,%u", major(device), minor(device)));
     mDevPath = StringPrintf("/dev/block/vold/%s", getId().c_str());
     mFuseMounted = false;
-    mUseSdcardFs = IsFilesystemSupported("sdcardfs");
+    mUseSdcardFs = IsSdcardfsUsed();
 }
 
 PublicVolume::~PublicVolume() {}

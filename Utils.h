@@ -36,6 +36,7 @@ namespace vold {
 
 static const char* kPropFuse = "persist.sys.fuse";
 static const char* kVoldAppDataIsolationEnabled = "persist.sys.vold_app_data_isolation_enabled";
+static const char* kExternalStorageSdcardfs = "external_storage.sdcardfs.enabled";
 
 /* SELinux contexts used depending on the block device type */
 extern security_context_t sBlkidContext;
@@ -124,6 +125,7 @@ uint64_t GetFreeBytes(const std::string& path);
 uint64_t GetTreeBytes(const std::string& path);
 
 bool IsFilesystemSupported(const std::string& fsType);
+bool IsSdcardfsUsed();
 bool IsFuseDaemon(const pid_t pid);
 
 /* Wipes contents of block device at given path */
