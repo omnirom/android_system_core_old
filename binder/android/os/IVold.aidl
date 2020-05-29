@@ -25,6 +25,7 @@ import android.os.IVoldTaskListener;
 interface IVold {
     void setListener(IVoldListener listener);
 
+    void abortFuse();
     void monitor();
     void reset();
     void shutdown();
