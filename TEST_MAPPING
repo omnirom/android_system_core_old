@@ -1,7 +1,7 @@
 {
   "presubmit": [
     {
-      "name": "FuseDaemonHostTest"
+      "name": "CtsScopedStorageHostTest"
     },
     {
       "name": "AdoptableHostTest"
