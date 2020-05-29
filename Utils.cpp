@@ -1330,6 +1330,21 @@ bool writeStringToFile(const std::string& payload, const std::string& filename) 
     return true;
 }
 
+status_t AbortFuseConnections() {
+    namespace fs = std::filesystem;
+
+    for (const auto& itEntry : fs::directory_iterator("/sys/fs/fuse/connections")) {
+        std::string abortPath = itEntry.path().string() + "/abort";
+        LOG(DEBUG) << "Aborting fuse connection entry " << abortPath;
+        bool ret = writeStringToFile("1", abortPath);
+        if (!ret) {
+            LOG(WARNING) << "Failed to write to " << abortPath;
+        }
+    }
+
+    return OK;
+}
+
 status_t EnsureDirExists(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
     if (access(path.c_str(), F_OK) != 0) {
         PLOG(WARNING) << "Dir does not exist: " << path;
