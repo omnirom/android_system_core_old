@@ -120,6 +120,8 @@ class VolumeManager {
     int remountUid(uid_t uid, int32_t remountMode);
     int remountAppStorageDirs(int uid, int pid, const std::vector<std::string>& packageNames);
 
+    /* Aborts all FUSE filesystems, in case the FUSE daemon is no longer up. */
+    int abortFuse();
     /* Reset all internal state, typically during framework boot */
     int reset();
     /* Prepare for device shutdown, safely unmounting all devices */

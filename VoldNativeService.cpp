@@ -175,6 +175,13 @@ binder::Status VoldNativeService::shutdown() {
     return translate(VolumeManager::Instance()->shutdown());
 }
 
+binder::Status VoldNativeService::abortFuse() {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->abortFuse());
+}
+
 binder::Status VoldNativeService::onUserAdded(int32_t userId, int32_t userSerial) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_LOCK;

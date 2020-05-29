@@ -50,6 +50,8 @@ extern bool sSleepOnUnmount;
 status_t CreateDeviceNode(const std::string& path, dev_t dev);
 status_t DestroyDeviceNode(const std::string& path);
 
+status_t AbortFuseConnections();
+
 int SetQuotaInherit(const std::string& path);
 int SetQuotaProjectId(const std::string& path, long projectId);
 /*
