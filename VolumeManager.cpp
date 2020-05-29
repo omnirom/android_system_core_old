@@ -905,6 +905,10 @@ int VolumeManager::remountAppStorageDirs(int uid, int pid,
     return 0;
 }
 
+int VolumeManager::abortFuse() {
+    return android::vold::AbortFuseConnections();
+}
+
 int VolumeManager::reset() {
     // Tear down all existing disks/volumes and start from a blank slate so
     // newly connected framework hears all events.
@@ -940,6 +944,7 @@ int VolumeManager::shutdown() {
     mDisks.clear();
     mPendingDisks.clear();
     android::vold::sSleepOnUnmount = true;
+
     return 0;
 }
 
