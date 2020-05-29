@@ -36,6 +36,7 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status monitor();
     binder::Status reset();
     binder::Status shutdown();
+    binder::Status abortFuse();
 
     binder::Status onUserAdded(int32_t userId, int32_t userSerial);
     binder::Status onUserRemoved(int32_t userId);
