@@ -402,6 +402,8 @@ status_t EmulatedVolume::doMount() {
             return res;
         }
 
+        ConfigureReadAheadForFuse(GetFuseMountPathForUser(user_id, label), 256u);
+
         // All mounts where successful, disable scope guards
         sdcardfs_guard.Disable();
         fuse_guard.Disable();
