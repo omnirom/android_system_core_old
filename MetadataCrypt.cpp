@@ -103,7 +103,7 @@ static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
     }
     auto mount_rc = fs_mgr_do_mount(&fstab_default, const_cast<char*>(mount_point),
                                     const_cast<char*>(blk_device), nullptr,
-                                    android::vold::cp_needsCheckpoint());
+                                    android::vold::cp_needsCheckpoint(), true);
     if (setexeccon(nullptr)) {
         PLOG(ERROR) << "Failed to clear setexeccon";
         return false;
