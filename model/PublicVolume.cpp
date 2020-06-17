@@ -250,6 +250,8 @@ status_t PublicVolume::doMount() {
                 return -EIO;
             }
         }
+
+        ConfigureReadAheadForFuse(GetFuseMountPathForUser(user_id, stableName), 256u);
     }
 
     return OK;

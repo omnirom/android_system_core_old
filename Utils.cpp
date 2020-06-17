@@ -63,6 +63,7 @@ using android::base::EndsWith;
 using android::base::ReadFileToString;
 using android::base::StartsWith;
 using android::base::StringPrintf;
+using android::base::unique_fd;
 
 namespace android {
 namespace vold {
@@ -91,6 +92,10 @@ static const char* kMediaProviderAppCtx = "u:r:mediaprovider_app:";
 // Lock used to protect process-level SELinux changes from racing with each
 // other between multiple threads.
 static std::mutex kSecurityLock;
+
+std::string GetFuseMountPathForUser(userid_t user_id, const std::string& relative_upper_path) {
+    return StringPrintf("/mnt/user/%d/%s", user_id, relative_upper_path.c_str());
+}
 
 status_t CreateDeviceNode(const std::string& path, dev_t dev) {
     std::lock_guard<std::mutex> lock(kSecurityLock);
@@ -1379,6 +1384,33 @@ status_t EnsureDirExists(const std::string& path, mode_t mode, uid_t uid, gid_t 
         }
     }
     return OK;
+}
+
+// Configures read ahead property of the fuse filesystem with the mount point |fuse_mount| by
+// writing |read_ahead_kb| to the /sys/class/bdi/MAJOR:MINOR/read_ahead_kb.
+void ConfigureReadAheadForFuse(const std::string& fuse_mount, size_t read_ahead_kb) {
+    LOG(INFO) << "Configuring read_ahead of " << fuse_mount << " fuse filesystem to "
+              << read_ahead_kb << "kb";
+    // First figure out MAJOR:MINOR of fuse_mount. Simplest way is to stat the path.
+    struct stat info;
+    if (stat(fuse_mount.c_str(), &info) != 0) {
+        PLOG(ERROR) << "Failed to stat " << fuse_mount;
+        return;
+    }
+    unsigned int maj = major(info.st_dev);
+    unsigned int min = minor(info.st_dev);
+    LOG(INFO) << fuse_mount << " has major:minor " << maj << ":" << min;
+    // We found major:minor of our filesystem, time to configure read ahead!
+    std::string read_ahead_file = StringPrintf("/sys/class/bdi/%u:%u/read_ahead_kb", maj, min);
+    unique_fd fd(TEMP_FAILURE_RETRY(open(read_ahead_file.c_str(), O_WRONLY | O_CLOEXEC)));
+    if (fd.get() == -1) {
+        PLOG(ERROR) << "Failed to open " << read_ahead_file;
+        return;
+    }
+    LOG(INFO) << "Writing " << read_ahead_kb << " to " << read_ahead_file;
+    if (!WriteStringToFd(std::to_string(read_ahead_kb), fd)) {
+        PLOG(ERROR) << "Failed to write to " << read_ahead_file;
+    }
 }
 
 status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
