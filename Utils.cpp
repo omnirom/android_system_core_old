@@ -131,14 +131,15 @@ status_t DestroyDeviceNode(const std::string& path) {
 }
 
 // Sets a default ACL on the directory.
-int SetDefaultAcl(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
+int SetDefaultAcl(const std::string& path, mode_t mode, uid_t uid, gid_t gid,
+                  std::vector<gid_t> additionalGids) {
     if (IsSdcardfsUsed()) {
         // sdcardfs magically takes care of this
         return OK;
     }
 
-    static constexpr size_t size =
-            sizeof(posix_acl_xattr_header) + 3 * sizeof(posix_acl_xattr_entry);
+    size_t num_entries = 3 + (additionalGids.size() > 0 ? additionalGids.size() + 1 : 0);
+    size_t size = sizeof(posix_acl_xattr_header) + num_entries * sizeof(posix_acl_xattr_entry);
     auto buf = std::make_unique<uint8_t[]>(size);
 
     posix_acl_xattr_header* acl_header = reinterpret_cast<posix_acl_xattr_header*>(buf.get());
@@ -147,23 +148,41 @@ int SetDefaultAcl(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
     posix_acl_xattr_entry* entry =
             reinterpret_cast<posix_acl_xattr_entry*>(buf.get() + sizeof(posix_acl_xattr_header));
 
-    entry[0].e_tag = ACL_USER_OBJ;
+    int tag_index = 0;
+
+    entry[tag_index].e_tag = ACL_USER_OBJ;
     // The existing mode_t mask has the ACL in the lower 9 bits:
     // the lowest 3 for "other", the next 3 the group, the next 3 for the owner
     // Use the mode_t masks to get these bits out, and shift them to get the
     // correct value per entity.
     //
     // Eg if mode_t = 0700, rwx for the owner, then & S_IRWXU >> 6 results in 7
-    entry[0].e_perm = (mode & S_IRWXU) >> 6;
-    entry[0].e_id = uid;
+    entry[tag_index].e_perm = (mode & S_IRWXU) >> 6;
+    entry[tag_index].e_id = uid;
+    tag_index++;
 
-    entry[1].e_tag = ACL_GROUP_OBJ;
-    entry[1].e_perm = (mode & S_IRWXG) >> 3;
-    entry[1].e_id = gid;
+    entry[tag_index].e_tag = ACL_GROUP_OBJ;
+    entry[tag_index].e_perm = (mode & S_IRWXG) >> 3;
+    entry[tag_index].e_id = gid;
+    tag_index++;
 
-    entry[2].e_tag = ACL_OTHER;
-    entry[2].e_perm = mode & S_IRWXO;
-    entry[2].e_id = 0;
+    if (additionalGids.size() > 0) {
+        for (gid_t additional_gid : additionalGids) {
+            entry[tag_index].e_tag = ACL_GROUP;
+            entry[tag_index].e_perm = (mode & S_IRWXG) >> 3;
+            entry[tag_index].e_id = additional_gid;
+            tag_index++;
+        }
+
+        entry[tag_index].e_tag = ACL_MASK;
+        entry[tag_index].e_perm = (mode & S_IRWXG) >> 3;
+        entry[tag_index].e_id = 0;
+        tag_index++;
+    }
+
+    entry[tag_index].e_tag = ACL_OTHER;
+    entry[tag_index].e_perm = mode & S_IRWXO;
+    entry[tag_index].e_id = 0;
 
     int ret = setxattr(path.c_str(), XATTR_NAME_POSIX_ACL_DEFAULT, acl_header, size, 0);
 
@@ -287,6 +306,7 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
 
     uid_t uid = appUid;
     gid_t gid = AID_MEDIA_RW;
+    std::vector<gid_t> additionalGids;
     std::string appDir;
 
     // Check that the next part matches one of the allowed Android/ dirs
@@ -294,6 +314,10 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
         appDir = kAppDataDir;
         if (!sdcardfsSupport) {
             gid = AID_EXT_DATA_RW;
+            // Also add the app's own UID as a group; since apps belong to a group
+            // that matches their UID, this ensures that they will always have access to
+            // the files created in these dirs, even if they are created by other processes
+            additionalGids.push_back(uid);
         }
     } else if (StartsWith(pathFromRoot, kAppMediaDir)) {
         appDir = kAppMediaDir;
@@ -304,6 +328,8 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
         appDir = kAppObbDir;
         if (!sdcardfsSupport) {
             gid = AID_EXT_OBB_RW;
+            // See comments for kAppDataDir above
+            additionalGids.push_back(uid);
         }
     } else {
         LOG(ERROR) << "Invalid application directory: " << path;
@@ -364,7 +390,7 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
             // installers and MTP, that require access here.
             //
             // See man (5) acl for more details.
-            ret = SetDefaultAcl(pathToCreate, mode, uid, gid);
+            ret = SetDefaultAcl(pathToCreate, mode, uid, gid, additionalGids);
             if (ret != 0) {
                 return ret;
             }
@@ -1522,7 +1548,7 @@ status_t PrepareAndroidDirs(const std::string& volumeRoot) {
     // Some other apps, like installers, have write access to the OBB directory
     // to pre-download them. To make sure newly created folders in this directory
     // have the right permissions, set a default ACL.
-    SetDefaultAcl(androidObbDir, mode, AID_MEDIA_RW, obbGid);
+    SetDefaultAcl(androidObbDir, mode, AID_MEDIA_RW, obbGid, {});
 
     if (fs_prepare_dir(androidMediaDir.c_str(), mode, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
         PLOG(ERROR) << "Failed to create " << androidMediaDir;
