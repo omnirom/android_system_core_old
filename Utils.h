@@ -47,6 +47,8 @@ extern security_context_t sFsckUntrustedContext;
 // TODO remove this with better solution, b/64143519
 extern bool sSleepOnUnmount;
 
+std::string GetFuseMountPathForUser(userid_t user_id, const std::string& relative_upper_path);
+
 status_t CreateDeviceNode(const std::string& path, dev_t dev);
 status_t DestroyDeviceNode(const std::string& path);
 
@@ -173,6 +175,8 @@ status_t WaitForFile(const char* filename, std::chrono::nanoseconds timeout);
 bool FsyncDirectory(const std::string& dirname);
 
 bool writeStringToFile(const std::string& payload, const std::string& filename);
+
+void ConfigureReadAheadForFuse(const std::string& fuse_mount, size_t read_ahead_kb);
 
 status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
                        const std::string& relative_upper_path, android::base::unique_fd* fuse_fd);
