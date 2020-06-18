@@ -115,6 +115,7 @@ interface IVold {
     void startCheckpoint(int retry);
     boolean needsCheckpoint();
     boolean needsRollback();
+    boolean isCheckpointing();
     void abortChanges(in @utf8InCpp String device, boolean retry);
     void commitChanges();
     void prepareCheckpoint();
