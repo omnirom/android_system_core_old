@@ -294,6 +294,10 @@ bool cp_needsCheckpoint() {
     return false;
 }
 
+bool cp_isCheckpointing() {
+    return isCheckpointing;
+}
+
 namespace {
 const std::string kSleepTimeProp = "ro.sys.cp_msleeptime";
 const uint32_t msleeptime_default = 1000;  // 1 s

@@ -809,6 +809,14 @@ binder::Status VoldNativeService::needsCheckpoint(bool* _aidl_return) {
     return Ok();
 }
 
+binder::Status VoldNativeService::isCheckpointing(bool* _aidl_return) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    *_aidl_return = cp_isCheckpointing();
+    return Ok();
+}
+
 binder::Status VoldNativeService::commitChanges() {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_LOCK;
