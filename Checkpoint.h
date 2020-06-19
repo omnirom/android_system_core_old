@@ -39,6 +39,8 @@ bool cp_needsRollback();
 
 bool cp_needsCheckpoint();
 
+bool cp_isCheckpointing();
+
 android::binder::Status cp_prepareCheckpoint();
 
 android::binder::Status cp_restoreCheckpoint(const std::string& mountPoint, int count = 0);
