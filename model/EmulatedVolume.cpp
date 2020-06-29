@@ -404,6 +404,27 @@ status_t EmulatedVolume::doMount() {
 
         ConfigureReadAheadForFuse(GetFuseMountPathForUser(user_id, label), 256u);
 
+        // By default, FUSE has a max_dirty ratio of 1%. This means that out of
+        // all dirty pages in the system, only 1% is allowed to belong to any
+        // FUSE filesystem. The reason this is in place is that FUSE
+        // filesystems shouldn't be trusted by default; a FUSE filesystem could
+        // take up say 100% of dirty pages, and subsequently refuse to write
+        // them back to storage.  The kernel will then apply rate-limiting, and
+        // block other tasks from writing.  For this particular FUSE filesystem
+        // however, we trust the implementation, because it is a part of the
+        // Android platform. So use the default ratio of 100%.
+        //
+        // The reason we're setting this is that there's a suspicion that the
+        // kernel starts rate-limiting the FUSE filesystem under extreme
+        // memory pressure scenarios. While the kernel will only rate limit if
+        // the writeback can't keep up with the write rate, under extreme
+        // memory pressure the write rate may dip as well, in which case FUSE
+        // writes to a 1% max_ratio filesystem are throttled to an extreme amount.
+        //
+        // To prevent this, just give FUSE 40% max_ratio, meaning it can take
+        // up to 40% of all dirty pages in the system.
+        ConfigureMaxDirtyRatioForFuse(GetFuseMountPathForUser(user_id, label), 40u);
+
         // All mounts where successful, disable scope guards
         sdcardfs_guard.Disable();
         fuse_guard.Disable();
