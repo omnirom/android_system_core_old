@@ -34,7 +34,6 @@ struct DIR;
 namespace android {
 namespace vold {
 
-static const char* kPropFuse = "persist.sys.fuse";
 static const char* kVoldAppDataIsolationEnabled = "persist.sys.vold_app_data_isolation_enabled";
 static const char* kExternalStorageSdcardfs = "external_storage.sdcardfs.enabled";
 

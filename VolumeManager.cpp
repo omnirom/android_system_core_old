@@ -379,21 +379,6 @@ int VolumeManager::forgetPartition(const std::string& partGuid, const std::strin
     return success ? 0 : -1;
 }
 
-int VolumeManager::linkPrimary(userid_t userId) {
-    if (!GetBoolProperty(android::vold::kPropFuse, false)) {
-        std::string source(mPrimary->getPath());
-        if (mPrimary->isEmulated()) {
-            source = StringPrintf("%s/%d", source.c_str(), userId);
-            fs_prepare_dir(source.c_str(), 0755, AID_ROOT, AID_ROOT);
-        }
-
-        std::string target(StringPrintf("/mnt/user/%d/primary", userId));
-        LOG(DEBUG) << "Linking " << source << " to " << target;
-        Symlink(source, target);
-    }
-    return 0;
-}
-
 void VolumeManager::destroyEmulatedVolumesForUser(userid_t userId) {
     // Destroy and remove all unstacked EmulatedVolumes for the user
     auto i = mInternalEmulatedVolumes.begin();
@@ -474,18 +459,6 @@ int VolumeManager::onUserStarted(userid_t userId) {
         createEmulatedVolumesForUser(userId);
     }
 
-    if (!GetBoolProperty(android::vold::kPropFuse, false)) {
-        // Note that sometimes the system will spin up processes from Zygote
-        // before actually starting the user, so we're okay if Zygote
-        // already created this directory.
-        std::string path(StringPrintf("%s/%d", kPathUserMount, userId));
-        fs_prepare_dir(path.c_str(), 0755, AID_ROOT, AID_ROOT);
-
-        if (mPrimary) {
-            linkPrimary(userId);
-        }
-    }
-
     mStartedUsers.insert(userId);
 
     createPendingDisksIfNeeded();
@@ -519,14 +492,6 @@ void VolumeManager::createPendingDisksIfNeeded() {
 int VolumeManager::onSecureKeyguardStateChanged(bool isShowing) {
     mSecureKeyguardShowing = isShowing;
     createPendingDisksIfNeeded();
-    return 0;
-}
-
-int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol) {
-    mPrimary = vol;
-    for (userid_t userId : mStartedUsers) {
-        linkPrimary(userId);
-    }
     return 0;
 }
 
@@ -728,16 +693,6 @@ bool scanProcProcesses(uid_t uid, userid_t userId, ScanProcCallback callback, vo
     return true;
 }
 
-int VolumeManager::remountUid(uid_t uid, int32_t mountMode) {
-    if (GetBoolProperty(android::vold::kPropFuse, false)) {
-        // TODO(135341433): Implement fuse specific logic.
-        return 0;
-    }
-    return scanProcProcesses(uid, static_cast<userid_t>(-1),
-            forkAndRemountChild, &mountMode) ? 0 : -1;
-}
-
-
 // In each app's namespace, mount tmpfs on obb and data dir, and bind mount obb and data
 // package dirs.
 static bool remountStorageDirs(int nsFd, const char* android_data_dir, const char* android_obb_dir,
@@ -884,9 +839,6 @@ bool VolumeManager::forkAndRemountStorage(int uid, int pid,
 
 int VolumeManager::remountAppStorageDirs(int uid, int pid,
         const std::vector<std::string>& packageNames) {
-    if (!GetBoolProperty(android::vold::kPropFuse, false)) {
-        return 0;
-    }
     // Only run the remount if fuse is mounted for that user.
     userid_t userId = multiuser_get_user_id(uid);
     bool fuseMounted = false;

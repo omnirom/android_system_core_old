@@ -115,9 +115,7 @@ class VolumeManager {
     void createPendingDisksIfNeeded();
     int onSecureKeyguardStateChanged(bool isShowing);
 
-    int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
-
-    int remountUid(uid_t uid, int32_t remountMode);
+    int remountUid(uid_t uid, int32_t remountMode) { return 0; }
     int remountAppStorageDirs(int uid, int pid, const std::vector<std::string>& packageNames);
 
     /* Aborts all FUSE filesystems, in case the FUSE daemon is no longer up. */
