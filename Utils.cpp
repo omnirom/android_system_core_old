@@ -1386,22 +1386,54 @@ status_t EnsureDirExists(const std::string& path, mode_t mode, uid_t uid, gid_t 
     return OK;
 }
 
+// Gets the sysfs path for parameters of the backing device info (bdi)
+static std::string getBdiPathForMount(const std::string& mount) {
+    // First figure out MAJOR:MINOR of mount. Simplest way is to stat the path.
+    struct stat info;
+    if (stat(mount.c_str(), &info) != 0) {
+        PLOG(ERROR) << "Failed to stat " << mount;
+        return "";
+    }
+    unsigned int maj = major(info.st_dev);
+    unsigned int min = minor(info.st_dev);
+
+    return StringPrintf("/sys/class/bdi/%u:%u", maj, min);
+}
+
+// Configures max_ratio for the FUSE filesystem.
+void ConfigureMaxDirtyRatioForFuse(const std::string& fuse_mount, unsigned int max_ratio) {
+    LOG(INFO) << "Configuring max_ratio of " << fuse_mount << " fuse filesystem to " << max_ratio;
+    if (max_ratio > 100) {
+        LOG(ERROR) << "Invalid max_ratio: " << max_ratio;
+        return;
+    }
+    std::string fuseBdiPath = getBdiPathForMount(fuse_mount);
+    if (fuseBdiPath == "") {
+        return;
+    }
+    std::string max_ratio_file = StringPrintf("%s/max_ratio", fuseBdiPath.c_str());
+    unique_fd fd(TEMP_FAILURE_RETRY(open(max_ratio_file.c_str(), O_WRONLY | O_CLOEXEC)));
+    if (fd.get() == -1) {
+        PLOG(ERROR) << "Failed to open " << max_ratio_file;
+        return;
+    }
+    LOG(INFO) << "Writing " << max_ratio << " to " << max_ratio_file;
+    if (!WriteStringToFd(std::to_string(max_ratio), fd)) {
+        PLOG(ERROR) << "Failed to write to " << max_ratio_file;
+    }
+}
+
 // Configures read ahead property of the fuse filesystem with the mount point |fuse_mount| by
 // writing |read_ahead_kb| to the /sys/class/bdi/MAJOR:MINOR/read_ahead_kb.
 void ConfigureReadAheadForFuse(const std::string& fuse_mount, size_t read_ahead_kb) {
     LOG(INFO) << "Configuring read_ahead of " << fuse_mount << " fuse filesystem to "
               << read_ahead_kb << "kb";
-    // First figure out MAJOR:MINOR of fuse_mount. Simplest way is to stat the path.
-    struct stat info;
-    if (stat(fuse_mount.c_str(), &info) != 0) {
-        PLOG(ERROR) << "Failed to stat " << fuse_mount;
+    std::string fuseBdiPath = getBdiPathForMount(fuse_mount);
+    if (fuseBdiPath == "") {
         return;
     }
-    unsigned int maj = major(info.st_dev);
-    unsigned int min = minor(info.st_dev);
-    LOG(INFO) << fuse_mount << " has major:minor " << maj << ":" << min;
-    // We found major:minor of our filesystem, time to configure read ahead!
-    std::string read_ahead_file = StringPrintf("/sys/class/bdi/%u:%u/read_ahead_kb", maj, min);
+    // We found the bdi path for our filesystem, time to configure read ahead!
+    std::string read_ahead_file = StringPrintf("%s/read_ahead_kb", fuseBdiPath.c_str());
     unique_fd fd(TEMP_FAILURE_RETRY(open(read_ahead_file.c_str(), O_WRONLY | O_CLOEXEC)));
     if (fd.get() == -1) {
         PLOG(ERROR) << "Failed to open " << read_ahead_file;
