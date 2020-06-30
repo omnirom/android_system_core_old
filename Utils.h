@@ -176,6 +176,8 @@ bool FsyncDirectory(const std::string& dirname);
 
 bool writeStringToFile(const std::string& payload, const std::string& filename);
 
+void ConfigureMaxDirtyRatioForFuse(const std::string& fuse_mount, unsigned int max_ratio);
+
 void ConfigureReadAheadForFuse(const std::string& fuse_mount, size_t read_ahead_kb);
 
 status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
