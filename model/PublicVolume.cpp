@@ -255,6 +255,9 @@ status_t PublicVolume::doMount() {
         }
 
         ConfigureReadAheadForFuse(GetFuseMountPathForUser(user_id, stableName), 256u);
+
+        // See comment in model/EmulatedVolume.cpp
+        ConfigureMaxDirtyRatioForFuse(GetFuseMountPathForUser(user_id, stableName), 40u);
     }
 
     return OK;
