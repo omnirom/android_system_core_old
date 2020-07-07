@@ -51,6 +51,7 @@
 
 #include <fscrypt/fscrypt.h>
 #include <keyutils.h>
+#include <libdm/dm.h>
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
@@ -59,6 +60,9 @@
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
 
+using android::base::Basename;
+using android::base::Realpath;
+using android::base::StartsWith;
 using android::base::StringPrintf;
 using android::fs_mgr::GetEntryForMountPoint;
 using android::vold::BuildDataPath;
@@ -69,6 +73,7 @@ using android::vold::retrieveKey;
 using android::vold::retrieveOrGenerateKey;
 using android::vold::writeStringToFile;
 using namespace android::fscrypt;
+using namespace android::dm;
 
 namespace {
 
@@ -199,6 +204,26 @@ static bool read_and_fixate_user_ce_key(userid_t user_id,
     return false;
 }
 
+static bool IsEmmcStorage(const std::string& blk_device) {
+    // Handle symlinks.
+    std::string real_path;
+    if (!Realpath(blk_device, &real_path)) {
+        real_path = blk_device;
+    }
+
+    // Handle logical volumes.
+    auto& dm = DeviceMapper::Instance();
+    for (;;) {
+        auto parent = dm.GetParentBlockDeviceByPath(real_path);
+        if (!parent.has_value()) break;
+        real_path = *parent;
+    }
+
+    // Now we should have the "real" block device.
+    LOG(DEBUG) << "IsEmmcStorage(): blk_device = " << blk_device << ", real_path=" << real_path;
+    return StartsWith(Basename(real_path), "mmcblk");
+}
+
 // Retrieve the options to use for encryption policies on the /data filesystem.
 static bool get_data_file_encryption_options(EncryptionOptions* options) {
     auto entry = GetEntryForMountPoint(&fstab_default, DATA_MNT_POINT);
@@ -209,6 +234,12 @@ static bool get_data_file_encryption_options(EncryptionOptions* options) {
     if (!ParseOptions(entry->encryption_options, options)) {
         LOG(ERROR) << "Unable to parse encryption options for " << DATA_MNT_POINT ": "
                    << entry->encryption_options;
+        return false;
+    }
+    if ((options->flags & FSCRYPT_POLICY_FLAG_IV_INO_LBLK_32) &&
+        !IsEmmcStorage(entry->blk_device)) {
+        LOG(ERROR) << "The emmc_optimized encryption flag is only allowed on eMMC storage.  Remove "
+                      "this flag from the device's fstab";
         return false;
     }
     return true;
@@ -242,6 +273,11 @@ static bool get_volume_file_encryption_options(EncryptionOptions* options) {
                                                      contents_mode + ":" + filenames_mode);
     if (!ParseOptionsForApiLevel(first_api_level, options_string, options)) {
         LOG(ERROR) << "Unable to parse volume encryption options: " << options_string;
+        return false;
+    }
+    if (options->flags & FSCRYPT_POLICY_FLAG_IV_INO_LBLK_32) {
+        LOG(ERROR) << "The emmc_optimized encryption flag is only allowed on eMMC storage.  Remove "
+                      "this flag from ro.crypto.volume.options";
         return false;
     }
     return true;
