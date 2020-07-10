@@ -123,23 +123,6 @@ static android::sp<android::os::IVold> GetVold() {
 
 using namespace std::chrono_literals;
 
-enum RemountStatus {
-    REMOUNT_SUCCESS = 0,
-    NOT_USERDEBUG,
-    BADARG,
-    NOT_ROOT,
-    NO_FSTAB,
-    UNKNOWN_PARTITION,
-    INVALID_PARTITION,
-    VERITY_PARTITION,
-    BAD_OVERLAY,
-    NO_MOUNTS,
-    REMOUNT_FAILED,
-    MUST_REBOOT,
-    BINDER_ERROR,
-    CHECKPOINTING
-};
-
 static int do_remount(int argc, char* argv[]) {
     enum {
         SUCCESS = 0,
@@ -153,6 +136,9 @@ static int do_remount(int argc, char* argv[]) {
         BAD_OVERLAY,
         NO_MOUNTS,
         REMOUNT_FAILED,
+        MUST_REBOOT,
+        BINDER_ERROR,
+        CHECKPOINTING
     } retval = SUCCESS;
 
     // If somehow this executable is delivered on a "user" build, it can
