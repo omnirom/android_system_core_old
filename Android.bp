@@ -109,7 +109,6 @@ cc_library_static {
     srcs: [
         "AppFuseUtil.cpp",
         "Benchmark.cpp",
-        "CheckEncryption.cpp",
         "Checkpoint.cpp",
         "CryptoType.cpp",
         "Devmapper.cpp",
