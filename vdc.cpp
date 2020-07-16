@@ -105,8 +105,6 @@ int main(int argc, char** argv) {
         checkStatus(args, vold->shutdown());
     } else if (args[0] == "volume" && args[1] == "reset") {
         checkStatus(args, vold->reset());
-    } else if (args[0] == "cryptfs" && args[1] == "checkEncryption" && args.size() == 3) {
-        checkStatus(args, vold->checkEncryption(args[2]));
     } else if (args[0] == "cryptfs" && args[1] == "mountFstab" && args.size() == 4) {
         checkStatus(args, vold->mountFstab(args[2], args[3]));
     } else if (args[0] == "cryptfs" && args[1] == "encryptFstab" && args.size() == 4) {
