@@ -30,7 +30,6 @@
 #include <android-base/properties.h>
 #include <keyutils.h>
 
-#include <fscrypt_uapi.h>
 #include "KeyStorage.h"
 #include "Utils.h"
 
@@ -245,7 +244,7 @@ static bool buildKeySpecifier(fscrypt_key_specifier* spec, const EncryptionPolic
 // https://www.kernel.org/doc/html/latest/filesystems/fscrypt.html#fs-ioc-add-encryption-key
 static bool installFsKeyringKey(const std::string& mountpoint, const EncryptionOptions& options,
                                 fscrypt_add_key_arg* arg) {
-    if (options.use_hw_wrapped_key) arg->flags |= FSCRYPT_ADD_KEY_FLAG_WRAPPED;
+    if (options.use_hw_wrapped_key) arg->__flags |= __FSCRYPT_ADD_KEY_FLAG_HW_WRAPPED;
 
     android::base::unique_fd fd(open(mountpoint.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
     if (fd == -1) {
