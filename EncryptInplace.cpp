@@ -205,9 +205,16 @@ static int encrypt_groups(struct encryptGroupsData* data) {
         data->count = 0;
 
         for (block = 0; block < block_count; block++) {
-            int used = (aux_info.bg_desc[i].bg_flags & EXT4_BG_BLOCK_UNINIT)
-                           ? 0
-                           : bitmap_get_bit(block_bitmap, block);
+            int used;
+
+            if (aux_info.bg_desc[i].bg_flags & EXT4_BG_BLOCK_UNINIT) {
+                // In block groups with an uninitialized block bitmap, we only
+                // need to encrypt the backup superblock (if one is present).
+                used = (ext4_bg_has_super_block(i) && block < 1 + aux_info.bg_desc_blocks);
+            } else {
+                used = bitmap_get_bit(block_bitmap, block);
+            }
+
             update_progress(data, used);
             if (used) {
                 if (data->count == 0) {
