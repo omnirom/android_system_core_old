@@ -283,10 +283,9 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
         return false;
     }
 
-    constexpr unsigned int pre_gki_level = 29;
     unsigned int options_format_version = android::base::GetUintProperty<unsigned int>(
             "ro.crypto.dm_default_key.options_format.version",
-            (GetFirstApiLevel() <= pre_gki_level ? 1 : 2));
+            (GetFirstApiLevel() <= __ANDROID_API_Q__ ? 1 : 2));
 
     CryptoOptions options;
     if (options_format_version == 1) {
