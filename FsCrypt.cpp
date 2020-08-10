@@ -265,10 +265,9 @@ static bool get_volume_file_encryption_options(EncryptionOptions* options) {
     // HEH as default was always a mistake. Use the libfscrypt default (CTS)
     // for devices launching on versions above Android 10.
     auto first_api_level = GetFirstApiLevel();
-    constexpr uint64_t pre_gki_level = 29;
     auto filenames_mode =
             android::base::GetProperty("ro.crypto.volume.filenames_mode",
-                                       first_api_level > pre_gki_level ? "" : "aes-256-heh");
+                                       first_api_level > __ANDROID_API_Q__ ? "" : "aes-256-heh");
     auto options_string = android::base::GetProperty("ro.crypto.volume.options",
                                                      contents_mode + ":" + filenames_mode);
     if (!ParseOptionsForApiLevel(first_api_level, options_string, options)) {

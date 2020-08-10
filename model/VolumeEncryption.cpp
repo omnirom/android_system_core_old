@@ -32,16 +32,16 @@ namespace vold {
 enum class VolumeMethod { kFailed, kCrypt, kDefaultKey };
 
 static VolumeMethod lookup_volume_method() {
-    constexpr uint64_t pre_gki_level = 29;
     auto first_api_level =
             android::base::GetUintProperty<uint64_t>("ro.product.first_api_level", 0);
     auto method = android::base::GetProperty("ro.crypto.volume.metadata.method", "default");
     if (method == "default") {
-        return first_api_level > pre_gki_level ? VolumeMethod::kDefaultKey : VolumeMethod::kCrypt;
+        return first_api_level > __ANDROID_API_Q__ ? VolumeMethod::kDefaultKey
+                                                   : VolumeMethod::kCrypt;
     } else if (method == "dm-default-key") {
         return VolumeMethod::kDefaultKey;
     } else if (method == "dm-crypt") {
-        if (first_api_level > pre_gki_level) {
+        if (first_api_level > __ANDROID_API_Q__) {
             LOG(ERROR) << "volume encryption method dm-crypt cannot be used, "
                           "ro.product.first_api_level = "
                        << first_api_level;
