@@ -67,7 +67,8 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
                           bool fixupExisting);
 
 /* fs_prepare_dir wrapper that creates with SELinux context */
-status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid);
+status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid,
+                    unsigned int attrs = 0);
 
 /* Really unmounts the path, killing active processes along the way */
 status_t ForceUnmount(const std::string& path);
