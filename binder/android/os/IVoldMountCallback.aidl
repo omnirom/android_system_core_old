@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,10 @@
  * limitations under the License.
  */
 
-#ifndef _PROCESS_H
-#define _PROCESS_H
+package android.os;
 
-namespace android {
-namespace vold {
-
-int KillProcessesWithOpenFiles(const std::string& path, int signal);
-int KillProcessesWithMounts(const std::string& path, int signal);
-
-}  // namespace vold
-}  // namespace android
-
-#endif
+/** {@hide} */
+interface IVoldMountCallback {
+    boolean onVolumeChecking(FileDescriptor fuseFd, @utf8InCpp String path,
+        @utf8InCpp String internalPath);
+}

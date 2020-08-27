@@ -20,6 +20,7 @@
 #include "KeyBuffer.h"
 
 #include <android-base/macros.h>
+#include <android-base/unique_fd.h>
 #include <cutils/multiuser.h>
 #include <selinux/selinux.h>
 #include <utils/Errors.h>
@@ -33,6 +34,10 @@ struct DIR;
 namespace android {
 namespace vold {
 
+static const char* kPropFuse = "persist.sys.fuse";
+static const char* kVoldAppDataIsolationEnabled = "persist.sys.vold_app_data_isolation_enabled";
+static const char* kExternalStorageSdcardfs = "external_storage.sdcardfs.enabled";
+
 /* SELinux contexts used depending on the block device type */
 extern security_context_t sBlkidContext;
 extern security_context_t sBlkidUntrustedContext;
@@ -42,8 +47,24 @@ extern security_context_t sFsckUntrustedContext;
 // TODO remove this with better solution, b/64143519
 extern bool sSleepOnUnmount;
 
+std::string GetFuseMountPathForUser(userid_t user_id, const std::string& relative_upper_path);
+
 status_t CreateDeviceNode(const std::string& path, dev_t dev);
 status_t DestroyDeviceNode(const std::string& path);
+
+status_t AbortFuseConnections();
+
+int SetQuotaInherit(const std::string& path);
+int SetQuotaProjectId(const std::string& path, long projectId);
+/*
+ * Creates and sets up an application-specific path on external
+ * storage with the correct ACL and project ID (if needed).
+ *
+ * ONLY for use with app-specific data directories on external storage!
+ * (eg, /Android/data/com.foo, /Android/obb/com.foo, etc.)
+ */
+int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int appUid,
+                          bool fixupExisting);
 
 /* fs_prepare_dir wrapper that creates with SELinux context */
 status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid);
@@ -53,6 +74,9 @@ status_t ForceUnmount(const std::string& path);
 
 /* Kills any processes using given path */
 status_t KillProcessesUsingPath(const std::string& path);
+
+/* Kills any processes using given mount prifix */
+status_t KillProcessesWithMountPrefix(const std::string& path);
 
 /* Creates bind mount from source to target */
 status_t BindMount(const std::string& source, const std::string& target);
@@ -105,6 +129,8 @@ uint64_t GetFreeBytes(const std::string& path);
 uint64_t GetTreeBytes(const std::string& path);
 
 bool IsFilesystemSupported(const std::string& fsType);
+bool IsSdcardfsUsed();
+bool IsFuseDaemon(const pid_t pid);
 
 /* Wipes contents of block device at given path */
 status_t WipeBlockDevice(const std::string& path);
@@ -128,6 +154,8 @@ std::string BuildDataUserDePath(const std::string& volumeUuid, userid_t userid);
 
 dev_t GetDevice(const std::string& path);
 
+status_t EnsureDirExists(const std::string& path, mode_t mode, uid_t uid, gid_t gid);
+
 status_t RestoreconRecursive(const std::string& path);
 
 // TODO: promote to android::base
@@ -147,6 +175,18 @@ status_t WaitForFile(const char* filename, std::chrono::nanoseconds timeout);
 bool FsyncDirectory(const std::string& dirname);
 
 bool writeStringToFile(const std::string& payload, const std::string& filename);
+
+void ConfigureMaxDirtyRatioForFuse(const std::string& fuse_mount, unsigned int max_ratio);
+
+void ConfigureReadAheadForFuse(const std::string& fuse_mount, size_t read_ahead_kb);
+
+status_t MountUserFuse(userid_t user_id, const std::string& absolute_lower_path,
+                       const std::string& relative_upper_path, android::base::unique_fd* fuse_fd);
+
+status_t UnmountUserFuse(userid_t userId, const std::string& absolute_lower_path,
+                         const std::string& relative_upper_path);
+
+status_t PrepareAndroidDirs(const std::string& volumeRoot);
 }  // namespace vold
 }  // namespace android
 
