@@ -89,7 +89,7 @@ cc_library_static {
         export_aidl_headers: true,
     },
     whole_static_libs: [
-        "libincremental_aidl-cpp",
+        "libincremental_aidl-unstable-cpp",
     ],
 }
 
