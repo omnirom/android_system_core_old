@@ -57,6 +57,13 @@ using android::base::Trim;
 namespace android {
 namespace init {
 
+#ifdef TARGET_INIT_VENDOR_LIB
+__attribute__ ((weak))
+void vendor_create_device_symlinks(const Uevent& uevent, std::vector<std::string>& links)
+{
+}
+#endif
+
 /* Given a path that may start with a PCI device, populate the supplied buffer
  * with the PCI domain/bus number and the peripheral ID and return 0.
  * If it doesn't start with a PCI device, or there is some error, return -1 */
@@ -376,6 +383,9 @@ std::vector<std::string> DeviceHandler::GetBlockDeviceSymlinks(const Uevent& uev
         // symlink of /dev/block/by-name/<device_name> for symmetry.
         links.emplace_back("/dev/block/by-name/" + uevent.device_name);
     }
+#ifdef TARGET_INIT_VENDOR_LIB
+    vendor_create_device_symlinks(uevent, links);
+#endif
 
     auto last_slash = uevent.path.rfind('/');
     links.emplace_back(link_path + "/" + uevent.path.substr(last_slash + 1));
