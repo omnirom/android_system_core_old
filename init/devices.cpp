@@ -375,6 +375,15 @@ std::vector<std::string> DeviceHandler::GetBlockDeviceSymlinks(const Uevent& uev
         // If we don't have a partition name but we are a partition on a boot device, create a
         // symlink of /dev/block/by-name/<device_name> for symmetry.
         links.emplace_back("/dev/block/by-name/" + uevent.device_name);
+        // TODO raspi hardcode start
+        int num = uevent.partition_num;
+        if (num == 2 || uevent.device_name.find("sda2") != std::string::npos || uevent.device_name.find("mmcblk0p2") != std::string::npos) {
+            links.emplace_back("/dev/block/by-name/system");
+        } else if (num == 3 || uevent.device_name.find("sda3") != std::string::npos || uevent.device_name.find("mmcblk0p3") != std::string::npos) {
+            links.emplace_back("/dev/block/by-name/vendor");
+        } else if (num == 4 || uevent.device_name.find("sda4") != std::string::npos || uevent.device_name.find("mmcblk0p4") != std::string::npos) {
+            links.emplace_back("/dev/block/by-name/userdata");
+        }
     }
 
     auto last_slash = uevent.path.rfind('/');
