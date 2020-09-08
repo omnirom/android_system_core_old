@@ -60,8 +60,8 @@ cc_defaults {
         omnirom: {
             target_init_vendor_lib: {
                 cflags: ["-DTARGET_INIT_VENDOR_LIB"],
-		        static_libs: ["%s"],
-	        },
+                static_libs: ["%s"],
+            },
         },
     },
     static_libs: [
