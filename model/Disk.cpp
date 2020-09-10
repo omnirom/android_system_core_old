@@ -132,6 +132,17 @@ void Disk::listVolumes(VolumeBase::Type type, std::list<std::string>& list) cons
     }
 }
 
+std::vector<std::shared_ptr<VolumeBase>> Disk::getVolumes() const {
+    std::vector<std::shared_ptr<VolumeBase>> vols;
+    for (const auto& vol : mVolumes) {
+        vols.push_back(vol);
+        auto stackedVolumes = vol->getVolumes();
+        vols.insert(vols.end(), stackedVolumes.begin(), stackedVolumes.end());
+    }
+
+    return vols;
+}
+
 status_t Disk::create() {
     CHECK(!mCreated);
     mCreated = true;
@@ -139,6 +150,10 @@ status_t Disk::create() {
     auto listener = VolumeManager::Instance()->getListener();
     if (listener) listener->onDiskCreated(getId(), mFlags);
 
+    if (isStub()) {
+        createStubVolume();
+        return OK;
+    }
     readMetadata();
     readPartitions();
     return OK;
@@ -201,6 +216,15 @@ void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
     vol->setDiskId(getId());
     vol->setPartGuid(partGuid);
     vol->create();
+}
+
+void Disk::createStubVolume() {
+    CHECK(mVolumes.size() == 1);
+    auto listener = VolumeManager::Instance()->getListener();
+    if (listener) listener->onDiskMetadataChanged(getId(), mSize, mLabel, mSysPath);
+    if (listener) listener->onDiskScanned(getId());
+    mVolumes[0]->setDiskId(getId());
+    mVolumes[0]->create();
 }
 
 void Disk::destroyAllVolumes() {
@@ -401,6 +425,12 @@ status_t Disk::readPartitions() {
 
     mJustPartitioned = false;
     return OK;
+}
+
+void Disk::initializePartition(std::shared_ptr<StubVolume> vol) {
+    CHECK(isStub());
+    CHECK(mVolumes.empty());
+    mVolumes.push_back(vol);
 }
 
 status_t Disk::unmountAll() {

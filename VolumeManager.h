@@ -23,6 +23,7 @@
 
 #include <list>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -82,7 +83,27 @@ class VolumeManager {
     std::shared_ptr<android::vold::Disk> findDisk(const std::string& id);
     std::shared_ptr<android::vold::VolumeBase> findVolume(const std::string& id);
 
+    template <typename Fn>
+    std::shared_ptr<android::vold::VolumeBase> findVolumeWithFilter(Fn fn) {
+        for (const auto& vol : mInternalEmulatedVolumes) {
+            if (fn(*vol)) {
+                return vol;
+            }
+        }
+        for (const auto& disk : mDisks) {
+            for (const auto& vol : disk->getVolumes()) {
+                if (fn(*vol)) {
+                    return vol;
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
     void listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list) const;
+
+    const std::set<userid_t>& getStartedUsers() const { return mStartedUsers; }
 
     int forgetPartition(const std::string& partGuid, const std::string& fsUuid);
 
@@ -91,12 +112,16 @@ class VolumeManager {
     int onUserStarted(userid_t userId);
     int onUserStopped(userid_t userId);
 
+    void createPendingDisksIfNeeded();
     int onSecureKeyguardStateChanged(bool isShowing);
 
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
 
     int remountUid(uid_t uid, int32_t remountMode);
+    int remountAppStorageDirs(int uid, int pid, const std::vector<std::string>& packageNames);
 
+    /* Aborts all FUSE filesystems, in case the FUSE daemon is no longer up. */
+    int abortFuse();
     /* Reset all internal state, typically during framework boot */
     int reset();
     /* Prepare for device shutdown, safely unmounting all devices */
@@ -107,16 +132,53 @@ class VolumeManager {
     int updateVirtualDisk();
     int setDebug(bool enable);
 
+    bool forkAndRemountStorage(int uid, int pid, const std::vector<std::string>& packageNames);
+
     static VolumeManager* Instance();
 
     /*
-     * Ensure that all directories along given path exist, creating parent
-     * directories as needed.  Validates that given path is absolute and that
-     * it contains no relative "." or ".." paths or symlinks.  Last path segment
-     * is treated as filename and ignored, unless the path ends with "/".  Also
-     * ensures that path belongs to a volume managed by vold.
+     * Creates a directory 'path' for an application, automatically creating
+     * directories along the given path if they don't exist yet.
+     *
+     * Example:
+     *   path = /storage/emulated/0/Android/data/com.foo/files/
+     *
+     * This function will first match the first part of the path with the volume
+     * root of any known volumes; in this case, "/storage/emulated/0" matches
+     * with the volume root of the emulated volume for user 0.
+     *
+     * The subseqent part of the path must start with one of the well-known
+     * Android/ data directories, /Android/data, /Android/obb or
+     * /Android/media.
+     *
+     * The final part of the path is application specific. This function will
+     * create all directories, including the application-specific ones, and
+     * set the UID of all app-specific directories below the well-known data
+     * directories to the 'appUid' argument. In the given example, the UID
+     * of /storage/emulated/0/Android/data/com.foo and
+     * /storage/emulated/0/Android/data/com.foo/files would be set to 'appUid'.
+     *
+     * The UID/GID of the parent directories will be set according to the
+     * requirements of the underlying filesystem and are of no concern to the
+     * caller.
+     *
+     * If fixupExistingOnly is set, we make sure to fixup any existing dirs and
+     * files in the passed in path, but only if that path exists; if it doesn't
+     * exist, this function doesn't create them.
+     *
+     * Validates that given paths are absolute and that they contain no relative
+     * "." or ".." paths or symlinks.  Last path segment is treated as filename
+     * and ignored, unless the path ends with "/".  Also ensures that path
+     * belongs to a volume managed by vold.
      */
-    int mkdirs(const std::string& path);
+    int setupAppDir(const std::string& path, int32_t appUid, bool fixupExistingOnly = false);
+
+    /**
+     * Fixes up an existing application directory, as if it was created with
+     * setupAppDir() above. This includes fixing up the UID/GID, permissions and
+     * project IDs of the contained files and directories.
+     */
+    int fixupAppDir(const std::string& path, int32_t appUid);
 
     int createObb(const std::string& path, const std::string& key, int32_t ownerGid,
                   std::string* outVolId);
@@ -124,7 +186,7 @@ class VolumeManager {
 
     int createStubVolume(const std::string& sourcePath, const std::string& mountPath,
                          const std::string& fsType, const std::string& fsUuid,
-                         const std::string& fsLabel, std::string* outVolId);
+                         const std::string& fsLabel, int32_t flags, std::string* outVolId);
     int destroyStubVolume(const std::string& volId);
 
     int mountAppFuse(uid_t uid, int mountId, android::base::unique_fd* device_fd);
@@ -137,9 +199,14 @@ class VolumeManager {
 
     int linkPrimary(userid_t userId);
 
+    void createEmulatedVolumesForUser(userid_t userId);
+    void destroyEmulatedVolumesForUser(userid_t userId);
+
     void handleDiskAdded(const std::shared_ptr<android::vold::Disk>& disk);
     void handleDiskChanged(dev_t device);
     void handleDiskRemoved(dev_t device);
+
+    bool updateFuseMountedProperty();
 
     std::mutex mLock;
     std::mutex mCryptLock;
@@ -150,18 +217,19 @@ class VolumeManager {
     std::list<std::shared_ptr<android::vold::Disk>> mDisks;
     std::list<std::shared_ptr<android::vold::Disk>> mPendingDisks;
     std::list<std::shared_ptr<android::vold::VolumeBase>> mObbVolumes;
-    std::list<std::shared_ptr<android::vold::VolumeBase>> mStubVolumes;
+    std::list<std::shared_ptr<android::vold::VolumeBase>> mInternalEmulatedVolumes;
 
     std::unordered_map<userid_t, int> mAddedUsers;
-    std::unordered_set<userid_t> mStartedUsers;
+    // This needs to be a regular set because we care about the ordering here;
+    // user 0 should always go first, because it is responsible for sdcardfs.
+    std::set<userid_t> mStartedUsers;
 
     std::string mVirtualDiskPath;
     std::shared_ptr<android::vold::Disk> mVirtualDisk;
-    std::shared_ptr<android::vold::VolumeBase> mInternalEmulated;
     std::shared_ptr<android::vold::VolumeBase> mPrimary;
 
     int mNextObbId;
-    int mNextStubVolumeId;
+    int mNextStubId;
     bool mSecureKeyguardShowing;
 };
 

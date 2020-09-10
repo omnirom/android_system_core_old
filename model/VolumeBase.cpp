@@ -143,6 +143,16 @@ status_t VolumeBase::setInternalPath(const std::string& internalPath) {
     return OK;
 }
 
+status_t VolumeBase::setMountCallback(
+        const android::sp<android::os::IVoldMountCallback>& callback) {
+    mMountCallback = callback;
+    return OK;
+}
+
+sp<android::os::IVoldMountCallback> VolumeBase::getMountCallback() const {
+    return mMountCallback;
+}
+
 android::sp<android::os::IVoldListener> VolumeBase::getListener() const {
     if (mSilent) {
         return nullptr;
@@ -176,7 +186,8 @@ status_t VolumeBase::create() {
 
     auto listener = getListener();
     if (listener) {
-        listener->onVolumeCreated(getId(), static_cast<int32_t>(mType), mDiskId, mPartGuid);
+        listener->onVolumeCreated(getId(), static_cast<int32_t>(mType), mDiskId, mPartGuid,
+                                  mMountUserId);
     }
 
     setState(State::kUnmounted);
@@ -221,8 +232,13 @@ status_t VolumeBase::mount() {
     status_t res = doMount();
     setState(res == OK ? State::kMounted : State::kUnmountable);
 
+    if (res == OK) {
+        doPostMount();
+    }
     return res;
 }
+
+void VolumeBase::doPostMount() {}
 
 status_t VolumeBase::unmount() {
     if (mState != State::kMounted) {
@@ -261,6 +277,11 @@ status_t VolumeBase::format(const std::string& fsType) {
 
 status_t VolumeBase::doFormat(const std::string& fsType) {
     return -ENOTSUP;
+}
+
+std::string VolumeBase::getRootPath() const {
+    // Usually the same as the internal path, except for emulated volumes.
+    return getInternalPath();
 }
 
 std::ostream& VolumeBase::operator<<(std::ostream& stream) const {

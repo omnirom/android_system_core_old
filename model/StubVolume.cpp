@@ -16,6 +16,8 @@
 
 #include "StubVolume.h"
 
+#include <inttypes.h>
+
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 
@@ -24,7 +26,7 @@ using android::base::StringPrintf;
 namespace android {
 namespace vold {
 
-StubVolume::StubVolume(int id, const std::string& sourcePath, const std::string& mountPath,
+StubVolume::StubVolume(dev_t id, const std::string& sourcePath, const std::string& mountPath,
                        const std::string& fsType, const std::string& fsUuid,
                        const std::string& fsLabel)
     : VolumeBase(Type::kStub),
@@ -33,7 +35,7 @@ StubVolume::StubVolume(int id, const std::string& sourcePath, const std::string&
       mFsType(fsType),
       mFsUuid(fsUuid),
       mFsLabel(fsLabel) {
-    setId(StringPrintf("stub:%d", id));
+    setId(StringPrintf("stub:%llu", (unsigned long long)id));
 }
 
 StubVolume::~StubVolume() {}

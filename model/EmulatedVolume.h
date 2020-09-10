@@ -27,7 +27,7 @@ namespace vold {
 /*
  * Shared storage emulated on top of private storage.
  *
- * Knows how to spawn a FUSE daemon to synthesize permissions.  ObbVolume
+ * Knows how to spawn a sdcardfs daemon to synthesize permissions.  ObbVolume
  * can be stacked above it.
  *
  * This volume is always multi-user aware, but is only binds itself to
@@ -37,25 +37,38 @@ namespace vold {
  */
 class EmulatedVolume : public VolumeBase {
   public:
-    explicit EmulatedVolume(const std::string& rawPath);
-    EmulatedVolume(const std::string& rawPath, dev_t device, const std::string& fsUuid);
+    explicit EmulatedVolume(const std::string& rawPath, int userId);
+    EmulatedVolume(const std::string& rawPath, dev_t device, const std::string& fsUuid, int userId);
     virtual ~EmulatedVolume();
+    std::string getRootPath() const override;
+    bool isFuseMounted() const { return mFuseMounted; }
 
   protected:
     status_t doMount() override;
     status_t doUnmount() override;
 
   private:
+    status_t unmountSdcardFs();
+    status_t mountFuseBindMounts();
+    status_t unmountFuseBindMounts();
+
+    std::string getLabel();
     std::string mRawPath;
     std::string mLabel;
 
-    std::string mFuseDefault;
-    std::string mFuseRead;
-    std::string mFuseWrite;
-    std::string mFuseFull;
+    std::string mSdcardFsDefault;
+    std::string mSdcardFsRead;
+    std::string mSdcardFsWrite;
+    std::string mSdcardFsFull;
 
-    /* PID of FUSE wrapper */
-    pid_t mFusePid;
+    /* Whether we mounted FUSE for this volume */
+    bool mFuseMounted;
+
+    /* Whether to use sdcardfs for this volume */
+    bool mUseSdcardFs;
+
+    /* Whether to use app data isolation is enabled tor this volume */
+    bool mAppDataIsolationEnabled;
 
     DISALLOW_COPY_AND_ASSIGN(EmulatedVolume);
 };

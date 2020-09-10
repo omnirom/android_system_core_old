@@ -24,9 +24,9 @@ using namespace std::literals;
 
 namespace android::vold {
 
-class VoldNativeServiceValidationTest : public testing::Test {};
+class VoldServiceValidationTest : public testing::Test {};
 
-TEST_F(VoldNativeServiceValidationTest, CheckArgumentPathTest) {
+TEST_F(VoldServiceValidationTest, CheckArgumentPathTest) {
     EXPECT_TRUE(CheckArgumentPath("/").isOk());
     EXPECT_TRUE(CheckArgumentPath("/1/2").isOk());
     EXPECT_TRUE(CheckArgumentPath("/1/2/").isOk());

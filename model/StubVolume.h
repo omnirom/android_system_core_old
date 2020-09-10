@@ -31,7 +31,7 @@ namespace vold {
  */
 class StubVolume : public VolumeBase {
   public:
-    StubVolume(int id, const std::string& sourcePath, const std::string& mountPath,
+    StubVolume(dev_t id, const std::string& sourcePath, const std::string& mountPath,
                const std::string& fsType, const std::string& fsUuid, const std::string& fsLabel);
     virtual ~StubVolume();
 

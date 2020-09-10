@@ -27,7 +27,7 @@ namespace vold {
 /*
  * Shared storage provided by public (vfat) partition.
  *
- * Knows how to mount itself and then spawn a FUSE daemon to synthesize
+ * Knows how to mount itself and then spawn a sdcardfs daemon to synthesize
  * permissions.  AsecVolume and ObbVolume can be stacked above it.
  *
  * This volume is not inherently multi-user aware, so it has two possible
@@ -60,13 +60,16 @@ class PublicVolume : public VolumeBase {
     /* Mount point of raw partition */
     std::string mRawPath;
 
-    std::string mFuseDefault;
-    std::string mFuseRead;
-    std::string mFuseWrite;
-    std::string mFuseFull;
+    std::string mSdcardFsDefault;
+    std::string mSdcardFsRead;
+    std::string mSdcardFsWrite;
+    std::string mSdcardFsFull;
 
-    /* PID of FUSE wrapper */
-    pid_t mFusePid;
+    /* Whether we mounted FUSE for this volume */
+    bool mFuseMounted;
+
+    /* Whether to use sdcardfs for this volume */
+    bool mUseSdcardFs;
 
     /* Filesystem type */
     std::string mFsType;
