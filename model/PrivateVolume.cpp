@@ -36,6 +36,7 @@
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <thread>
 
 using android::base::StringPrintf;
 using android::vold::IsVirtioBlkDevice;
@@ -43,6 +44,7 @@ using android::vold::IsVirtioBlkDevice;
 namespace android {
 namespace vold {
 
+static const unsigned int kMajorBlockLoop = 7;
 static const unsigned int kMajorBlockMmc = 179;
 
 PrivateVolume::PrivateVolume(dev_t device, const KeyBuffer& keyRaw)
@@ -69,8 +71,19 @@ status_t PrivateVolume::doCreate() {
 
     // Recover from stale vold by tearing down any old mappings
     auto& dm = dm::DeviceMapper::Instance();
-    if (!dm.DeleteDeviceIfExists(getId())) {
+    // TODO(b/149396179) there appears to be a race somewhere in the system where trying
+    // to delete the device fails with EBUSY; for now, work around this by retrying.
+    bool ret;
+    int tries = 10;
+    while (tries-- > 0) {
+        ret = dm.DeleteDeviceIfExists(getId());
+        if (ret || errno != EBUSY) {
+            break;
+        }
         PLOG(ERROR) << "Cannot remove dm device " << getId();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    if (!ret) {
         return -EIO;
     }
 
@@ -86,8 +99,19 @@ status_t PrivateVolume::doCreate() {
 
 status_t PrivateVolume::doDestroy() {
     auto& dm = dm::DeviceMapper::Instance();
-    if (!dm.DeleteDevice(getId())) {
+    // TODO(b/149396179) there appears to be a race somewhere in the system where trying
+    // to delete the device fails with EBUSY; for now, work around this by retrying.
+    bool ret;
+    int tries = 10;
+    while (tries-- > 0) {
+        ret = dm.DeleteDevice(getId());
+        if (ret || errno != EBUSY) {
+            break;
+        }
         PLOG(ERROR) << "Cannot remove dm device " << getId();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    if (!ret) {
         return -EIO;
     }
     return DestroyDeviceNode(mRawDevPath);
@@ -154,14 +178,22 @@ status_t PrivateVolume::doMount() {
         return -EIO;
     }
 
-    // Create a new emulated volume stacked above us, it will automatically
-    // be destroyed during unmount
-    std::string mediaPath(mPath + "/media");
-    auto vol = std::shared_ptr<VolumeBase>(new EmulatedVolume(mediaPath, mRawDevice, mFsUuid));
-    addVolume(vol);
-    vol->create();
-
     return OK;
+}
+
+void PrivateVolume::doPostMount() {
+    auto vol_manager = VolumeManager::Instance();
+    std::string mediaPath(mPath + "/media");
+
+    // Create a new emulated volume stacked above us for all added users, they will automatically
+    // be destroyed during unmount
+    for (userid_t user : vol_manager->getStartedUsers()) {
+        auto vol = std::shared_ptr<VolumeBase>(
+                new EmulatedVolume(mediaPath, mRawDevice, mFsUuid, user));
+        vol->setMountUserId(user);
+        addVolume(vol);
+        vol->create();
+    }
 }
 
 status_t PrivateVolume::doUnmount() {
@@ -179,7 +211,9 @@ status_t PrivateVolume::doFormat(const std::string& fsType) {
     if (fsType == "auto") {
         // For now, assume that all MMC devices are flash-based SD cards, and
         // give everyone else ext4 because sysfs rotational isn't reliable.
+        // Additionally, prefer f2fs for loop-based devices
         if ((major(mRawDevice) == kMajorBlockMmc ||
+             major(mRawDevice) == kMajorBlockLoop ||
              IsVirtioBlkDevice(major(mRawDevice))) && f2fs::IsSupported()) {
             resolvedFsType = "f2fs";
         } else {

@@ -133,7 +133,7 @@ class Keymaster {
     static void earlyBootEnded();
 
   private:
-    std::unique_ptr<KmDevice> mDevice;
+    sp<KmDevice> mDevice;
     DISALLOW_COPY_AND_ASSIGN(Keymaster);
     static bool hmacKeyGenerated;
 };

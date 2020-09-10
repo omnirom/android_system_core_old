@@ -40,6 +40,7 @@
 #include <unistd.h>
 
 #include <private/android_filesystem_config.h>
+#include <private/android_projectid_config.h>
 
 #include "android/os/IVold.h"
 
@@ -66,11 +67,14 @@ using android::base::StartsWith;
 using android::base::StringPrintf;
 using android::fs_mgr::GetEntryForMountPoint;
 using android::vold::BuildDataPath;
+using android::vold::IsFilesystemSupported;
 using android::vold::kEmptyAuthentication;
 using android::vold::KeyBuffer;
 using android::vold::KeyGeneration;
 using android::vold::retrieveKey;
 using android::vold::retrieveOrGenerateKey;
+using android::vold::SetQuotaInherit;
+using android::vold::SetQuotaProjectId;
 using android::vold::writeStringToFile;
 using namespace android::fscrypt;
 using namespace android::dm;
@@ -856,6 +860,7 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             if (!prepare_dir(vendor_ce_path, 0771, AID_ROOT, AID_ROOT)) return false;
         }
         if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return false;
+
         if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
         if (fscrypt_is_native()) {

@@ -15,6 +15,8 @@
  */
 
 #include "PublicVolume.h"
+
+#include "AppFuseUtil.h"
 #include "Utils.h"
 #include "VolumeManager.h"
 #include "fs/Exfat.h"
@@ -41,13 +43,15 @@ using android::base::StringPrintf;
 namespace android {
 namespace vold {
 
-static const char* kFusePath = "/system/bin/sdcard";
+static const char* kSdcardFsPath = "/system/bin/sdcard";
 
 static const char* kAsecPath = "/mnt/secure/asec";
 
-PublicVolume::PublicVolume(dev_t device) : VolumeBase(Type::kPublic), mDevice(device), mFusePid(0) {
+PublicVolume::PublicVolume(dev_t device) : VolumeBase(Type::kPublic), mDevice(device) {
     setId(StringPrintf("public:%u,%u", major(device), minor(device)));
     mDevPath = StringPrintf("/dev/block/vold/%s", getId().c_str());
+    mFuseMounted = false;
+    mUseSdcardFs = IsSdcardfsUsed();
 }
 
 PublicVolume::~PublicVolume() {}
@@ -93,6 +97,7 @@ status_t PublicVolume::doDestroy() {
 }
 
 status_t PublicVolume::doMount() {
+    bool isVisible = getMountFlags() & MountFlags::kVisible;
     readMetadata();
 
     if (mFsType == "vfat" && vfat::IsSupported()) {
@@ -118,13 +123,13 @@ status_t PublicVolume::doMount() {
 
     mRawPath = StringPrintf("/mnt/media_rw/%s", stableName.c_str());
 
-    mFuseDefault = StringPrintf("/mnt/runtime/default/%s", stableName.c_str());
-    mFuseRead = StringPrintf("/mnt/runtime/read/%s", stableName.c_str());
-    mFuseWrite = StringPrintf("/mnt/runtime/write/%s", stableName.c_str());
-    mFuseFull = StringPrintf("/mnt/runtime/full/%s", stableName.c_str());
+    mSdcardFsDefault = StringPrintf("/mnt/runtime/default/%s", stableName.c_str());
+    mSdcardFsRead = StringPrintf("/mnt/runtime/read/%s", stableName.c_str());
+    mSdcardFsWrite = StringPrintf("/mnt/runtime/write/%s", stableName.c_str());
+    mSdcardFsFull = StringPrintf("/mnt/runtime/full/%s", stableName.c_str());
 
     setInternalPath(mRawPath);
-    if (getMountFlags() & MountFlags::kVisible) {
+    if (isVisible) {
         setPath(StringPrintf("/storage/%s", stableName.c_str()));
     } else {
         setPath(mRawPath);
@@ -136,13 +141,14 @@ status_t PublicVolume::doMount() {
     }
 
     if (mFsType == "vfat") {
-        if (vfat::Mount(mDevPath, mRawPath, false, false, false, AID_MEDIA_RW, AID_MEDIA_RW, 0007,
-                        true)) {
+        if (vfat::Mount(mDevPath, mRawPath, false, false, false, AID_ROOT,
+                        (isVisible ? AID_MEDIA_RW : AID_EXTERNAL_STORAGE), 0007, true)) {
             PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
             return -EIO;
         }
     } else if (mFsType == "exfat") {
-        if (exfat::Mount(mDevPath, mRawPath, AID_MEDIA_RW, AID_MEDIA_RW, 0007)) {
+        if (exfat::Mount(mDevPath, mRawPath, AID_ROOT,
+                         (isVisible ? AID_MEDIA_RW : AID_EXTERNAL_STORAGE), 0007)) {
             PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
             return -EIO;
         }
@@ -152,72 +158,107 @@ status_t PublicVolume::doMount() {
         initAsecStage();
     }
 
-    if (!(getMountFlags() & MountFlags::kVisible)) {
-        // Not visible to apps, so no need to spin up FUSE
+    if (!isVisible) {
+        // Not visible to apps, so no need to spin up sdcardfs or FUSE
         return OK;
     }
 
-    if (fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
-        fs_prepare_dir(mFuseRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
-        fs_prepare_dir(mFuseWrite.c_str(), 0700, AID_ROOT, AID_ROOT) ||
-        fs_prepare_dir(mFuseFull.c_str(), 0700, AID_ROOT, AID_ROOT)) {
-        PLOG(ERROR) << getId() << " failed to create FUSE mount points";
-        return -errno;
+    if (mUseSdcardFs) {
+        if (fs_prepare_dir(mSdcardFsDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mSdcardFsRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mSdcardFsWrite.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mSdcardFsFull.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+            PLOG(ERROR) << getId() << " failed to create sdcardfs mount points";
+            return -errno;
+        }
+
+        dev_t before = GetDevice(mSdcardFsFull);
+
+        int sdcardFsPid;
+        if (!(sdcardFsPid = fork())) {
+            if (getMountFlags() & MountFlags::kPrimary) {
+                // clang-format off
+                if (execl(kSdcardFsPath, kSdcardFsPath,
+                        "-u", "1023", // AID_MEDIA_RW
+                        "-g", "1023", // AID_MEDIA_RW
+                        "-U", std::to_string(getMountUserId()).c_str(),
+                        "-w",
+                        mRawPath.c_str(),
+                        stableName.c_str(),
+                        NULL)) {
+                    // clang-format on
+                    PLOG(ERROR) << "Failed to exec";
+                }
+            } else {
+                // clang-format off
+                if (execl(kSdcardFsPath, kSdcardFsPath,
+                        "-u", "1023", // AID_MEDIA_RW
+                        "-g", "1023", // AID_MEDIA_RW
+                        "-U", std::to_string(getMountUserId()).c_str(),
+                        mRawPath.c_str(),
+                        stableName.c_str(),
+                        NULL)) {
+                    // clang-format on
+                    PLOG(ERROR) << "Failed to exec";
+                }
+            }
+
+            LOG(ERROR) << "sdcardfs exiting";
+            _exit(1);
+        }
+
+        if (sdcardFsPid == -1) {
+            PLOG(ERROR) << getId() << " failed to fork";
+            return -errno;
+        }
+
+        nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
+        while (before == GetDevice(mSdcardFsFull)) {
+            LOG(DEBUG) << "Waiting for sdcardfs to spin up...";
+            usleep(50000);  // 50ms
+
+            nsecs_t now = systemTime(SYSTEM_TIME_BOOTTIME);
+            if (nanoseconds_to_milliseconds(now - start) > 5000) {
+                LOG(WARNING) << "Timed out while waiting for sdcardfs to spin up";
+                return -ETIMEDOUT;
+            }
+        }
+        /* sdcardfs will have exited already. The filesystem will still be running */
+        TEMP_FAILURE_RETRY(waitpid(sdcardFsPid, nullptr, 0));
     }
 
-    dev_t before = GetDevice(mFuseFull);
+    bool isFuse = base::GetBoolProperty(kPropFuse, false);
+    if (isFuse) {
+        // We need to mount FUSE *after* sdcardfs, since the FUSE daemon may depend
+        // on sdcardfs being up.
+        LOG(INFO) << "Mounting public fuse volume";
+        android::base::unique_fd fd;
+        int user_id = getMountUserId();
+        int result = MountUserFuse(user_id, getInternalPath(), stableName, &fd);
 
-    if (!(mFusePid = fork())) {
-        if (getMountFlags() & MountFlags::kPrimary) {
-            // clang-format off
-            if (execl(kFusePath, kFusePath,
-                    "-u", "1023", // AID_MEDIA_RW
-                    "-g", "1023", // AID_MEDIA_RW
-                    "-U", std::to_string(getMountUserId()).c_str(),
-                    "-w",
-                    mRawPath.c_str(),
-                    stableName.c_str(),
-                    NULL)) {
-                // clang-format on
-                PLOG(ERROR) << "Failed to exec";
-            }
-        } else {
-            // clang-format off
-            if (execl(kFusePath, kFusePath,
-                    "-u", "1023", // AID_MEDIA_RW
-                    "-g", "1023", // AID_MEDIA_RW
-                    "-U", std::to_string(getMountUserId()).c_str(),
-                    mRawPath.c_str(),
-                    stableName.c_str(),
-                    NULL)) {
-                // clang-format on
-                PLOG(ERROR) << "Failed to exec";
+        if (result != 0) {
+            LOG(ERROR) << "Failed to mount public fuse volume";
+            doUnmount();
+            return -result;
+        }
+
+        mFuseMounted = true;
+        auto callback = getMountCallback();
+        if (callback) {
+            bool is_ready = false;
+            callback->onVolumeChecking(std::move(fd), getPath(), getInternalPath(), &is_ready);
+            if (!is_ready) {
+                LOG(ERROR) << "Failed to complete public volume mount";
+                doUnmount();
+                return -EIO;
             }
         }
 
-        LOG(ERROR) << "FUSE exiting";
-        _exit(1);
-    }
+        ConfigureReadAheadForFuse(GetFuseMountPathForUser(user_id, stableName), 256u);
 
-    if (mFusePid == -1) {
-        PLOG(ERROR) << getId() << " failed to fork";
-        return -errno;
+        // See comment in model/EmulatedVolume.cpp
+        ConfigureMaxDirtyRatioForFuse(GetFuseMountPathForUser(user_id, stableName), 40u);
     }
-
-    nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
-    while (before == GetDevice(mFuseFull)) {
-        LOG(DEBUG) << "Waiting for FUSE to spin up...";
-        usleep(50000);  // 50ms
-
-        nsecs_t now = systemTime(SYSTEM_TIME_BOOTTIME);
-        if (nanoseconds_to_milliseconds(now - start) > 5000) {
-            LOG(WARNING) << "Timed out while waiting for FUSE to spin up";
-            return -ETIMEDOUT;
-        }
-    }
-    /* sdcardfs will have exited already. FUSE will still be running */
-    TEMP_FAILURE_RETRY(waitpid(mFusePid, nullptr, 0));
-    mFusePid = 0;
 
     return OK;
 }
@@ -229,24 +270,41 @@ status_t PublicVolume::doUnmount() {
     // error code and might cause broken behaviour in applications.
     KillProcessesUsingPath(getPath());
 
+    if (mFuseMounted) {
+        // Use UUID as stable name, if available
+        std::string stableName = getId();
+        if (!mFsUuid.empty()) {
+            stableName = mFsUuid;
+        }
+
+        if (UnmountUserFuse(getMountUserId(), getInternalPath(), stableName) != OK) {
+            PLOG(INFO) << "UnmountUserFuse failed on public fuse volume";
+            return -errno;
+        }
+
+        mFuseMounted = false;
+    }
+
     ForceUnmount(kAsecPath);
 
-    ForceUnmount(mFuseDefault);
-    ForceUnmount(mFuseRead);
-    ForceUnmount(mFuseWrite);
-    ForceUnmount(mFuseFull);
+    if (mUseSdcardFs) {
+        ForceUnmount(mSdcardFsDefault);
+        ForceUnmount(mSdcardFsRead);
+        ForceUnmount(mSdcardFsWrite);
+        ForceUnmount(mSdcardFsFull);
+
+        rmdir(mSdcardFsDefault.c_str());
+        rmdir(mSdcardFsRead.c_str());
+        rmdir(mSdcardFsWrite.c_str());
+        rmdir(mSdcardFsFull.c_str());
+
+        mSdcardFsDefault.clear();
+        mSdcardFsRead.clear();
+        mSdcardFsWrite.clear();
+        mSdcardFsFull.clear();
+    }
     ForceUnmount(mRawPath);
-
-    rmdir(mFuseDefault.c_str());
-    rmdir(mFuseRead.c_str());
-    rmdir(mFuseWrite.c_str());
-    rmdir(mFuseFull.c_str());
     rmdir(mRawPath.c_str());
-
-    mFuseDefault.clear();
-    mFuseRead.clear();
-    mFuseWrite.clear();
-    mFuseFull.clear();
     mRawPath.clear();
 
     return OK;

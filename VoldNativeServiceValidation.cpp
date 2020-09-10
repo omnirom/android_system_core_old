@@ -39,11 +39,10 @@ binder::Status Exception(uint32_t code, const std::string& msg) {
 }
 
 binder::Status CheckPermission(const char* permission) {
-    pid_t pid;
-    uid_t uid;
+    int32_t pid;
+    int32_t uid;
 
-    if (checkCallingPermission(String16(permission), reinterpret_cast<int32_t*>(&pid),
-                               reinterpret_cast<int32_t*>(&uid))) {
+    if (checkCallingPermission(String16(permission), &pid, &uid)) {
         return Ok();
     } else {
         return Exception(binder::Status::EX_SECURITY,
@@ -66,7 +65,7 @@ binder::Status CheckArgumentId(const std::string& id) {
         return Exception(binder::Status::EX_ILLEGAL_ARGUMENT, "Missing ID");
     }
     for (const char& c : id) {
-        if (!std::isalnum(c) && c != ':' && c != ',') {
+        if (!std::isalnum(c) && c != ':' && c != ',' && c != ';') {
             return Exception(binder::Status::EX_ILLEGAL_ARGUMENT,
                              StringPrintf("ID %s is malformed", id.c_str()));
         }

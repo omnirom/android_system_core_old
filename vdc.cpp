@@ -99,6 +99,8 @@ int main(int argc, char** argv) {
         checkStatus(args, vold->fdeEnable(passwordType, "", encryptionFlags));
     } else if (args[0] == "cryptfs" && args[1] == "mountdefaultencrypted") {
         checkStatus(args, vold->mountDefaultEncrypted());
+    } else if (args[0] == "volume" && args[1] == "abort_fuse") {
+        checkStatus(args, vold->abortFuse());
     } else if (args[0] == "volume" && args[1] == "shutdown") {
         checkStatus(args, vold->shutdown());
     } else if (args[0] == "volume" && args[1] == "reset") {

@@ -94,6 +94,20 @@ status_t Format(const std::string& source) {
     cmd.push_back("-O");
     cmd.push_back("verity");
 
+    const bool needs_casefold =
+            android::base::GetBoolProperty("external_storage.casefold.enabled", false);
+    const bool needs_projid =
+            android::base::GetBoolProperty("external_storage.projid.enabled", false);
+    if (needs_projid) {
+        cmd.push_back("-O");
+        cmd.push_back("project_quota,extra_attr");
+    }
+    if (needs_casefold) {
+        cmd.push_back("-O");
+        cmd.push_back("casefold");
+        cmd.push_back("-C");
+        cmd.push_back("utf8");
+    }
     cmd.push_back(source);
     return ForkExecvp(cmd);
 }

@@ -67,6 +67,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <chrono>
+#include <thread>
+
 extern "C" {
 #include <crypto_scrypt.h>
 }
@@ -1131,9 +1134,22 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr* crypt_ftr, const unsigned
 }
 
 static int delete_crypto_blk_dev(const std::string& name) {
+    bool ret;
     auto& dm = DeviceMapper::Instance();
-    if (!dm.DeleteDevice(name)) {
-        SLOGE("Cannot remove dm-crypt device %s: %s\n", name.c_str(), strerror(errno));
+    // TODO(b/149396179) there appears to be a race somewhere in the system where trying
+    // to delete the device fails with EBUSY; for now, work around this by retrying.
+    int tries = 5;
+    while (tries-- > 0) {
+        ret = dm.DeleteDevice(name);
+        if (ret || errno != EBUSY) {
+            break;
+        }
+        SLOGW("DM_DEV Cannot remove dm-crypt device %s: %s, retrying...\n", name.c_str(),
+              strerror(errno));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    if (!ret) {
+        SLOGE("DM_DEV Cannot remove dm-crypt device %s: %s\n", name.c_str(), strerror(errno));
         return -1;
     }
     return 0;

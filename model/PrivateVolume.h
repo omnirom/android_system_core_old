@@ -42,11 +42,14 @@ class PrivateVolume : public VolumeBase {
     const std::string& getFsType() const { return mFsType; };
     const std::string& getRawDevPath() const { return mRawDevPath; };
     const std::string& getRawDmDevPath() const { return mDmDevPath; };
+    const std::string& getFsUuid() const { return mFsUuid; };
+    dev_t getRawDevice() const { return mRawDevice; };
 
   protected:
     status_t doCreate() override;
     status_t doDestroy() override;
     status_t doMount() override;
+    void doPostMount() override;
     status_t doUnmount() override;
     status_t doFormat(const std::string& fsType) override;
 
