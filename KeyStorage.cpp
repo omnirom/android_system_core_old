@@ -141,9 +141,12 @@ bool generateWrappedStorageKey(KeyBuffer* key) {
     if (!keymaster) return false;
     std::string key_temp;
     auto paramBuilder = km::AuthorizationSetBuilder().AesEncryptionKey(AES_KEY_BYTES * 8);
-    paramBuilder.Authorization(km::TAG_ROLLBACK_RESISTANCE);
     paramBuilder.Authorization(km::TAG_STORAGE_KEY);
-    if (!keymaster.generateKey(paramBuilder, &key_temp)) return false;
+    auto paramsWithRollback = paramBuilder;
+    paramsWithRollback.Authorization(km::TAG_ROLLBACK_RESISTANCE);
+    if (!keymaster.generateKey(paramsWithRollback, &key_temp)) {
+        if (!keymaster.generateKey(paramBuilder, &key_temp)) return false;
+    }
     *key = KeyBuffer(key_temp.size());
     memcpy(reinterpret_cast<void*>(key->data()), key_temp.c_str(), key->size());
     return true;
