@@ -50,6 +50,27 @@ bool overwrite_with_zeros(int fd, off64_t start, off64_t length);
 
 }  // namespace
 
+#ifndef F2FS_IOCTL_MAGIC
+#define F2FS_IOCTL_MAGIC 0xf5
+#endif
+
+// F2FS-specific ioctl
+// It requires the below kernel commit merged in v5.9-rc1.
+//   9af846486d78 ("f2fs: add F2FS_IOC_SEC_TRIM_FILE ioctl")
+// In android12-5.4,
+//   7fc27297c44d ("Merge remote-tracking branch 'aosp/upstream-f2fs-stable-linux-5.4.y'
+//   into android12-5.4")
+#ifndef F2FS_IOC_SEC_TRIM_FILE
+struct f2fs_sectrim_range {
+    __u64 start;
+    __u64 len;
+    __u64 flags;
+};
+#define F2FS_IOC_SEC_TRIM_FILE _IOW(F2FS_IOCTL_MAGIC, 20, struct f2fs_sectrim_range)
+#define F2FS_TRIM_FILE_DISCARD 0x1
+#define F2FS_TRIM_FILE_ZEROOUT 0x2
+#endif
+
 int main(int argc, const char* const argv[]) {
     android::base::InitLogging(const_cast<char**>(argv));
     Options options;
@@ -69,9 +90,6 @@ int main(int argc, const char* const argv[]) {
 // In android-4.14,
 //   ce767d9a55bc ("f2fs: updates on v4.16-rc1")
 #ifndef F2FS_IOC_SET_PIN_FILE
-#ifndef F2FS_IOCTL_MAGIC
-#define F2FS_IOCTL_MAGIC 0xf5
-#endif
 #define F2FS_IOC_SET_PIN_FILE _IOW(F2FS_IOCTL_MAGIC, 13, __u32)
 #define F2FS_IOC_GET_PIN_FILE _IOR(F2FS_IOCTL_MAGIC, 14, __u32)
 #endif
@@ -85,8 +103,31 @@ int main(int argc, const char* const argv[]) {
         ioctl(fd, F2FS_IOC_SET_PIN_FILE, &set);
 
         LOG(DEBUG) << "Securely discarding '" << target << "' unlink=" << options.unlink;
-        if (!secdiscard_path(target)) {
-            LOG(ERROR) << "Secure discard failed for: " << target;
+        struct f2fs_sectrim_range secRange;
+        secRange.start = 0;
+        secRange.len = -1;  // until end of file
+        secRange.flags = F2FS_TRIM_FILE_DISCARD | F2FS_TRIM_FILE_ZEROOUT;
+        /*
+         * F2FS_IOC_SEC_TRIM_FILE is only supported by F2FS.
+         * 1. If device supports secure discard, it sends secure discard command on the file.
+         * 2. Otherwise, it sends discard command on the file.
+         * 3. Lastly, it overwrites zero data on it.
+         */
+        int ret = ioctl(fd, F2FS_IOC_SEC_TRIM_FILE, &secRange);
+        if (ret != 0) {
+            if (errno == EOPNOTSUPP) {
+                // If device doesn't support any type of discard, just overwrite zero data.
+                secRange.flags = F2FS_TRIM_FILE_ZEROOUT;
+                ret = ioctl(fd, F2FS_IOC_SEC_TRIM_FILE, &secRange);
+            }
+            if (ret != 0 && errno != ENOTTY) {
+                PLOG(WARNING) << "F2FS_IOC_SEC_TRIM_FILE failed on " << target;
+            }
+        }
+        if (ret != 0) {
+            if (!secdiscard_path(target)) {
+                LOG(ERROR) << "Secure discard failed for: " << target;
+            }
         }
         if (options.unlink) {
             if (unlink(target.c_str()) != 0 && errno != ENOENT) {
