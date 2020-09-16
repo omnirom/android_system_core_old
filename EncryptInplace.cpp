@@ -49,11 +49,7 @@ static inline int unix_write(int fd, const void* buff, int len) {
 /* aligned 32K writes tends to make flash happy.
  * SD card association recommends it.
  */
-#ifndef CONFIG_HW_DISK_ENCRYPTION
 #define BLOCKS_AT_A_TIME 8
-#else
-#define BLOCKS_AT_A_TIME 1024
-#endif
 
 struct encryptGroupsData {
     int realfd;
