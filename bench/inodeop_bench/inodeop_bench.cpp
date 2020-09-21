@@ -146,25 +146,6 @@ void drop_state() {
 
 static constexpr int OPEN_DIR_FLAGS = O_RDONLY | O_DIRECTORY | O_PATH | O_CLOEXEC;
 
-bool create_files(const std::string& dir, int n_file, const std::string& basename) {
-    int dir_fd = open(dir.c_str(), OPEN_DIR_FLAGS);
-    if (dir_fd == -1) {
-        int error = errno;
-        std::cerr << "Failed to open work directory '" << dir << "', error '" << strerror(error)
-                  << "'." << std::endl;
-        return false;
-    }
-
-    for (int i = 0; i < n_file; i++) {
-        std::string filename = basename + std::to_string(i);
-        int fd = openat(dir_fd, filename.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0777);
-        close(fd);
-    }
-
-    close(dir_fd);
-    return true;
-}
-
 bool delete_files(const std::string& dir, int n_file, const std::string& basename) {
     int dir_fd = open(dir.c_str(), OPEN_DIR_FLAGS);
     if (dir_fd == -1) {
@@ -174,13 +155,40 @@ bool delete_files(const std::string& dir, int n_file, const std::string& basenam
         return false;
     }
 
+    bool ret = true;
     for (int i = 0; i < n_file; i++) {
         std::string filename = basename + std::to_string(i);
-        unlinkat(dir_fd, filename.c_str(), 0);
+        ret = ret && (unlinkat(dir_fd, filename.c_str(), 0) == 0);
+    }
+
+    if (!ret) std::cerr << "Failed to delete at least one of the files" << std::endl;
+    close(dir_fd);
+    return ret;
+}
+
+bool create_files(const std::string& dir, int n_file, const std::string& basename) {
+    int dir_fd = open(dir.c_str(), OPEN_DIR_FLAGS);
+    if (dir_fd == -1) {
+        int error = errno;
+        std::cerr << "Failed to open work directory '" << dir << "', error '" << strerror(error)
+                  << "'." << std::endl;
+        return false;
+    }
+
+    bool ret = true;
+    for (int i = 0; i < n_file; i++) {
+        std::string filename = basename + std::to_string(i);
+        int fd = openat(dir_fd, filename.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0777);
+        ret = ret && fd != -1;
+        close(fd);
     }
 
     close(dir_fd);
-    return true;
+    if (!ret) {
+        std::cerr << "Failed to open at least one of the files" << std::endl;
+        delete_files(dir, n_file, basename);
+    }
+    return ret;
 }
 
 bool move_files(const std::string& from_dir, const std::string& to_dir, int n_file,
@@ -201,15 +209,18 @@ bool move_files(const std::string& from_dir, const std::string& to_dir, int n_fi
         return false;
     }
 
+    bool ret = true;
     for (int i = 0; i < n_file; i++) {
         std::string from_filename = from_basename + std::to_string(i);
         std::string to_filename = to_basename + std::to_string(i);
-        renameat(from_dir_fd, from_filename.c_str(), to_dir_fd, to_filename.c_str());
+        ret = ret &&
+              (renameat(from_dir_fd, from_filename.c_str(), to_dir_fd, to_filename.c_str()) == 0);
     }
 
+    if (!ret) std::cerr << "Failed to move at least one of the files" << std::endl;
     close(from_dir_fd);
     close(from_dir_fd);
-    return true;
+    return ret;
 }
 
 bool hardlink_files(const std::string& from_dir, const std::string& to_dir, int n_file,
@@ -230,15 +241,18 @@ bool hardlink_files(const std::string& from_dir, const std::string& to_dir, int 
         return false;
     }
 
+    bool ret = true;
     for (int i = 0; i < n_file; i++) {
         std::string from_filename = from_basename + std::to_string(i);
         std::string to_filename = to_basename + std::to_string(i);
-        linkat(from_dir_fd, from_filename.c_str(), to_dir_fd, to_filename.c_str(), 0);
+        ret = ret &&
+              (linkat(from_dir_fd, from_filename.c_str(), to_dir_fd, to_filename.c_str(), 0) == 0);
     }
 
+    if (!ret) std::cerr << "Failed to hardlink at least one of the files" << std::endl;
     close(from_dir_fd);
     close(to_dir_fd);
-    return true;
+    return ret;
 }
 
 bool symlink_files(std::string from_dir, const std::string& to_dir, int n_file,
@@ -252,14 +266,16 @@ bool symlink_files(std::string from_dir, const std::string& to_dir, int n_file,
         return false;
     }
 
+    bool ret = true;
     for (int i = 0; i < n_file; i++) {
         std::string from_filepath = from_dir + from_basename + std::to_string(i);
         std::string to_filename = to_basename + std::to_string(i);
-        symlinkat(from_filepath.c_str(), to_dir_fd, to_filename.c_str());
+        ret = ret && (symlinkat(from_filepath.c_str(), to_dir_fd, to_filename.c_str()) == 0);
     }
 
+    if (!ret) std::cerr << "Failed to symlink at least one of the files" << std::endl;
     close(to_dir_fd);
-    return true;
+    return ret;
 }
 
 bool exhaustive_readdir(const std::string& from_dir) {
@@ -271,11 +287,16 @@ bool exhaustive_readdir(const std::string& from_dir) {
         return false;
     }
 
+    errno = 0;
     while (readdir(dir) != nullptr)
         ;
-
+    // In case of failure readdir returns nullptr and sets errno accordingly (to
+    // something != 0).
+    // In case of success readdir != nullptr and errno is not changed.
+    // Source: man 3 readdir.
+    bool ret = errno == 0;
     closedir(dir);
-    return true;
+    return ret;
 }
 
 void create_workload(Collector* collector, const Command& command) {
