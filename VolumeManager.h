@@ -56,7 +56,6 @@ class VolumeManager {
     android::sp<android::os::IVoldListener> getListener() const { return mListener; }
 
     int start();
-    int stop();
 
     void handleBlockEvent(NetlinkEvent* evt);
 

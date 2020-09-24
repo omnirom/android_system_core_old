@@ -198,16 +198,6 @@ int VolumeManager::start() {
     return 0;
 }
 
-int VolumeManager::stop() {
-    CHECK(!mInternalEmulatedVolumes.empty());
-    for (const auto& vol : mInternalEmulatedVolumes) {
-        vol->destroy();
-    }
-    mInternalEmulatedVolumes.clear();
-
-    return 0;
-}
-
 void VolumeManager::handleBlockEvent(NetlinkEvent* evt) {
     std::lock_guard<std::mutex> lock(mLock);
 
