@@ -90,19 +90,3 @@ out:
     close(mSock);
     return -1;
 }
-
-int NetlinkManager::stop() {
-    int status = 0;
-
-    if (mHandler->stop()) {
-        PLOG(ERROR) << "Unable to stop NetlinkHandler";
-        status = -1;
-    }
-    delete mHandler;
-    mHandler = NULL;
-
-    close(mSock);
-    mSock = -1;
-
-    return status;
-}
