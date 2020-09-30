@@ -203,11 +203,20 @@ libinit_cc_defaults {
 }
 
 cc_library_static {
+    name: "vendor_init",
+    recovery_available: true,
+    srcs: [
+        "vendor_init.cpp",
+    ],
+}
+
+cc_library_static {
     name: "libinit",
     recovery_available: true,
     defaults: [
         "init_defaults",
         "selinux_policy_version",
+        "vendor_init_defaults",
     ],
     srcs: init_common_sources + init_device_sources,
     generated_sources: [
@@ -252,7 +261,10 @@ cc_binary {
     name: "init_second_stage",
     recovery_available: true,
     stem: "init",
-    defaults: ["init_defaults"],
+    defaults: [
+        "init_defaults",
+        "vendor_init_defaults",
+    ],
     static_libs: ["libinit"],
     srcs: ["main.cpp"],
     symlinks: ["ueventd"],
