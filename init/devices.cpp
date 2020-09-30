@@ -39,6 +39,10 @@
 #include "selabel.h"
 #include "util.h"
 
+#ifdef TARGET_CREATE_DEVICE_SYMLINKS
+#include "vendor_init.h"
+#endif
+
 using namespace std::chrono_literals;
 
 using android::base::Basename;
@@ -425,6 +429,10 @@ std::vector<std::string> DeviceHandler::GetBlockDeviceSymlinks(const Uevent& uev
             links.emplace_back("/dev/block/by-name/" + partition_name);
         }
     }
+
+#ifdef TARGET_CREATE_DEVICE_SYMLINKS
+    vendor_create_device_symlinks(uevent.partition_num, uevent.device_name, links);
+#endif
 
     auto last_slash = uevent.path.rfind('/');
     links.emplace_back(link_path + "/" + uevent.path.substr(last_slash + 1));
