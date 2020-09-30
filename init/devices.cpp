@@ -38,6 +38,7 @@
 
 #include "selabel.h"
 #include "util.h"
+#include "vendor_init.h"
 
 using namespace std::chrono_literals;
 
@@ -377,6 +378,8 @@ std::vector<std::string> DeviceHandler::GetBlockDeviceSymlinks(const Uevent& uev
         // symlink of /dev/block/by-name/<device_name> for symmetry.
         links.emplace_back("/dev/block/by-name/" + uevent.device_name);
     }
+
+    vendor_create_device_symlinks(uevent.partition_num, uevent.device_name, links);
 
     auto last_slash = uevent.path.rfind('/');
     links.emplace_back(link_path + "/" + uevent.path.substr(last_slash + 1));
