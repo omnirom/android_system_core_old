@@ -164,6 +164,7 @@ interface IVold {
 
     const int STORAGE_FLAG_DE = 1;
     const int STORAGE_FLAG_CE = 2;
+    const int STORAGE_FLAG_LEVEL_FROM_USER = 4;
 
     const int REMOUNT_MODE_NONE = 0;
     const int REMOUNT_MODE_DEFAULT = 1;
