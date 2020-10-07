@@ -139,6 +139,8 @@ interface IVold {
     void setIncFsMountOptions(in IncrementalFileSystemControlParcel control, boolean enableReadLogs);
     void bindMount(@utf8InCpp String sourceDir, @utf8InCpp String targetDir);
 
+    void destroyDsuMetadataKey(@utf8InCpp String dsuSlot);
+
     const int ENCRYPTION_FLAG_NO_UI = 4;
 
     const int ENCRYPTION_STATE_NONE = 1;
