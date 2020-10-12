@@ -216,7 +216,7 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const std::string&
 
     auto& dm = DeviceMapper::Instance();
     for (int i = 0;; i++) {
-        if (dm.CreateDevice(dm_name, table)) {
+        if (dm.CreateDevice(dm_name, table, crypto_blkdev, std::chrono::seconds(5))) {
             break;
         }
         if (i + 1 >= TABLE_LOAD_RETRIES) {
@@ -227,10 +227,6 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const std::string&
         usleep(500000);
     }
 
-    if (!dm.GetDmDevicePathByName(dm_name, crypto_blkdev)) {
-        LOG(ERROR) << "Cannot retrieve default-key device status " << dm_name;
-        return false;
-    }
     return true;
 }
 
