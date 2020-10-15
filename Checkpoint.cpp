@@ -47,7 +47,6 @@ using android::base::GetUintProperty;
 using android::base::SetProperty;
 using android::binder::Status;
 using android::fs_mgr::Fstab;
-using android::fs_mgr::ReadDefaultFstab;
 using android::fs_mgr::ReadFstabFromFile;
 using android::hardware::hidl_string;
 using android::hardware::boot::V1_0::BoolResult;

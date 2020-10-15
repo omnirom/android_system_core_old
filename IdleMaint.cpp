@@ -17,6 +17,7 @@
 #include "IdleMaint.h"
 #include "FileDeviceUtils.h"
 #include "Utils.h"
+#include "VoldUtil.h"
 #include "VolumeManager.h"
 #include "model/PrivateVolume.h"
 
@@ -45,8 +46,6 @@ using android::base::Realpath;
 using android::base::StringPrintf;
 using android::base::Timer;
 using android::base::WriteStringToFile;
-using android::fs_mgr::Fstab;
-using android::fs_mgr::ReadDefaultFstab;
 using android::hardware::Return;
 using android::hardware::Void;
 using android::hardware::health::storage::V1_0::IStorage;
@@ -104,11 +103,8 @@ static void addFromVolumeManager(std::list<std::string>* paths, PathTypes path_t
 }
 
 static void addFromFstab(std::list<std::string>* paths, PathTypes path_type) {
-    Fstab fstab;
-    ReadDefaultFstab(&fstab);
-
     std::string previous_mount_point;
-    for (const auto& entry : fstab) {
+    for (const auto& entry : fstab_default) {
         // Skip raw partitions.
         if (entry.fs_type == "emmc" || entry.fs_type == "mtd") {
             continue;
@@ -253,11 +249,8 @@ static int stopGc(const std::list<std::string>& paths) {
 }
 
 static void runDevGcFstab(void) {
-    Fstab fstab;
-    ReadDefaultFstab(&fstab);
-
     std::string path;
-    for (const auto& entry : fstab) {
+    for (const auto& entry : fstab_default) {
         if (!entry.sysfs_path.empty()) {
             path = entry.sysfs_path;
             break;
