@@ -105,12 +105,16 @@ static void addFromVolumeManager(std::list<std::string>* paths, PathTypes path_t
 static void addFromFstab(std::list<std::string>* paths, PathTypes path_type) {
     std::string previous_mount_point;
     for (const auto& entry : fstab_default) {
-        // Skip raw partitions.
-        if (entry.fs_type == "emmc" || entry.fs_type == "mtd") {
+        // Skip raw partitions and swap space.
+        if (entry.fs_type == "emmc" || entry.fs_type == "mtd" || entry.fs_type == "swap") {
             continue;
         }
-        // Skip read-only filesystems
-        if (entry.flags & MS_RDONLY) {
+        // Skip read-only filesystems and bind mounts.
+        if (entry.flags & (MS_RDONLY | MS_BIND)) {
+            continue;
+        }
+        // Skip anything without an underlying block device, e.g. virtiofs.
+        if (entry.blk_device[0] != '/') {
             continue;
         }
         if (entry.fs_mgr_flags.vold_managed) {
