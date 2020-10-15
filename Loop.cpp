@@ -150,7 +150,9 @@ int Loop::destroyAll() {
 
         struct loop_info64 li;
         if (ioctl(fd.get(), LOOP_GET_STATUS64, &li) < 0) {
-            PLOG(WARNING) << "Failed to LOOP_GET_STATUS64 " << path;
+            if (errno != ENXIO) {
+                PLOG(WARNING) << "Failed to LOOP_GET_STATUS64 " << path;
+            }
             continue;
         }
 
