@@ -45,8 +45,6 @@
 #include "Utils.h"
 #include "VoldUtil.h"
 
-#define TABLE_LOAD_RETRIES 10
-
 namespace android {
 namespace vold {
 
@@ -215,18 +213,10 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const std::string&
     table.AddTarget(std::move(target));
 
     auto& dm = DeviceMapper::Instance();
-    for (int i = 0;; i++) {
-        if (dm.CreateDevice(dm_name, table, crypto_blkdev, std::chrono::seconds(5))) {
-            break;
-        }
-        if (i + 1 >= TABLE_LOAD_RETRIES) {
-            PLOG(ERROR) << "Could not create default-key device " << dm_name;
-            return false;
-        }
-        PLOG(INFO) << "Could not create default-key device, retrying";
-        usleep(500000);
+    if (!dm.CreateDevice(dm_name, table, crypto_blkdev, std::chrono::seconds(5))) {
+        PLOG(ERROR) << "Could not create default-key device " << dm_name;
+        return false;
     }
-
     return true;
 }
 
