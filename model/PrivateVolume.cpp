@@ -166,11 +166,14 @@ status_t PrivateVolume::doMount() {
 
     RestoreconRecursive(mPath);
 
+    int attrs = 0;
+    if (!IsSdcardfsUsed()) attrs = FS_CASEFOLD_FL;
+
     // Verify that common directories are ready to roll
     if (PrepareDir(mPath + "/app", 0771, AID_SYSTEM, AID_SYSTEM) ||
         PrepareDir(mPath + "/user", 0711, AID_SYSTEM, AID_SYSTEM) ||
         PrepareDir(mPath + "/user_de", 0711, AID_SYSTEM, AID_SYSTEM) ||
-        PrepareDir(mPath + "/media", 0770, AID_MEDIA_RW, AID_MEDIA_RW) ||
+        PrepareDir(mPath + "/media", 0770, AID_MEDIA_RW, AID_MEDIA_RW, attrs) ||
         PrepareDir(mPath + "/media/0", 0770, AID_MEDIA_RW, AID_MEDIA_RW) ||
         PrepareDir(mPath + "/local", 0751, AID_ROOT, AID_ROOT) ||
         PrepareDir(mPath + "/local/tmp", 0771, AID_SHELL, AID_SHELL)) {

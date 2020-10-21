@@ -416,7 +416,32 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
     return OK;
 }
 
-status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
+int SetAttrs(const std::string& path, unsigned int attrs) {
+    unsigned long flags;
+    android::base::unique_fd fd(
+            TEMP_FAILURE_RETRY(open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC)));
+
+    if (fd == -1) {
+        PLOG(ERROR) << "Failed to open " << path;
+        return -1;
+    }
+
+    if (ioctl(fd, FS_IOC_GETFLAGS, (void*)&flags)) {
+        PLOG(ERROR) << "Failed to get flags for " << path;
+        return -1;
+    }
+
+    if ((flags & attrs) == attrs) return 0;
+    flags |= attrs;
+    if (ioctl(fd, FS_IOC_SETFLAGS, (void*)&flags)) {
+        PLOG(ERROR) << "Failed to set flags for " << path << "(0x" << std::hex << attrs << ")";
+        return -1;
+    }
+    return 0;
+}
+
+status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid,
+                    unsigned int attrs) {
     std::lock_guard<std::mutex> lock(kSecurityLock);
     const char* cpath = path.c_str();
 
@@ -433,6 +458,9 @@ status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid) 
         setfscreatecon(nullptr);
         freecon(secontext);
     }
+
+    if (res) return -errno;
+    if (attrs) res = SetAttrs(path, attrs);
 
     if (res == 0) {
         return OK;
