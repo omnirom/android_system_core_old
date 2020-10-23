@@ -199,7 +199,7 @@ int SetDefaultAcl(const std::string& path, mode_t mode, uid_t uid, gid_t gid,
 }
 
 int SetQuotaInherit(const std::string& path) {
-    unsigned long flags;
+    unsigned int flags;
 
     android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(path.c_str(), O_RDONLY | O_CLOEXEC)));
     if (fd == -1) {
@@ -417,7 +417,7 @@ int PrepareAppDirFromRoot(const std::string& path, const std::string& root, int 
 }
 
 int SetAttrs(const std::string& path, unsigned int attrs) {
-    unsigned long flags;
+    unsigned int flags;
     android::base::unique_fd fd(
             TEMP_FAILURE_RETRY(open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC)));
 
@@ -426,14 +426,14 @@ int SetAttrs(const std::string& path, unsigned int attrs) {
         return -1;
     }
 
-    if (ioctl(fd, FS_IOC_GETFLAGS, (void*)&flags)) {
+    if (ioctl(fd, FS_IOC_GETFLAGS, &flags)) {
         PLOG(ERROR) << "Failed to get flags for " << path;
         return -1;
     }
 
     if ((flags & attrs) == attrs) return 0;
     flags |= attrs;
-    if (ioctl(fd, FS_IOC_SETFLAGS, (void*)&flags)) {
+    if (ioctl(fd, FS_IOC_SETFLAGS, &flags)) {
         PLOG(ERROR) << "Failed to set flags for " << path << "(0x" << std::hex << attrs << ")";
         return -1;
     }
