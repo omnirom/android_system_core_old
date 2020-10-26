@@ -35,6 +35,7 @@
 #include <cutils/fs.h>
 #include <fs_mgr.h>
 #include <libdm/dm.h>
+#include <libgsi/libgsi.h>
 
 #include "Checkpoint.h"
 #include "CryptoType.h"
@@ -350,6 +351,45 @@ bool defaultkey_setup_ext_volume(const std::string& label, const std::string& bl
     if (!get_volume_options(&options)) return false;
     uint64_t nr_sec;
     return create_crypto_blk_dev(label, blk_device, key, options, out_crypto_blkdev, &nr_sec);
+}
+
+bool destroy_dsu_metadata_key(const std::string& dsu_slot) {
+    LOG(DEBUG) << "destroy_dsu_metadata_key: " << dsu_slot;
+
+    const auto dsu_metadata_key_dir = android::gsi::GetDsuMetadataKeyDir(dsu_slot);
+    if (!pathExists(dsu_metadata_key_dir)) {
+        LOG(DEBUG) << "DSU metadata_key_dir doesn't exist, nothing to remove: "
+                   << dsu_metadata_key_dir;
+        return true;
+    }
+
+    // Ensure that the DSU key directory is different from the host OS'.
+    // Under normal circumstances, this should never happen, but handle it just in case.
+    if (auto data_rec = GetEntryForMountPoint(&fstab_default, "/data")) {
+        if (dsu_metadata_key_dir == data_rec->metadata_key_dir) {
+            LOG(ERROR) << "DSU metadata_key_dir is same as host OS: " << dsu_metadata_key_dir;
+            return false;
+        }
+    }
+
+    bool ok = true;
+    for (auto suffix : {"/key", "/tmp"}) {
+        const auto key_path = dsu_metadata_key_dir + suffix;
+        if (pathExists(key_path)) {
+            LOG(DEBUG) << "Destroy key: " << key_path;
+            if (!android::vold::destroyKey(key_path)) {
+                LOG(ERROR) << "Failed to destroyKey(): " << key_path;
+                ok = false;
+            }
+        }
+    }
+    if (!ok) {
+        return false;
+    }
+
+    LOG(DEBUG) << "Remove DSU metadata_key_dir: " << dsu_metadata_key_dir;
+    // DeleteDirContentsAndDir() already logged any error, so don't log repeatedly.
+    return android::vold::DeleteDirContentsAndDir(dsu_metadata_key_dir) == android::OK;
 }
 
 }  // namespace vold

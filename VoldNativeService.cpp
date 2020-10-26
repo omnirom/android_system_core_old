@@ -944,5 +944,12 @@ binder::Status VoldNativeService::bindMount(const std::string& sourceDir,
     return translate(incfs::bindMount(sourceDir, targetDir));
 }
 
+binder::Status VoldNativeService::destroyDsuMetadataKey(const std::string& dsuSlot) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    return translateBool(destroy_dsu_metadata_key(dsuSlot));
+}
+
 }  // namespace vold
 }  // namespace android

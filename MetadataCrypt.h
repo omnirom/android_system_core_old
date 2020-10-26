@@ -34,6 +34,8 @@ bool defaultkey_setup_ext_volume(const std::string& label, const std::string& bl
                                  const android::vold::KeyBuffer& key,
                                  std::string* out_crypto_blkdev);
 
+bool destroy_dsu_metadata_key(const std::string& dsu_slot);
+
 }  // namespace vold
 }  // namespace android
 #endif
