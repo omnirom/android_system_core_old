@@ -54,6 +54,7 @@ cc_defaults {
         "libdiskconfig",
         "libext4_utils",
         "libf2fs_sparseblock",
+        "libgsi",
         "libhardware",
         "libhardware_legacy",
         "libincfs",
