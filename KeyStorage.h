@@ -61,8 +61,20 @@ bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path
                         const KeyAuthentication& auth, const KeyBuffer& key);
 
 // Retrieve the key from the named directory.
+//
+// If the key is wrapped by a Keymaster key that requires an upgrade, then that
+// Keymaster key is upgraded.  If |keepOld| is false, then the upgraded
+// Keymaster key replaces the original one.  As part of this, the original is
+// deleted from Keymaster; however, if a user data checkpoint is active, this
+// part is delayed until the checkpoint is committed.
+//
+// If instead |keepOld| is true, then the upgraded key doesn't actually replace
+// the original one.  This is needed *only* if |dir| isn't located in /data and
+// a user data checkpoint is active.  In this case the caller must handle
+// replacing the original key if the checkpoint is committed, and deleting the
+// upgraded key if the checkpoint is rolled back.
 bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, KeyBuffer* key,
-                 bool keepOld = false);
+                 bool keepOld);
 
 // Securely destroy the key stored in the named directory and delete the directory.
 bool destroyKey(const std::string& dir);
