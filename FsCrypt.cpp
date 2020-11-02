@@ -67,6 +67,7 @@ using android::base::StartsWith;
 using android::base::StringPrintf;
 using android::fs_mgr::GetEntryForMountPoint;
 using android::vold::BuildDataPath;
+using android::vold::IsDotOrDotDot;
 using android::vold::IsFilesystemSupported;
 using android::vold::kEmptyAuthentication;
 using android::vold::KeyBuffer;
@@ -140,6 +141,7 @@ static std::vector<std::string> get_ce_key_paths(const std::string& directory_pa
             }
             break;
         }
+        if (IsDotOrDotDot(*entry)) continue;
         if (entry->d_type != DT_DIR || entry->d_name[0] != 'c') {
             LOG(DEBUG) << "Skipping non-key " << entry->d_name;
             continue;
@@ -391,6 +393,7 @@ static bool load_all_de_keys() {
             }
             break;
         }
+        if (IsDotOrDotDot(*entry)) continue;
         if (entry->d_type != DT_DIR || !is_numeric(entry->d_name)) {
             LOG(DEBUG) << "Skipping non-de-key " << entry->d_name;
             continue;
@@ -973,6 +976,7 @@ static bool destroy_volume_keys(const std::string& directory_path, const std::st
             }
             break;
         }
+        if (IsDotOrDotDot(*entry)) continue;
         if (entry->d_type != DT_DIR || entry->d_name[0] == '.') {
             LOG(DEBUG) << "Skipping non-user " << entry->d_name;
             continue;
