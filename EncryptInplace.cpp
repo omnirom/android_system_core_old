@@ -155,6 +155,22 @@ static int flush_outstanding_data(struct encryptGroupsData* data) {
     return 0;
 }
 
+static uint64_t first_block_in_group(uint32_t group) {
+    return aux_info.first_data_block + (group * (uint64_t)info.blocks_per_group);
+}
+
+static uint32_t num_blocks_in_group(uint32_t group) {
+    uint64_t remaining = aux_info.len_blocks - first_block_in_group(group);
+    return std::min<uint64_t>(info.blocks_per_group, remaining);
+}
+
+// In block groups with an uninitialized block bitmap, we only need to encrypt
+// the backup superblock and the block group descriptors (if they are present).
+static uint32_t num_base_meta_blocks_in_group(uint64_t group) {
+    if (!ext4_bg_has_super_block(group)) return 0;
+    return 1 + aux_info.bg_desc_blocks;
+}
+
 static int encrypt_groups(struct encryptGroupsData* data) {
     unsigned int i;
     u8* block_bitmap = 0;
@@ -177,8 +193,7 @@ static int encrypt_groups(struct encryptGroupsData* data) {
     for (i = 0; i < aux_info.groups; ++i) {
         LOG(INFO) << "Encrypting group " << i;
 
-        u32 first_block = aux_info.first_data_block + i * info.blocks_per_group;
-        u32 block_count = std::min(info.blocks_per_group, (u32)(aux_info.len_blocks - first_block));
+        u32 block_count = num_blocks_in_group(i);
 
         off64_t offset = (u64)info.block_size * aux_info.bg_desc[i].bg_block_bitmap;
 
@@ -188,20 +203,17 @@ static int encrypt_groups(struct encryptGroupsData* data) {
             goto errout;
         }
 
-        offset = (u64)info.block_size * first_block;
+        offset = (u64)info.block_size * first_block_in_group(i);
 
         data->count = 0;
 
         for (block = 0; block < block_count; block++) {
             int used;
 
-            if (aux_info.bg_desc[i].bg_flags & EXT4_BG_BLOCK_UNINIT) {
-                // In block groups with an uninitialized block bitmap, we only
-                // need to encrypt the backup superblock (if one is present).
-                used = (ext4_bg_has_super_block(i) && block < 1 + aux_info.bg_desc_blocks);
-            } else {
+            if (aux_info.bg_desc[i].bg_flags & EXT4_BG_BLOCK_UNINIT)
+                used = (block < num_base_meta_blocks_in_group(i));
+            else
                 used = bitmap_get_bit(block_bitmap, block);
-            }
 
             update_progress(data, used);
             if (used) {
@@ -282,9 +294,13 @@ static int cryptfs_enable_inplace_ext4(const char* crypto_blkdev, const char* re
 
     LOG(INFO) << "Encrypting ext4 filesystem in place...";
 
-    data.tot_used_blocks = size / CRYPT_SECTORS_PER_BUFSIZE;
+    data.tot_used_blocks = 0;
     for (i = 0; i < aux_info.groups; ++i) {
-        data.tot_used_blocks -= aux_info.bg_desc[i].bg_free_blocks_count;
+        if (aux_info.bg_desc[i].bg_flags & EXT4_BG_BLOCK_UNINIT)
+            data.tot_used_blocks += num_base_meta_blocks_in_group(i);
+        else
+            data.tot_used_blocks +=
+                    (num_blocks_in_group(i) - aux_info.bg_desc[i].bg_free_blocks_count);
     }
 
     data.one_pct = data.tot_used_blocks / 100;
