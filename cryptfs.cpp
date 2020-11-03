@@ -2287,13 +2287,14 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     }
 
     decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr, 0, 0);
-    create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev.c_str(), &crypto_blkdev,
-                          CRYPTO_BLOCK_DEVICE, 0);
+    rc = create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev.c_str(),
+                               &crypto_blkdev, CRYPTO_BLOCK_DEVICE, 0);
+    if (!rc) {
+        rc = cryptfs_enable_all_volumes(&crypt_ftr, crypto_blkdev.c_str(), real_blkdev.data());
 
-    rc = cryptfs_enable_all_volumes(&crypt_ftr, crypto_blkdev.c_str(), real_blkdev.data());
-
-    /* Undo the dm-crypt mapping whether we succeed or not */
-    delete_crypto_blk_dev(CRYPTO_BLOCK_DEVICE);
+        /* Undo the dm-crypt mapping whether we succeed or not */
+        delete_crypto_blk_dev(CRYPTO_BLOCK_DEVICE);
+    }
 
     if (!rc) {
         /* Success */
