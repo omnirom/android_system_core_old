@@ -90,6 +90,8 @@ using namespace std::chrono_literals;
 #define CRYPT_FOOTER_TO_PERSIST_OFFSET 0x1000
 #define CRYPT_PERSIST_DATA_SIZE 0x1000
 
+#define CRYPT_SECTOR_SIZE 512
+
 #define MAX_CRYPTO_TYPE_NAME_LEN 64
 
 #define MAX_KEY_LEN 48
@@ -2063,22 +2065,6 @@ static int cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr* ftr) {
 
 #define FRAMEWORK_BOOT_WAIT 60
 
-static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr* crypt_ftr, const char* crypto_blkdev,
-                                      const char* real_blkdev) {
-    int rc = -1;
-
-    rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev, crypt_ftr->fs_size, true);
-    if (!rc) {
-        crypt_ftr->encrypted_upto = crypt_ftr->fs_size;
-
-        /* The inplace routine never actually sets the progress to 100% due
-         * to the round down nature of integer division, so set it here */
-        property_set("vold.encrypt_progress", "100");
-    }
-
-    return rc;
-}
-
 static int vold_unmountAll(void) {
     VolumeManager* vm = VolumeManager::Instance();
     return vm->unmountAll();
@@ -2283,8 +2269,12 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     rc = create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev.c_str(),
                                &crypto_blkdev, CRYPTO_BLOCK_DEVICE, 0);
     if (!rc) {
-        rc = cryptfs_enable_all_volumes(&crypt_ftr, crypto_blkdev.c_str(), real_blkdev.data());
-
+        if (encrypt_inplace(crypto_blkdev, real_blkdev, crypt_ftr.fs_size, true)) {
+            crypt_ftr.encrypted_upto = crypt_ftr.fs_size;
+            rc = 0;
+        } else {
+            rc = -1;
+        }
         /* Undo the dm-crypt mapping whether we succeed or not */
         delete_crypto_blk_dev(CRYPTO_BLOCK_DEVICE);
     }

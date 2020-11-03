@@ -305,15 +305,7 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
         return false;
 
     // FIXME handle the corrupt case
-    if (needs_encrypt) {
-        LOG(INFO) << "Beginning inplace encryption, nr_sec: " << nr_sec;
-        auto rc = cryptfs_enable_inplace(crypto_blkdev.data(), blk_device.data(), nr_sec, false);
-        if (rc != 0) {
-            LOG(ERROR) << "Inplace crypto failed with code: " << rc;
-            return false;
-        }
-        LOG(INFO) << "Inplace encryption complete";
-    }
+    if (needs_encrypt && !encrypt_inplace(crypto_blkdev, blk_device, nr_sec, false)) return false;
 
     LOG(DEBUG) << "Mounting metadata-encrypted filesystem:" << mount_point;
     mount_via_fs_mgr(mount_point.c_str(), crypto_blkdev.c_str());
