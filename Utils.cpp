@@ -956,10 +956,7 @@ int64_t calculate_dir_size(int dfd) {
             int subfd;
 
             /* always skip "." and ".." */
-            if (name[0] == '.') {
-                if (name[1] == 0) continue;
-                if ((name[1] == '.') && (name[2] == 0)) continue;
-            }
+            if (IsDotOrDotDot(*de)) continue;
 
             subfd = openat(dfd, name, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
             if (subfd >= 0) {
@@ -1256,6 +1253,10 @@ status_t UnmountTree(const std::string& mountPoint) {
     return OK;
 }
 
+bool IsDotOrDotDot(const struct dirent& ent) {
+    return strcmp(ent.d_name, ".") == 0 || strcmp(ent.d_name, "..") == 0;
+}
+
 static status_t delete_dir_contents(DIR* dir) {
     // Shamelessly borrowed from android::installd
     int dfd = dirfd(dir);
@@ -1269,10 +1270,7 @@ static status_t delete_dir_contents(DIR* dir) {
         const char* name = de->d_name;
         if (de->d_type == DT_DIR) {
             /* always skip "." and ".." */
-            if (name[0] == '.') {
-                if (name[1] == 0) continue;
-                if ((name[1] == '.') && (name[2] == 0)) continue;
-            }
+            if (IsDotOrDotDot(*de)) continue;
 
             android::base::unique_fd subfd(
                 openat(dfd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
