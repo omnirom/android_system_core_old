@@ -423,7 +423,7 @@ errout:
     if (rc) LOG(ERROR) << "Failed to encrypt f2fs filesystem on " << real_blkdev;
 
     log_progress_f2fs(0, true);
-    free(f2fs_info);
+    free_f2fs_info(f2fs_info);
     free(data.buffer);
     close(data.realfd);
     close(data.cryptofd);
