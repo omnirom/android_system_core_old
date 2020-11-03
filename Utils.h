@@ -167,6 +167,8 @@ bool IsVirtioBlkDevice(unsigned int major);
 status_t UnmountTreeWithPrefix(const std::string& prefix);
 status_t UnmountTree(const std::string& mountPoint);
 
+bool IsDotOrDotDot(const struct dirent& ent);
+
 status_t DeleteDirContentsAndDir(const std::string& pathname);
 status_t DeleteDirContents(const std::string& pathname);
 
