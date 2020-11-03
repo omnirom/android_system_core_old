@@ -260,18 +260,10 @@ static int cryptfs_enable_inplace_ext4(const char* crypto_blkdev, const char* re
     }
 
     LOG(DEBUG) << "Opening" << crypto_blkdev;
-    // Wait until the block device appears.  Re-use the mount retry values since it is reasonable.
-    while ((data.cryptofd = open(crypto_blkdev, O_WRONLY | O_CLOEXEC)) < 0) {
-        if (--retries) {
-            PLOG(ERROR) << "Error opening crypto_blkdev " << crypto_blkdev
-                        << " for ext4 inplace encrypt, retrying";
-            sleep(RETRY_MOUNT_DELAY_SECONDS);
-        } else {
-            PLOG(ERROR) << "Error opening crypto_blkdev " << crypto_blkdev
-                        << " for ext4 inplace encrypt";
-            rc = ENABLE_INPLACE_ERR_DEV;
-            goto errout;
-        }
+    if ((data.cryptofd = open(crypto_blkdev, O_WRONLY | O_CLOEXEC)) < 0) {
+        PLOG(ERROR) << "Error opening crypto_blkdev " << crypto_blkdev << " for inplace encrypt";
+        rc = -1;
+        goto errout;
     }
 
     if (setjmp(setjmp_env)) {  // NOLINT
@@ -388,7 +380,6 @@ static int cryptfs_enable_inplace_f2fs(const char* crypto_blkdev, const char* re
     if ((data.cryptofd = open64(crypto_blkdev, O_WRONLY | O_CLOEXEC)) < 0) {
         PLOG(ERROR) << "Error opening crypto_blkdev " << crypto_blkdev
                     << " for f2fs inplace encrypt";
-        rc = ENABLE_INPLACE_ERR_DEV;
         goto errout;
     }
 
@@ -456,7 +447,7 @@ static int cryptfs_enable_inplace_full(const char* crypto_blkdev, const char* re
     if ((cryptofd = open(crypto_blkdev, O_WRONLY | O_CLOEXEC)) < 0) {
         PLOG(ERROR) << "Error opening crypto_blkdev " << crypto_blkdev << " for inplace encrypt";
         close(realfd);
-        return ENABLE_INPLACE_ERR_DEV;
+        return ENABLE_INPLACE_ERR_OTHER;
     }
 
     /* This is pretty much a simple loop of reading 4K, and writing 4K.
@@ -547,12 +538,5 @@ int cryptfs_enable_inplace(const char* crypto_blkdev, const char* real_blkdev, o
     rc_full =
             cryptfs_enable_inplace_full(crypto_blkdev, real_blkdev, size, set_progress_properties);
     LOG(DEBUG) << "cryptfs_enable_inplace_full()=" << rc_full;
-
-    /* Hack for b/17898962, the following is the symptom... */
-    if (rc_ext4 == ENABLE_INPLACE_ERR_DEV && rc_f2fs == ENABLE_INPLACE_ERR_DEV &&
-        rc_full == ENABLE_INPLACE_ERR_DEV) {
-        LOG(DEBUG) << "ENABLE_INPLACE_ERR_DEV";
-        return ENABLE_INPLACE_ERR_DEV;
-    }
     return rc_full;
 }

@@ -2068,13 +2068,6 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr* crypt_ftr, const cha
     int rc = -1;
 
     rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev, crypt_ftr->fs_size, true);
-
-    if (rc == ENABLE_INPLACE_ERR_DEV) {
-        /* Hack for b/17898962 */
-        SLOGE("cryptfs_enable: crypto block dev failure. Must reboot...\n");
-        cryptfs_reboot(RebootType::reboot);
-    }
-
     if (!rc) {
         crypt_ftr->encrypted_upto = crypt_ftr->fs_size;
 
