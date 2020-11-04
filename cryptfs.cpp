@@ -90,6 +90,8 @@ using namespace std::chrono_literals;
 #define CRYPT_FOOTER_TO_PERSIST_OFFSET 0x1000
 #define CRYPT_PERSIST_DATA_SIZE 0x1000
 
+#define CRYPT_SECTOR_SIZE 512
+
 #define MAX_CRYPTO_TYPE_NAME_LEN 64
 
 #define MAX_KEY_LEN 48
@@ -98,9 +100,7 @@ using namespace std::chrono_literals;
 
 /* definitions of flags in the structure below */
 #define CRYPT_MNT_KEY_UNENCRYPTED 0x1 /* The key for the partition is not encrypted. */
-#define CRYPT_ENCRYPTION_IN_PROGRESS       \
-    0x2 /* Encryption partially completed, \
-           encrypted_upto valid*/
+#define CRYPT_ENCRYPTION_IN_PROGRESS 0x2 /* no longer used */
 #define CRYPT_INCONSISTENT_STATE                    \
     0x4 /* Set when starting encryption, clear when \
            exit cleanly, either through success or  \
@@ -195,12 +195,8 @@ struct crypt_mnt_ftr {
     __le8 N_factor;        /* (1 << N) */
     __le8 r_factor;        /* (1 << r) */
     __le8 p_factor;        /* (1 << p) */
-    __le64 encrypted_upto; /* If we are in state CRYPT_ENCRYPTION_IN_PROGRESS and
-                              we have to stop (e.g. power low) this is the last
-                              encrypted 512 byte sector.*/
-    __le8 hash_first_block[SHA256_DIGEST_LENGTH]; /* When CRYPT_ENCRYPTION_IN_PROGRESS
-                                                     set, hash of first block, used
-                                                     to validate before continuing*/
+    __le64 encrypted_upto; /* no longer used */
+    __le8 hash_first_block[SHA256_DIGEST_LENGTH]; /* no longer used */
 
     /* key_master key, used to sign the derived key which is then used to generate
      * the intermediate key
@@ -2069,61 +2065,6 @@ static int cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr* ftr) {
 
 #define FRAMEWORK_BOOT_WAIT 60
 
-static int cryptfs_SHA256_fileblock(const char* filename, __le8* buf) {
-    int fd = open(filename, O_RDONLY | O_CLOEXEC);
-    if (fd == -1) {
-        SLOGE("Error opening file %s", filename);
-        return -1;
-    }
-
-    char block[CRYPT_INPLACE_BUFSIZE];
-    memset(block, 0, sizeof(block));
-    if (unix_read(fd, block, sizeof(block)) < 0) {
-        SLOGE("Error reading file %s", filename);
-        close(fd);
-        return -1;
-    }
-
-    close(fd);
-
-    SHA256_CTX c;
-    SHA256_Init(&c);
-    SHA256_Update(&c, block, sizeof(block));
-    SHA256_Final(buf, &c);
-
-    return 0;
-}
-
-static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr* crypt_ftr, const char* crypto_blkdev,
-                                      const char* real_blkdev, int previously_encrypted_upto) {
-    off64_t cur_encryption_done = 0, tot_encryption_size = 0;
-    int rc = -1;
-
-    /* The size of the userdata partition, and add in the vold volumes below */
-    tot_encryption_size = crypt_ftr->fs_size;
-
-    rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev, crypt_ftr->fs_size, &cur_encryption_done,
-                                tot_encryption_size, previously_encrypted_upto, true);
-
-    if (rc == ENABLE_INPLACE_ERR_DEV) {
-        /* Hack for b/17898962 */
-        SLOGE("cryptfs_enable: crypto block dev failure. Must reboot...\n");
-        cryptfs_reboot(RebootType::reboot);
-    }
-
-    if (!rc) {
-        crypt_ftr->encrypted_upto = cur_encryption_done;
-    }
-
-    if (!rc && crypt_ftr->encrypted_upto == crypt_ftr->fs_size) {
-        /* The inplace routine never actually sets the progress to 100% due
-         * to the round down nature of integer division, so set it here */
-        property_set("vold.encrypt_progress", "100");
-    }
-
-    return rc;
-}
-
 static int vold_unmountAll(void) {
     VolumeManager* vm = VolumeManager::Instance();
     return vm->unmountAll();
@@ -2140,26 +2081,12 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     char lockid[32] = {0};
     std::string key_loc;
     int num_vols;
-    off64_t previously_encrypted_upto = 0;
     bool rebootEncryption = false;
     bool onlyCreateHeader = false;
     std::unique_ptr<android::wakelock::WakeLock> wakeLock = nullptr;
 
     if (get_crypt_ftr_and_key(&crypt_ftr) == 0) {
-        if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS) {
-            /* An encryption was underway and was interrupted */
-            previously_encrypted_upto = crypt_ftr.encrypted_upto;
-            crypt_ftr.encrypted_upto = 0;
-            crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
-
-            /* At this point, we are in an inconsistent state. Until we successfully
-               complete encryption, a reboot will leave us broken. So mark the
-               encryption failed in case that happens.
-               On successfully completing encryption, remove this flag */
-            crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
-
-            put_crypt_ftr_and_key(&crypt_ftr);
-        } else if (crypt_ftr.flags & CRYPT_FORCE_ENCRYPTION) {
+        if (crypt_ftr.flags & CRYPT_FORCE_ENCRYPTION) {
             if (!check_ftr_sha(&crypt_ftr)) {
                 memset(&crypt_ftr, 0, sizeof(crypt_ftr));
                 put_crypt_ftr_and_key(&crypt_ftr);
@@ -2177,7 +2104,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     }
 
     property_get("ro.crypto.state", encrypted_state, "");
-    if (!strcmp(encrypted_state, "encrypted") && !previously_encrypted_upto) {
+    if (!strcmp(encrypted_state, "encrypted")) {
         SLOGE("Device is already running encrypted, aborting");
         goto error_unencrypted;
     }
@@ -2264,7 +2191,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
 
     /* Start the actual work of making an encrypted filesystem */
     /* Initialize a crypt_mnt_ftr for the partition */
-    if (previously_encrypted_upto == 0 && !rebootEncryption) {
+    if (!rebootEncryption) {
         if (cryptfs_init_crypt_mnt_ftr(&crypt_ftr)) {
             goto error_shutting_down;
         }
@@ -2339,77 +2266,46 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     }
 
     decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr, 0, 0);
-    create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev.c_str(), &crypto_blkdev,
-                          CRYPTO_BLOCK_DEVICE, 0);
-
-    /* If we are continuing, check checksums match */
-    rc = 0;
-    if (previously_encrypted_upto) {
-        __le8 hash_first_block[SHA256_DIGEST_LENGTH];
-        rc = cryptfs_SHA256_fileblock(crypto_blkdev.c_str(), hash_first_block);
-
-        if (!rc &&
-            memcmp(hash_first_block, crypt_ftr.hash_first_block, sizeof(hash_first_block)) != 0) {
-            SLOGE("Checksums do not match - trigger wipe");
-            rc = -1;
-        }
-    }
-
+    rc = create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev.c_str(),
+                               &crypto_blkdev, CRYPTO_BLOCK_DEVICE, 0);
     if (!rc) {
-        rc = cryptfs_enable_all_volumes(&crypt_ftr, crypto_blkdev.c_str(), real_blkdev.data(),
-                                        previously_encrypted_upto);
-    }
-
-    /* Calculate checksum if we are not finished */
-    if (!rc && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
-        rc = cryptfs_SHA256_fileblock(crypto_blkdev.c_str(), crypt_ftr.hash_first_block);
-        if (rc) {
-            SLOGE("Error calculating checksum for continuing encryption");
+        if (encrypt_inplace(crypto_blkdev, real_blkdev, crypt_ftr.fs_size, true)) {
+            crypt_ftr.encrypted_upto = crypt_ftr.fs_size;
+            rc = 0;
+        } else {
             rc = -1;
         }
+        /* Undo the dm-crypt mapping whether we succeed or not */
+        delete_crypto_blk_dev(CRYPTO_BLOCK_DEVICE);
     }
-
-    /* Undo the dm-crypt mapping whether we succeed or not */
-    delete_crypto_blk_dev(CRYPTO_BLOCK_DEVICE);
 
     if (!rc) {
         /* Success */
         crypt_ftr.flags &= ~CRYPT_INCONSISTENT_STATE;
 
-        if (crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
-            SLOGD("Encrypted up to sector %lld - will continue after reboot",
-                  crypt_ftr.encrypted_upto);
-            crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
-        }
-
         put_crypt_ftr_and_key(&crypt_ftr);
 
-        if (crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
-            char value[PROPERTY_VALUE_MAX];
-            property_get("ro.crypto.state", value, "");
-            if (!strcmp(value, "")) {
-                /* default encryption - continue first boot sequence */
-                property_set("ro.crypto.state", "encrypted");
-                property_set("ro.crypto.type", "block");
-                wakeLock.reset(nullptr);
-                if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
-                    // Bring up cryptkeeper that will check the password and set it
-                    property_set("vold.decrypt", "trigger_shutdown_framework");
-                    sleep(2);
-                    property_set("vold.encrypt_progress", "");
-                    cryptfs_trigger_restart_min_framework();
-                } else {
-                    cryptfs_check_passwd(DEFAULT_PASSWORD);
-                    cryptfs_restart_internal(1);
-                }
-                return 0;
+        char value[PROPERTY_VALUE_MAX];
+        property_get("ro.crypto.state", value, "");
+        if (!strcmp(value, "")) {
+            /* default encryption - continue first boot sequence */
+            property_set("ro.crypto.state", "encrypted");
+            property_set("ro.crypto.type", "block");
+            wakeLock.reset(nullptr);
+            if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
+                // Bring up cryptkeeper that will check the password and set it
+                property_set("vold.decrypt", "trigger_shutdown_framework");
+                sleep(2);
+                property_set("vold.encrypt_progress", "");
+                cryptfs_trigger_restart_min_framework();
             } else {
-                sleep(2); /* Give the UI a chance to show 100% progress */
-                cryptfs_reboot(RebootType::reboot);
+                cryptfs_check_passwd(DEFAULT_PASSWORD);
+                cryptfs_restart_internal(1);
             }
+            return 0;
         } else {
-            sleep(2); /* Partially encrypted, ensure writes flushed to ssd */
-            cryptfs_reboot(RebootType::shutdown);
+            sleep(2); /* Give the UI a chance to show 100% progress */
+            cryptfs_reboot(RebootType::reboot);
         }
     } else {
         char value[PROPERTY_VALUE_MAX];
