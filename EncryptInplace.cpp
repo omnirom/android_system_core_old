@@ -345,6 +345,11 @@ bool InPlaceEncrypter::EncryptInPlace(const std::string& crypto_blkdev,
 
     if (success) success &= EncryptPendingData();
 
+    if (success && fsync(cryptofd_) != 0) {
+        PLOG(ERROR) << "Error syncing " << crypto_blkdev_;
+        success = false;
+    }
+
     if (!success) {
         LOG(ERROR) << "In-place encryption of " << DescribeFilesystem() << " failed";
         return false;
