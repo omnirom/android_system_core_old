@@ -392,10 +392,10 @@ bool evictKey(const std::string& mountpoint, const EncryptionPolicy& policy) {
 
 bool retrieveOrGenerateKey(const std::string& key_path, const std::string& tmp_path,
                            const KeyAuthentication& key_authentication, const KeyGeneration& gen,
-                           KeyBuffer* key, bool keepOld) {
+                           KeyBuffer* key) {
     if (pathExists(key_path)) {
         LOG(DEBUG) << "Key exists, using: " << key_path;
-        if (!retrieveKey(key_path, key_authentication, key, keepOld)) return false;
+        if (!retrieveKey(key_path, key_authentication, key)) return false;
     } else {
         if (!gen.allow_gen) {
             LOG(ERROR) << "No key found in " << key_path;
