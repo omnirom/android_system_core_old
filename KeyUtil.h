@@ -75,10 +75,10 @@ bool installKey(const std::string& mountpoint, const EncryptionOptions& options,
 bool evictKey(const std::string& mountpoint, const EncryptionPolicy& policy);
 
 // Retrieves the key from the named directory, or generates it if it doesn't
-// exist.  In most cases |keepOld| must be false; see retrieveKey() for details.
+// exist.
 bool retrieveOrGenerateKey(const std::string& key_path, const std::string& tmp_path,
                            const KeyAuthentication& key_authentication, const KeyGeneration& gen,
-                           KeyBuffer* key, bool keepOld);
+                           KeyBuffer* key);
 
 // Re-installs a file-based encryption key of fscrypt-provisioning type from the
 // global session keyring back into fs keyring of the mountpoint.
