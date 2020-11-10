@@ -1129,6 +1129,13 @@ dev_t GetDevice(const std::string& path) {
     }
 }
 
+// Returns true if |path1| names the same existing file or directory as |path2|.
+bool IsSameFile(const std::string& path1, const std::string& path2) {
+    struct stat stbuf1, stbuf2;
+    if (stat(path1.c_str(), &stbuf1) != 0 || stat(path2.c_str(), &stbuf2) != 0) return false;
+    return stbuf1.st_ino == stbuf2.st_ino && stbuf1.st_dev == stbuf2.st_dev;
+}
+
 status_t RestoreconRecursive(const std::string& path) {
     LOG(DEBUG) << "Starting restorecon of " << path;
 
