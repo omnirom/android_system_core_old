@@ -17,17 +17,13 @@
 #include "MetadataCrypt.h"
 #include "KeyBuffer.h"
 
-#include <algorithm>
 #include <string>
-#include <thread>
-#include <vector>
 
 #include <fcntl.h>
 #include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 #include <android-base/strings.h>
@@ -63,9 +59,6 @@ struct CryptoOptions {
 };
 
 static const std::string kDmNameUserdata = "userdata";
-
-static const char* kFn_keymaster_key_blob = "keymaster_key_blob";
-static const char* kFn_keymaster_key_blob_upgraded = "keymaster_key_blob_upgraded";
 
 // The first entry in this table is the default crypto type.
 constexpr CryptoType supported_crypto_types[] = {aes_256_xts, adiantum};
@@ -111,31 +104,6 @@ static bool mount_via_fs_mgr(const char* mount_point, const char* blk_device) {
     return true;
 }
 
-// Note: It is possible to orphan a key if it is removed before deleting
-// Update this once keymaster APIs change, and we have a proper commit.
-static void commit_key(const std::string& dir) {
-    while (!android::base::WaitForProperty("vold.checkpoint_committed", "1")) {
-        LOG(ERROR) << "Wait for boot timed out";
-    }
-    Keymaster keymaster;
-    auto keyPath = dir + "/" + kFn_keymaster_key_blob;
-    auto newKeyPath = dir + "/" + kFn_keymaster_key_blob_upgraded;
-    std::string key;
-
-    if (!android::base::ReadFileToString(keyPath, &key)) {
-        LOG(ERROR) << "Failed to read old key: " << dir;
-        return;
-    }
-    if (rename(newKeyPath.c_str(), keyPath.c_str()) != 0) {
-        PLOG(ERROR) << "Unable to move upgraded key to location: " << keyPath;
-        return;
-    }
-    if (!keymaster.deleteKey(key)) {
-        LOG(ERROR) << "Key deletion failed during upgrade, continuing anyway: " << dir;
-    }
-    LOG(INFO) << "Old Key deleted: " << dir;
-}
-
 static bool read_key(const std::string& metadata_key_dir, const KeyGeneration& gen,
                      KeyBuffer* key) {
     if (metadata_key_dir.empty()) {
@@ -150,25 +118,7 @@ static bool read_key(const std::string& metadata_key_dir, const KeyGeneration& g
         return false;
     }
     auto temp = metadata_key_dir + "/tmp";
-    auto newKeyPath = dir + "/" + kFn_keymaster_key_blob_upgraded;
-    /* If we have a leftover upgraded key, delete it.
-     * We either failed an update and must return to the old key,
-     * or we rebooted before commiting the keys in a freak accident.
-     * Either way, we can re-upgrade the key if we need to.
-     */
-    Keymaster keymaster;
-    if (pathExists(newKeyPath)) {
-        if (!android::base::ReadFileToString(newKeyPath, &sKey))
-            LOG(ERROR) << "Failed to read incomplete key: " << dir;
-        else if (!keymaster.deleteKey(sKey))
-            LOG(ERROR) << "Incomplete key deletion failed, continuing anyway: " << dir;
-        else
-            unlink(newKeyPath.c_str());
-    }
-    bool needs_cp = cp_needsCheckpoint();
-    if (!retrieveOrGenerateKey(dir, temp, kEmptyAuthentication, gen, key, needs_cp)) return false;
-    if (needs_cp && pathExists(newKeyPath)) std::thread(commit_key, dir).detach();
-    return true;
+    return retrieveOrGenerateKey(dir, temp, kEmptyAuthentication, gen, key);
 }
 
 static bool get_number_of_sectors(const std::string& real_blkdev, uint64_t* nr_sec) {
