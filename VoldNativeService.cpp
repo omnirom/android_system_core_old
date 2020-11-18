@@ -33,6 +33,7 @@
 #include "Checkpoint.h"
 #include "FsCrypt.h"
 #include "IdleMaint.h"
+#include "Keymaster.h"
 #include "MetadataCrypt.h"
 #include "MoveStorage.h"
 #include "Process.h"
@@ -870,6 +871,14 @@ binder::Status VoldNativeService::resetCheckpoint() {
     ACQUIRE_LOCK;
 
     cp_resetCheckpoint();
+    return Ok();
+}
+
+binder::Status VoldNativeService::earlyBootEnded() {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    Keymaster::earlyBootEnded();
     return Ok();
 }
 
