@@ -795,7 +795,7 @@ bool fscrypt_lock_user_key(userid_t user_id) {
 static bool prepare_subdirs(const std::string& action, const std::string& volume_uuid,
                             userid_t user_id, int flags) {
     // TODO(b/141677108): Remove this & make it the default behavior
-    if (android::base::GetProperty("ro.vold.level_from_user", "0") == "1") {
+    if (android::base::GetProperty("ro.vold.level_from_user", "1") == "1") {
         flags |= android::os::IVold::STORAGE_FLAG_LEVEL_FROM_USER;
     }
 
