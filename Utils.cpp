@@ -1588,18 +1588,8 @@ status_t UnmountUserFuse(userid_t user_id, const std::string& absolute_lower_pat
     std::string pass_through_path(
             StringPrintf("/mnt/pass_through/%d/%s", user_id, relative_upper_path.c_str()));
 
-    // Best effort unmount pass_through path
-    sSleepOnUnmount = false;
-    LOG(INFO) << "Unmounting pass_through_path " << pass_through_path;
-    auto status = ForceUnmount(pass_through_path);
-    if (status != android::OK) {
-        LOG(ERROR) << "Failed to unmount " << pass_through_path;
-    }
-    rmdir(pass_through_path.c_str());
-
     LOG(INFO) << "Unmounting fuse path " << fuse_path;
     android::status_t result = ForceUnmount(fuse_path);
-    sSleepOnUnmount = true;
     if (result != android::OK) {
         // TODO(b/135341433): MNT_DETACH is needed for fuse because umount2 can fail with EBUSY.
         // Figure out why we get EBUSY and remove this special casing if possible.
@@ -1612,6 +1602,13 @@ status_t UnmountUserFuse(userid_t user_id, const std::string& absolute_lower_pat
         result = android::OK;
     }
     rmdir(fuse_path.c_str());
+
+    LOG(INFO) << "Unmounting pass_through_path " << pass_through_path;
+    auto status = ForceUnmount(pass_through_path);
+    if (status != android::OK) {
+        LOG(ERROR) << "Failed to unmount " << pass_through_path;
+    }
+    rmdir(pass_through_path.c_str());
 
     return result;
 }
