@@ -1066,8 +1066,42 @@ int VolumeManager::createObb(const std::string& sourcePath, const std::string& s
                              int32_t ownerGid, std::string* outVolId) {
     int id = mNextObbId++;
 
+    std::string lowerSourcePath;
+
+    // Convert to lower filesystem path
+    if (StartsWith(sourcePath, "/storage/")) {
+        auto filter_fn = [&](const VolumeBase& vol) {
+            if (vol.getState() != VolumeBase::State::kMounted) {
+                // The volume must be mounted
+                return false;
+            }
+            if ((vol.getMountFlags() & VolumeBase::MountFlags::kVisible) == 0) {
+                // and visible
+                return false;
+            }
+            if (vol.getInternalPath().empty()) {
+                return false;
+            }
+            if (!sourcePath.empty() && StartsWith(sourcePath, vol.getPath())) {
+                return true;
+            }
+
+            return false;
+        };
+        auto volume = findVolumeWithFilter(filter_fn);
+        if (volume == nullptr) {
+            LOG(ERROR) << "Failed to find mounted volume for " << sourcePath;
+            return -EINVAL;
+        } else {
+            lowerSourcePath =
+                    volume->getInternalPath() + sourcePath.substr(volume->getPath().length());
+        }
+    } else {
+        lowerSourcePath = sourcePath;
+    }
+
     auto vol = std::shared_ptr<android::vold::VolumeBase>(
-        new android::vold::ObbVolume(id, sourcePath, sourceKey, ownerGid));
+            new android::vold::ObbVolume(id, lowerSourcePath, sourceKey, ownerGid));
     vol->create();
 
     mObbVolumes.push_back(vol);
