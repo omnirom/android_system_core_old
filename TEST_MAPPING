@@ -7,6 +7,9 @@
       "name": "CtsScopedStorageHostTest"
     },
     {
+      "name": "CtsScopedStorageDeviceOnlyTest"
+    },
+    {
       "name": "AdoptableHostTest"
     }
   ]
