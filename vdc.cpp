@@ -152,7 +152,7 @@ int main(int argc, char** argv) {
         checkStatus(args, vold->abortChanges(args[2], retry != 0));
     } else if (args[0] == "checkpoint" && args[1] == "resetCheckpoint") {
         checkStatus(args, vold->resetCheckpoint());
-    } else if (args[0] == "keymaster" && args[1] == "early-boot-ended") {
+    } else if (args[0] == "keymaster" && args[1] == "earlyBootEnded") {
         checkStatus(args, vold->earlyBootEnded());
     } else {
         LOG(ERROR) << "Raw commands are no longer supported";
