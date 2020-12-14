@@ -67,6 +67,7 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status remountAppStorageDirs(int uid, int pid,
                                const std::vector<std::string>& packageNames);
 
+    binder::Status ensureAppDirsCreated(const std::vector<std::string>& paths, int32_t appUid);
     binder::Status setupAppDir(const std::string& path, int32_t appUid);
     binder::Status fixupAppDir(const std::string& path, int32_t appUid);
 
