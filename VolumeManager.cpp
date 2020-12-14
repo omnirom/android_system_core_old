@@ -936,7 +936,25 @@ int VolumeManager::unmountAll() {
     return 0;
 }
 
-int VolumeManager::setupAppDir(const std::string& path, int32_t appUid, bool fixupExistingOnly) {
+int VolumeManager::ensureAppDirsCreated(const std::vector<std::string>& paths, int32_t appUid) {
+    if (IsSdcardfsUsed()) {
+        // sdcardfs magically does this for us
+        return OK;
+    }
+
+    int size = paths.size();
+    for (int i = 0; i < size; i++) {
+        int result = setupAppDir(paths[i], appUid, false /* fixupExistingOnly */,
+                true /* skipIfDirExists */);
+        if (result != OK) {
+            return result;
+        }
+    }
+    return OK;
+}
+
+int VolumeManager::setupAppDir(const std::string& path, int32_t appUid, bool fixupExistingOnly,
+        bool skipIfDirExists) {
     // Only offer to create directories for paths managed by vold
     if (!StartsWith(path, "/storage/")) {
         LOG(ERROR) << "Failed to find mounted volume for " << path;
@@ -981,8 +999,15 @@ int VolumeManager::setupAppDir(const std::string& path, int32_t appUid, bool fix
 
     const std::string volumeRoot = volume->getRootPath();  // eg /data/media/0
 
-    if (fixupExistingOnly && (access(lowerPath.c_str(), F_OK) != 0)) {
+    const int access_result = access(lowerPath.c_str(), F_OK);
+    if (fixupExistingOnly && access_result != 0) {
         // Nothing to fixup
+        return OK;
+    }
+
+    if (skipIfDirExists && access_result == 0) {
+        // It's safe to assume it's ok as it will be used for zygote to bind mount dir only,
+        // which the dir doesn't need to have correct permission for now yet.
         return OK;
     }
 

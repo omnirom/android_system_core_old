@@ -57,6 +57,7 @@ interface IVold {
 
     void setupAppDir(@utf8InCpp String path, int appUid);
     void fixupAppDir(@utf8InCpp String path, int appUid);
+    void ensureAppDirsCreated(in @utf8InCpp String[] paths, int appUid);
 
     @utf8InCpp String createObb(@utf8InCpp String sourcePath, @utf8InCpp String sourceKey,
                                 int ownerGid);

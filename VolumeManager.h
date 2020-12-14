@@ -163,12 +163,16 @@ class VolumeManager {
      * files in the passed in path, but only if that path exists; if it doesn't
      * exist, this function doesn't create them.
      *
+     * If skipIfDirExists is set, we will not fix any existing dirs, we will
+     * only create app dirs if it doesn't exist.
+     *
      * Validates that given paths are absolute and that they contain no relative
      * "." or ".." paths or symlinks.  Last path segment is treated as filename
      * and ignored, unless the path ends with "/".  Also ensures that path
      * belongs to a volume managed by vold.
      */
-    int setupAppDir(const std::string& path, int32_t appUid, bool fixupExistingOnly = false);
+    int setupAppDir(const std::string& path, int32_t appUid, bool fixupExistingOnly = false,
+            bool skipIfDirExists = false);
 
     /**
      * Fixes up an existing application directory, as if it was created with
@@ -176,6 +180,9 @@ class VolumeManager {
      * project IDs of the contained files and directories.
      */
     int fixupAppDir(const std::string& path, int32_t appUid);
+
+    // Called before zygote starts to ensure dir exists so zygote can bind mount them.
+    int ensureAppDirsCreated(const std::vector<std::string>& paths, int32_t appUid);
 
     int createObb(const std::string& path, const std::string& key, int32_t ownerGid,
                   std::string* outVolId);

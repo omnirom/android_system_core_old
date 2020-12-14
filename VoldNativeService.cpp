@@ -388,6 +388,14 @@ binder::Status VoldNativeService::setupAppDir(const std::string& path, int32_t a
     return translate(VolumeManager::Instance()->setupAppDir(path, appUid));
 }
 
+binder::Status VoldNativeService::ensureAppDirsCreated(const std::vector<std::string>& paths,
+        int32_t appUid) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->ensureAppDirsCreated(paths, appUid));
+}
+
 binder::Status VoldNativeService::fixupAppDir(const std::string& path, int32_t appUid) {
     ENFORCE_SYSTEM_OR_ROOT;
     CHECK_ARGUMENT_PATH(path);
