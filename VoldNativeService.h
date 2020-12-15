@@ -111,7 +111,8 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status initUser0();
     binder::Status isConvertibleToFbe(bool* _aidl_return);
     binder::Status mountFstab(const std::string& blkDevice, const std::string& mountPoint);
-    binder::Status encryptFstab(const std::string& blkDevice, const std::string& mountPoint);
+    binder::Status encryptFstab(const std::string& blkDevice, const std::string& mountPoint,
+                                bool shouldFormat, const std::string& fsType);
 
     binder::Status createUserKey(int32_t userId, int32_t userSerial, bool ephemeral);
     binder::Status destroyUserKey(int32_t userId);
