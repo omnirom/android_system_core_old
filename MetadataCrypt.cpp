@@ -41,6 +41,8 @@
 #include "Keymaster.h"
 #include "Utils.h"
 #include "VoldUtil.h"
+#include "fs/Ext4.h"
+#include "fs/F2fs.h"
 
 namespace android {
 namespace vold {
@@ -202,8 +204,11 @@ static bool parse_options(const std::string& options_string, CryptoOptions* opti
 }
 
 bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::string& mount_point,
-                                      bool needs_encrypt) {
-    LOG(DEBUG) << "fscrypt_mount_metadata_encrypted: " << mount_point << " " << needs_encrypt;
+                                      bool needs_encrypt, bool should_format,
+                                      const std::string& fs_type) {
+    LOG(DEBUG) << "fscrypt_mount_metadata_encrypted: " << mount_point
+               << " encrypt: " << needs_encrypt << " format: " << should_format << " with "
+               << fs_type;
     auto encrypted_state = android::base::GetProperty("ro.crypto.state", "");
     if (encrypted_state != "" && encrypted_state != "encrypted") {
         LOG(DEBUG) << "fscrypt_enable_crypto got unexpected starting state: " << encrypted_state;
@@ -250,8 +255,24 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
     if (!create_crypto_blk_dev(kDmNameUserdata, blk_device, key, options, &crypto_blkdev, &nr_sec))
         return false;
 
-    // FIXME handle the corrupt case
-    if (needs_encrypt && !encrypt_inplace(crypto_blkdev, blk_device, nr_sec, false)) return false;
+    if (needs_encrypt) {
+        if (should_format) {
+            status_t error;
+
+            if (fs_type == "ext4") {
+                error = ext4::Format(crypto_blkdev, 0, mount_point);
+            } else if (fs_type == "f2fs") {
+                error = f2fs::Format(crypto_blkdev);
+            } else {
+                LOG(ERROR) << "Unknown filesystem type: " << fs_type;
+                return false;
+            }
+            LOG(DEBUG) << "Format (err=" << error << ") " << crypto_blkdev << " on " << mount_point;
+            if (error != 0) return false;
+        } else {
+            if (!encrypt_inplace(crypto_blkdev, blk_device, nr_sec, false)) return false;
+        }
+    }
 
     LOG(DEBUG) << "Mounting metadata-encrypted filesystem:" << mount_point;
     mount_via_fs_mgr(mount_point.c_str(), crypto_blkdev.c_str());

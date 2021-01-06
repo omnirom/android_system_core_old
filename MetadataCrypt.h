@@ -26,7 +26,8 @@ namespace android {
 namespace vold {
 
 bool fscrypt_mount_metadata_encrypted(const std::string& block_device,
-                                      const std::string& mount_point, bool needs_encrypt);
+                                      const std::string& mount_point, bool needs_encrypt,
+                                      bool should_format, const std::string& fs_type);
 
 bool defaultkey_volume_keygen(KeyGeneration* gen);
 
