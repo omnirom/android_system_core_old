@@ -31,9 +31,10 @@
 #include "android/os/IVold.h"
 
 #include <android-base/logging.h>
+#include <android-base/parsebool.h>
 #include <android-base/parseint.h>
-#include <android-base/strings.h>
 #include <android-base/stringprintf.h>
+#include <android-base/strings.h>
 #include <binder/IServiceManager.h>
 #include <binder/Status.h>
 
@@ -107,8 +108,12 @@ int main(int argc, char** argv) {
         checkStatus(args, vold->reset());
     } else if (args[0] == "cryptfs" && args[1] == "mountFstab" && args.size() == 4) {
         checkStatus(args, vold->mountFstab(args[2], args[3]));
-    } else if (args[0] == "cryptfs" && args[1] == "encryptFstab" && args.size() == 4) {
-        checkStatus(args, vold->encryptFstab(args[2], args[3]));
+    } else if (args[0] == "cryptfs" && args[1] == "encryptFstab" && args.size() == 6) {
+        auto shouldFormat = android::base::ParseBool(args[4]);
+        if (shouldFormat == android::base::ParseBoolResult::kError) exit(EINVAL);
+        checkStatus(args, vold->encryptFstab(args[2], args[3],
+                                             shouldFormat == android::base::ParseBoolResult::kTrue,
+                                             args[5]));
     } else if (args[0] == "checkpoint" && args[1] == "supportsCheckpoint" && args.size() == 2) {
         bool supported = false;
         checkStatus(args, vold->supportsCheckpoint(&supported));
