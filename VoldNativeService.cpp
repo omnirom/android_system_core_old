@@ -675,15 +675,18 @@ binder::Status VoldNativeService::mountFstab(const std::string& blkDevice,
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_LOCK;
 
-    return translateBool(fscrypt_mount_metadata_encrypted(blkDevice, mountPoint, false));
+    return translateBool(
+            fscrypt_mount_metadata_encrypted(blkDevice, mountPoint, false, false, "null"));
 }
 
 binder::Status VoldNativeService::encryptFstab(const std::string& blkDevice,
-                                               const std::string& mountPoint) {
+                                               const std::string& mountPoint, bool shouldFormat,
+                                               const std::string& fsType) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_LOCK;
 
-    return translateBool(fscrypt_mount_metadata_encrypted(blkDevice, mountPoint, true));
+    return translateBool(
+            fscrypt_mount_metadata_encrypted(blkDevice, mountPoint, true, shouldFormat, fsType));
 }
 
 binder::Status VoldNativeService::createUserKey(int32_t userId, int32_t userSerial,
