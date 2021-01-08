@@ -937,11 +937,6 @@ int VolumeManager::unmountAll() {
 }
 
 int VolumeManager::ensureAppDirsCreated(const std::vector<std::string>& paths, int32_t appUid) {
-    if (IsSdcardfsUsed()) {
-        // sdcardfs magically does this for us
-        return OK;
-    }
-
     int size = paths.size();
     for (int i = 0; i < size; i++) {
         int result = setupAppDir(paths[i], appUid, false /* fixupExistingOnly */,
