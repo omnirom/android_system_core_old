@@ -166,13 +166,9 @@ static bool prepare_apex_subdirs(struct selabel_handle* sehandle, const std::str
 static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int flags) {
     struct selabel_handle* sehandle = selinux_android_file_context_handle();
 
-    const uid_t user_for_level =
-            (flags & android::os::IVold::STORAGE_FLAG_LEVEL_FROM_USER) ? user_id : -1;
-
     if (flags & android::os::IVold::STORAGE_FLAG_DE) {
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
-        if (!prepare_dir_for_user(sehandle, 0771, AID_SYSTEM, AID_SYSTEM, user_de_path,
-                                  user_for_level)) {
+        if (!prepare_dir_for_user(sehandle, 0771, AID_SYSTEM, AID_SYSTEM, user_de_path, user_id)) {
             return false;
         }
 
@@ -187,7 +183,7 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
 
             auto profiles_de_path = android::vold::BuildDataProfilesDePath(user_id);
             if (!prepare_dir_for_user(sehandle, 0771, AID_SYSTEM, AID_SYSTEM, profiles_de_path,
-                                      user_for_level)) {
+                                      user_id)) {
                 return false;
             }
 
@@ -203,8 +199,7 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
     }
     if (flags & android::os::IVold::STORAGE_FLAG_CE) {
         auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
-        if (!prepare_dir_for_user(sehandle, 0771, AID_SYSTEM, AID_SYSTEM, user_ce_path,
-                                  user_for_level)) {
+        if (!prepare_dir_for_user(sehandle, 0771, AID_SYSTEM, AID_SYSTEM, user_ce_path, user_id)) {
             return false;
         }
 
