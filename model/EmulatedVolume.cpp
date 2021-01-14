@@ -301,8 +301,6 @@ status_t EmulatedVolume::doMount() {
 
     dev_t before = GetDevice(mSdcardFsFull);
 
-    bool isFuse = base::GetBoolProperty(kPropFuse, false);
-
     // Mount sdcardfs regardless of FUSE, since we need it to bind-mount on top of the
     // FUSE volume for various reasons.
     if (mUseSdcardFs && getMountUserId() == 0) {
@@ -350,7 +348,7 @@ status_t EmulatedVolume::doMount() {
         sdcardFsPid = 0;
     }
 
-    if (isFuse && isVisible) {
+    if (isVisible) {
         // Make sure we unmount sdcardfs if we bail out with an error below
         auto sdcardfs_unmounter = [&]() {
             LOG(INFO) << "sdcardfs_unmounter scope_guard running";
