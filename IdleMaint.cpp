@@ -24,11 +24,14 @@
 #include <thread>
 #include <utility>
 
+#include <aidl/android/hardware/health/storage/BnGarbageCollectCallback.h>
+#include <aidl/android/hardware/health/storage/IStorage.h>
 #include <android-base/chrono_utils.h>
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
+#include <android/binder_manager.h>
 #include <android/hardware/health/storage/1.0/IStorage.h>
 #include <fs_mgr.h>
 #include <private/android_filesystem_config.h>
@@ -49,9 +52,14 @@ using android::base::Timer;
 using android::base::WriteStringToFile;
 using android::hardware::Return;
 using android::hardware::Void;
+using AStorage = aidl::android::hardware::health::storage::IStorage;
+using ABnGarbageCollectCallback =
+        aidl::android::hardware::health::storage::BnGarbageCollectCallback;
+using AResult = aidl::android::hardware::health::storage::Result;
 using HStorage = android::hardware::health::storage::V1_0::IStorage;
 using HGarbageCollectCallback = android::hardware::health::storage::V1_0::IGarbageCollectCallback;
 using HResult = android::hardware::health::storage::V1_0::Result;
+using std::string_literals::operator""s;
 
 namespace android {
 namespace vold {
@@ -301,9 +309,9 @@ static void runDevGcFstab(void) {
     return;
 }
 
-enum class IDL { HIDL };
+enum class IDL { HIDL, AIDL };
 std::ostream& operator<<(std::ostream& os, IDL idl) {
-    return os << "HIDL";
+    return os << (idl == IDL::HIDL ? "HIDL" : "AIDL");
 }
 
 template <IDL idl, typename Result>
@@ -338,6 +346,14 @@ class GcCallbackImpl {
     Result mResult{Result::UNKNOWN_ERROR};
 };
 
+class AGcCallbackImpl : public ABnGarbageCollectCallback,
+                        public GcCallbackImpl<IDL::AIDL, AResult> {
+    ndk::ScopedAStatus onFinish(AResult result) override {
+        onFinishInternal(result);
+        return ndk::ScopedAStatus::ok();
+    }
+};
+
 class HGcCallbackImpl : public HGarbageCollectCallback, public GcCallbackImpl<IDL::HIDL, HResult> {
     Return<void> onFinish(HResult result) override {
         onFinishInternal(result);
@@ -358,6 +374,21 @@ static void runDevGcOnHal(Service service, GcCallbackImpl cb, GetDescription get
 }
 
 static void runDevGc(void) {
+    auto aidl_service_name = AStorage::descriptor + "/default"s;
+    if (AServiceManager_isDeclared(aidl_service_name.c_str())) {
+        ndk::SpAIBinder binder(AServiceManager_waitForService(aidl_service_name.c_str()));
+        if (binder.get() != nullptr) {
+            std::shared_ptr<AStorage> aidl_service = AStorage::fromBinder(binder);
+            if (aidl_service != nullptr) {
+                runDevGcOnHal<IDL::AIDL>(aidl_service, ndk::SharedRefBase::make<AGcCallbackImpl>(),
+                                         &ndk::ScopedAStatus::getDescription);
+                return;
+            }
+        }
+        LOG(WARNING) << "Device declares " << aidl_service_name
+                     << " but it is not running, skip dev GC on AIDL HAL";
+        return;
+    }
     auto hidl_service = HStorage::getService();
     if (hidl_service != nullptr) {
         runDevGcOnHal<IDL::HIDL>(hidl_service, sp<HGcCallbackImpl>(new HGcCallbackImpl()),
