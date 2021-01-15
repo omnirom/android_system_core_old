@@ -683,6 +683,43 @@ bool scanProcProcesses(uid_t uid, userid_t userId, ScanProcCallback callback, vo
     return true;
 }
 
+// In each app's namespace, unmount obb and data dirs
+static bool umountStorageDirs(int nsFd, const char* android_data_dir, const char* android_obb_dir,
+        int uid, const char* targets[], int size) {
+    // This code is executed after a fork so it's very important that the set of
+    // methods we call here is strictly limited.
+    if (setns(nsFd, CLONE_NEWNS) != 0) {
+        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to setns %s", strerror(errno));
+        return false;
+    }
+
+    // Unmount of Android/data/foo needs to be done before Android/data below.
+    bool result = true;
+    for (int i = 0; i < size; i++) {
+        if (TEMP_FAILURE_RETRY(umount2(targets[i], MNT_DETACH)) < 0 && errno != EINVAL &&
+                errno != ENOENT) {
+            async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to umount %s: %s",
+                                  targets[i], strerror(errno));
+            result = false;
+        }
+    }
+
+    // Mount tmpfs on Android/data and Android/obb
+    if (TEMP_FAILURE_RETRY(umount2(android_data_dir, MNT_DETACH)) < 0 && errno != EINVAL &&
+                errno != ENOENT) {
+        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to umount %s :%s",
+                        android_data_dir, strerror(errno));
+        result = false;
+    }
+    if (TEMP_FAILURE_RETRY(umount2(android_obb_dir, MNT_DETACH)) < 0 && errno != EINVAL &&
+                errno != ENOENT) {
+        async_safe_format_log(ANDROID_LOG_ERROR, "vold", "Failed to umount %s :%s",
+                android_obb_dir, strerror(errno));
+        result = false;
+    }
+    return result;
+}
+
 // In each app's namespace, mount tmpfs on obb and data dir, and bind mount obb and data
 // package dirs.
 static bool remountStorageDirs(int nsFd, const char* android_data_dir, const char* android_obb_dir,
@@ -741,8 +778,8 @@ static std::string getStorageDirTarget(userid_t userId, std::string dirName,
             userId, dirName.c_str(), packageName.c_str());
 }
 
-// Fork the process and remount storage
-bool VolumeManager::forkAndRemountStorage(int uid, int pid,
+// Fork the process and remount / unmount app data and obb dirs
+bool VolumeManager::forkAndRemountStorage(int uid, int pid, bool doUnmount,
                                           const std::vector<std::string>& packageNames) {
     userid_t userId = multiuser_get_user_id(uid);
     std::string mnt_path = StringPrintf("/proc/%d/ns/mnt", pid);
@@ -798,11 +835,20 @@ bool VolumeManager::forkAndRemountStorage(int uid, int pid,
     // Fork a child to mount Android/obb android Android/data dirs, as we don't want it to affect
     // original vold process mount namespace.
     if (!(child = fork())) {
-        if (remountStorageDirs(nsFd, android_data_dir, android_obb_dir, uid,
-                sources_cstr, targets_cstr, size)) {
-            _exit(0);
+        if (doUnmount) {
+            if (umountStorageDirs(nsFd, android_data_dir, android_obb_dir, uid,
+                    targets_cstr, size)) {
+                _exit(0);
+            } else {
+                _exit(1);
+            }
         } else {
-            _exit(1);
+            if (remountStorageDirs(nsFd, android_data_dir, android_obb_dir, uid,
+                    sources_cstr, targets_cstr, size)) {
+                _exit(0);
+            } else {
+                _exit(1);
+            }
         }
     }
 
@@ -827,8 +873,8 @@ bool VolumeManager::forkAndRemountStorage(int uid, int pid,
     return true;
 }
 
-int VolumeManager::remountAppStorageDirs(int uid, int pid,
-        const std::vector<std::string>& packageNames) {
+int VolumeManager::handleAppStorageDirs(int uid, int pid,
+        bool doUnmount, const std::vector<std::string>& packageNames) {
     // Only run the remount if fuse is mounted for that user.
     userid_t userId = multiuser_get_user_id(uid);
     bool fuseMounted = false;
@@ -842,7 +888,7 @@ int VolumeManager::remountAppStorageDirs(int uid, int pid,
         }
     }
     if (fuseMounted) {
-        forkAndRemountStorage(uid, pid, packageNames);
+        forkAndRemountStorage(uid, pid, doUnmount, packageNames);
     }
     return 0;
 }

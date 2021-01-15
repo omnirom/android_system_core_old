@@ -115,7 +115,8 @@ class VolumeManager {
     int onSecureKeyguardStateChanged(bool isShowing);
 
     int remountUid(uid_t uid, int32_t remountMode) { return 0; }
-    int remountAppStorageDirs(int uid, int pid, const std::vector<std::string>& packageNames);
+    int handleAppStorageDirs(int uid, int pid,
+            bool doUnmount, const std::vector<std::string>& packageNames);
 
     /* Aborts all FUSE filesystems, in case the FUSE daemon is no longer up. */
     int abortFuse();
@@ -129,7 +130,8 @@ class VolumeManager {
     int updateVirtualDisk();
     int setDebug(bool enable);
 
-    bool forkAndRemountStorage(int uid, int pid, const std::vector<std::string>& packageNames);
+    bool forkAndRemountStorage(int uid, int pid, bool doUnmount,
+        const std::vector<std::string>& packageNames);
 
     static VolumeManager* Instance();
 

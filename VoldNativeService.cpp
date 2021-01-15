@@ -377,7 +377,17 @@ binder::Status VoldNativeService::remountAppStorageDirs(int uid, int pid,
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->remountAppStorageDirs(uid, pid, packageNames));
+    return translate(VolumeManager::Instance()->handleAppStorageDirs(uid, pid,
+            false /* doUnmount */, packageNames));
+}
+
+binder::Status VoldNativeService::unmountAppStorageDirs(int uid, int pid,
+        const std::vector<std::string>& packageNames) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    return translate(VolumeManager::Instance()->handleAppStorageDirs(uid, pid,
+            true /* doUnmount */, packageNames));
 }
 
 binder::Status VoldNativeService::setupAppDir(const std::string& path, int32_t appUid) {
