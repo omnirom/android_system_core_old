@@ -227,38 +227,35 @@ status_t PublicVolume::doMount() {
         TEMP_FAILURE_RETRY(waitpid(sdcardFsPid, nullptr, 0));
     }
 
-    bool isFuse = base::GetBoolProperty(kPropFuse, false);
-    if (isFuse) {
-        // We need to mount FUSE *after* sdcardfs, since the FUSE daemon may depend
-        // on sdcardfs being up.
-        LOG(INFO) << "Mounting public fuse volume";
-        android::base::unique_fd fd;
-        int user_id = getMountUserId();
-        int result = MountUserFuse(user_id, getInternalPath(), stableName, &fd);
+    // We need to mount FUSE *after* sdcardfs, since the FUSE daemon may depend
+    // on sdcardfs being up.
+    LOG(INFO) << "Mounting public fuse volume";
+    android::base::unique_fd fd;
+    int user_id = getMountUserId();
+    int result = MountUserFuse(user_id, getInternalPath(), stableName, &fd);
 
-        if (result != 0) {
-            LOG(ERROR) << "Failed to mount public fuse volume";
-            doUnmount();
-            return -result;
-        }
-
-        mFuseMounted = true;
-        auto callback = getMountCallback();
-        if (callback) {
-            bool is_ready = false;
-            callback->onVolumeChecking(std::move(fd), getPath(), getInternalPath(), &is_ready);
-            if (!is_ready) {
-                LOG(ERROR) << "Failed to complete public volume mount";
-                doUnmount();
-                return -EIO;
-            }
-        }
-
-        ConfigureReadAheadForFuse(GetFuseMountPathForUser(user_id, stableName), 256u);
-
-        // See comment in model/EmulatedVolume.cpp
-        ConfigureMaxDirtyRatioForFuse(GetFuseMountPathForUser(user_id, stableName), 40u);
+    if (result != 0) {
+        LOG(ERROR) << "Failed to mount public fuse volume";
+        doUnmount();
+        return -result;
     }
+
+    mFuseMounted = true;
+    auto callback = getMountCallback();
+    if (callback) {
+        bool is_ready = false;
+        callback->onVolumeChecking(std::move(fd), getPath(), getInternalPath(), &is_ready);
+        if (!is_ready) {
+            LOG(ERROR) << "Failed to complete public volume mount";
+            doUnmount();
+            return -EIO;
+        }
+    }
+
+    ConfigureReadAheadForFuse(GetFuseMountPathForUser(user_id, stableName), 256u);
+
+    // See comment in model/EmulatedVolume.cpp
+    ConfigureMaxDirtyRatioForFuse(GetFuseMountPathForUser(user_id, stableName), 40u);
 
     return OK;
 }
