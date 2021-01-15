@@ -282,12 +282,6 @@ binder::Status VoldNativeService::mount(
         return translate(res);
     }
 
-    if ((mountFlags & MOUNT_FLAG_PRIMARY) != 0) {
-        res = VolumeManager::Instance()->setPrimary(vol);
-        if (res != OK) {
-            return translate(res);
-        }
-    }
     return translate(OK);
 }
 
