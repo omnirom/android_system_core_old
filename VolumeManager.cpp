@@ -1092,9 +1092,14 @@ int VolumeManager::createStubVolume(const std::string& sourcePath, const std::st
     auto vol = std::shared_ptr<android::vold::StubVolume>(
             new android::vold::StubVolume(stubId, sourcePath, mountPath, fsType, fsUuid, fsLabel));
 
-    int32_t passedFlags = android::vold::Disk::Flags::kStub;
+    int32_t passedFlags = 0;
     passedFlags |= (flags & android::vold::Disk::Flags::kUsb);
     passedFlags |= (flags & android::vold::Disk::Flags::kSd);
+    if (flags & android::vold::Disk::Flags::kStubVisible) {
+        passedFlags |= (flags & android::vold::Disk::Flags::kStubVisible);
+    } else {
+        passedFlags |= (flags & android::vold::Disk::Flags::kStubInvisible);
+    }
     // StubDisk doesn't have device node corresponds to it. So, a fake device
     // number is used.
     auto disk = std::shared_ptr<android::vold::Disk>(
