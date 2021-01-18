@@ -54,6 +54,7 @@ interface IVold {
 
     void remountUid(int uid, int remountMode);
     void remountAppStorageDirs(int uid, int pid, in @utf8InCpp String[] packageNames);
+    void unmountAppStorageDirs(int uid, int pid, in @utf8InCpp String[] packageNames);
 
     void setupAppDir(@utf8InCpp String path, int appUid);
     void fixupAppDir(@utf8InCpp String path, int appUid);
