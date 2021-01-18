@@ -53,9 +53,12 @@ class Disk {
         kUsb = 1 << 3,
         /* Flag that disk is EMMC internal */
         kEmmc = 1 << 4,
-        /* Flag that disk is Stub disk, i.e., disk that is managed from outside
-         * Android (e.g., ARC++). */
-        kStub = 1 << 5,
+        /* Flag that disk is an invisible Stub disk, i.e., disk that is managed from outside
+         * Android (e.g., ARC++) and invisible to apps. */
+        kStubInvisible = 1 << 5,
+        /* Flag that disk is a visible Stub disk, i.e., disk that is managed from outside
+         * Android (e.g., ARC++) and visible to apps. */
+        kStubVisible = 1 << 6,
     };
 
     const std::string& getId() const { return mId; }
@@ -120,7 +123,7 @@ class Disk {
 
     int getMaxMinors();
 
-    bool isStub() { return mFlags & kStub; }
+    bool isStub() { return (mFlags & kStubInvisible) || (mFlags & kStubVisible); }
 
     DISALLOW_COPY_AND_ASSIGN(Disk);
 };
