@@ -813,15 +813,16 @@ bool VolumeManager::forkAndRemountStorage(int uid, int pid, bool doUnmount,
     }
 
     for (int i = 0; i < size; i++) {
-        auto status = EnsureDirExists(sources_cstr[i], 0771, AID_MEDIA_RW, AID_MEDIA_RW);
-        if (status != OK) {
-            PLOG(ERROR) << "Failed to create dir: " << sources_cstr[i];
-            return false;
-        }
         // Make sure /storage/emulated/... paths are setup correctly
-        status = setupAppDir(targets_cstr[i], uid, false /* fixupExistingOnly */);
+        // This needs to be done before EnsureDirExists to ensure Android/ is created.
+        auto status = setupAppDir(targets_cstr[i], uid, false /* fixupExistingOnly */);
         if (status != OK) {
             PLOG(ERROR) << "Failed to create dir: " << targets_cstr[i];
+            return false;
+        }
+        status = EnsureDirExists(sources_cstr[i], 0771, AID_MEDIA_RW, AID_MEDIA_RW);
+        if (status != OK) {
+            PLOG(ERROR) << "Failed to create dir: " << sources_cstr[i];
             return false;
         }
     }
