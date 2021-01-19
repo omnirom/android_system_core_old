@@ -116,6 +116,8 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status encryptFstab(const std::string& blkDevice, const std::string& mountPoint,
                                 bool shouldFormat, const std::string& fsType);
 
+    binder::Status setStorageBindingSeed(const std::vector<uint8_t>& seed);
+
     binder::Status createUserKey(int32_t userId, int32_t userSerial, bool ephemeral);
     binder::Status destroyUserKey(int32_t userId);
 
