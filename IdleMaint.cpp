@@ -22,12 +22,16 @@
 #include "model/PrivateVolume.h"
 
 #include <thread>
+#include <utility>
 
+#include <aidl/android/hardware/health/storage/BnGarbageCollectCallback.h>
+#include <aidl/android/hardware/health/storage/IStorage.h>
 #include <android-base/chrono_utils.h>
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
+#include <android/binder_manager.h>
 #include <android/hardware/health/storage/1.0/IStorage.h>
 #include <fs_mgr.h>
 #include <private/android_filesystem_config.h>
@@ -48,9 +52,14 @@ using android::base::Timer;
 using android::base::WriteStringToFile;
 using android::hardware::Return;
 using android::hardware::Void;
-using android::hardware::health::storage::V1_0::IStorage;
-using android::hardware::health::storage::V1_0::IGarbageCollectCallback;
-using android::hardware::health::storage::V1_0::Result;
+using AStorage = aidl::android::hardware::health::storage::IStorage;
+using ABnGarbageCollectCallback =
+        aidl::android::hardware::health::storage::BnGarbageCollectCallback;
+using AResult = aidl::android::hardware::health::storage::Result;
+using HStorage = android::hardware::health::storage::V1_0::IStorage;
+using HGarbageCollectCallback = android::hardware::health::storage::V1_0::IGarbageCollectCallback;
+using HResult = android::hardware::health::storage::V1_0::Result;
+using std::string_literals::operator""s;
 
 namespace android {
 namespace vold {
@@ -300,26 +309,33 @@ static void runDevGcFstab(void) {
     return;
 }
 
-class GcCallback : public IGarbageCollectCallback {
-  public:
-    Return<void> onFinish(Result result) override {
+enum class IDL { HIDL, AIDL };
+std::ostream& operator<<(std::ostream& os, IDL idl) {
+    return os << (idl == IDL::HIDL ? "HIDL" : "AIDL");
+}
+
+template <IDL idl, typename Result>
+class GcCallbackImpl {
+  protected:
+    void onFinishInternal(Result result) {
         std::unique_lock<std::mutex> lock(mMutex);
         mFinished = true;
         mResult = result;
         lock.unlock();
         mCv.notify_all();
-        return Void();
     }
+
+  public:
     void wait(uint64_t seconds) {
         std::unique_lock<std::mutex> lock(mMutex);
         mCv.wait_for(lock, std::chrono::seconds(seconds), [this] { return mFinished; });
 
         if (!mFinished) {
-            LOG(WARNING) << "Dev GC on HAL timeout";
+            LOG(WARNING) << "Dev GC on " << idl << " HAL timeout";
         } else if (mResult != Result::SUCCESS) {
-            LOG(WARNING) << "Dev GC on HAL failed with " << toString(mResult);
+            LOG(WARNING) << "Dev GC on " << idl << " HAL failed with " << toString(mResult);
         } else {
-            LOG(INFO) << "Dev GC on HAL successful";
+            LOG(INFO) << "Dev GC on " << idl << " HAL successful";
         }
     }
 
@@ -330,25 +346,57 @@ class GcCallback : public IGarbageCollectCallback {
     Result mResult{Result::UNKNOWN_ERROR};
 };
 
-static void runDevGcOnHal(sp<IStorage> service) {
-    LOG(DEBUG) << "Start Dev GC on HAL";
-    sp<GcCallback> cb = new GcCallback();
+class AGcCallbackImpl : public ABnGarbageCollectCallback,
+                        public GcCallbackImpl<IDL::AIDL, AResult> {
+    ndk::ScopedAStatus onFinish(AResult result) override {
+        onFinishInternal(result);
+        return ndk::ScopedAStatus::ok();
+    }
+};
+
+class HGcCallbackImpl : public HGarbageCollectCallback, public GcCallbackImpl<IDL::HIDL, HResult> {
+    Return<void> onFinish(HResult result) override {
+        onFinishInternal(result);
+        return Void();
+    }
+};
+
+template <IDL idl, typename Service, typename GcCallbackImpl, typename GetDescription>
+static void runDevGcOnHal(Service service, GcCallbackImpl cb, GetDescription get_description) {
+    LOG(DEBUG) << "Start Dev GC on " << idl << " HAL";
     auto ret = service->garbageCollect(DEVGC_TIMEOUT_SEC, cb);
     if (!ret.isOk()) {
-        LOG(WARNING) << "Cannot start Dev GC on HAL: " << ret.description();
+        LOG(WARNING) << "Cannot start Dev GC on " << idl
+                     << " HAL: " << std::invoke(get_description, ret);
         return;
     }
     cb->wait(DEVGC_TIMEOUT_SEC);
 }
 
 static void runDevGc(void) {
-    auto service = IStorage::getService();
-    if (service != nullptr) {
-        runDevGcOnHal(service);
-    } else {
-        // fallback to legacy code path
-        runDevGcFstab();
+    auto aidl_service_name = AStorage::descriptor + "/default"s;
+    if (AServiceManager_isDeclared(aidl_service_name.c_str())) {
+        ndk::SpAIBinder binder(AServiceManager_waitForService(aidl_service_name.c_str()));
+        if (binder.get() != nullptr) {
+            std::shared_ptr<AStorage> aidl_service = AStorage::fromBinder(binder);
+            if (aidl_service != nullptr) {
+                runDevGcOnHal<IDL::AIDL>(aidl_service, ndk::SharedRefBase::make<AGcCallbackImpl>(),
+                                         &ndk::ScopedAStatus::getDescription);
+                return;
+            }
+        }
+        LOG(WARNING) << "Device declares " << aidl_service_name
+                     << " but it is not running, skip dev GC on AIDL HAL";
+        return;
     }
+    auto hidl_service = HStorage::getService();
+    if (hidl_service != nullptr) {
+        runDevGcOnHal<IDL::HIDL>(hidl_service, sp<HGcCallbackImpl>(new HGcCallbackImpl()),
+                                 &Return<void>::description);
+        return;
+    }
+    // fallback to legacy code path
+    runDevGcFstab();
 }
 
 int RunIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener) {
