@@ -930,6 +930,9 @@ binder::Status VoldNativeService::mountIncFs(
     _aidl_return->cmd.reset(unique_fd(fds[CMD].release()));
     _aidl_return->pendingReads.reset(unique_fd(fds[PENDING_READS].release()));
     _aidl_return->log.reset(unique_fd(fds[LOGS].release()));
+    if (fds[BLOCKS_WRITTEN].ok()) {
+        _aidl_return->blocksWritten.emplace(unique_fd(fds[BLOCKS_WRITTEN].release()));
+    }
     return Ok();
 }
 
@@ -946,7 +949,8 @@ binder::Status VoldNativeService::setIncFsMountOptions(
     ENFORCE_SYSTEM_OR_ROOT;
 
     auto incfsControl =
-            incfs::createControl(control.cmd.get(), control.pendingReads.get(), control.log.get());
+            incfs::createControl(control.cmd.get(), control.pendingReads.get(), control.log.get(),
+                                 control.blocksWritten ? control.blocksWritten->get() : -1);
     auto cleanupFunc = [](auto incfsControl) {
         for (auto& fd : incfsControl->releaseFds()) {
             (void)fd.release();
