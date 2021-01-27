@@ -19,7 +19,9 @@
 
 #include "KeyBuffer.h"
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace android {
 namespace vold {
@@ -72,6 +74,9 @@ bool runSecdiscardSingle(const std::string& file);
 bool generateWrappedStorageKey(KeyBuffer* key);
 // Export the per-boot boot wrapped storage key using keymaster.
 bool exportWrappedStorageKey(const KeyBuffer& kmKey, KeyBuffer* key);
+
+// Set a seed to be mixed into all key storage encryption keys.
+bool setKeyStorageBindingSeed(const std::vector<uint8_t>& seed);
 }  // namespace vold
 }  // namespace android
 
