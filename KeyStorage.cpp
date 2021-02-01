@@ -22,6 +22,8 @@
 #include "Utils.h"
 
 #include <algorithm>
+#include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -81,6 +83,31 @@ static const char* kFn_salt = "salt";
 static const char* kFn_secdiscardable = "secdiscardable";
 static const char* kFn_stretching = "stretching";
 static const char* kFn_version = "version";
+
+namespace {
+
+// Storage binding info for ensuring key encryption keys include a
+// platform-provided seed in their derivation.
+struct StorageBindingInfo {
+    enum class State {
+        UNINITIALIZED,
+        IN_USE,    // key storage keys are bound to seed
+        NOT_USED,  // key storage keys are NOT bound to seed
+    };
+
+    // Binding seed mixed into all key storage keys.
+    std::vector<uint8_t> seed;
+
+    // State tracker for the key storage key binding.
+    State state = State::UNINITIALIZED;
+
+    std::mutex guard;
+};
+
+// Never freed as the dtor is non-trivial.
+StorageBindingInfo& storage_binding_info = *new StorageBindingInfo;
+
+}  // namespace
 
 static bool checkSize(const std::string& kind, size_t actual, size_t expected) {
     if (actual != expected) {
@@ -456,6 +483,20 @@ static bool generateAppId(const KeyAuthentication& auth, const std::string& stre
     std::string stretched;
     if (!stretchSecret(stretching, auth.secret, salt, &stretched)) return false;
     *appId = secdiscardable_hash + stretched;
+
+    const std::lock_guard<std::mutex> scope_lock(storage_binding_info.guard);
+    switch (storage_binding_info.state) {
+        case StorageBindingInfo::State::UNINITIALIZED:
+            storage_binding_info.state = StorageBindingInfo::State::NOT_USED;
+            break;
+        case StorageBindingInfo::State::IN_USE:
+            appId->append(storage_binding_info.seed.begin(), storage_binding_info.seed.end());
+            break;
+        case StorageBindingInfo::State::NOT_USED:
+            // noop
+            break;
+    }
+
     return true;
 }
 
@@ -713,6 +754,23 @@ bool destroyKey(const std::string& dir) {
     }
     success &= recursiveDeleteKey(dir);
     return success;
+}
+
+bool setKeyStorageBindingSeed(const std::vector<uint8_t>& seed) {
+    const std::lock_guard<std::mutex> scope_lock(storage_binding_info.guard);
+    switch (storage_binding_info.state) {
+        case StorageBindingInfo::State::UNINITIALIZED:
+            storage_binding_info.state = StorageBindingInfo::State::IN_USE;
+            storage_binding_info.seed = seed;
+            return true;
+        case StorageBindingInfo::State::IN_USE:
+            LOG(ERROR) << "key storage binding seed already set";
+            return false;
+        case StorageBindingInfo::State::NOT_USED:
+            LOG(ERROR) << "key storage already in use without binding";
+            return false;
+    }
+    return false;
 }
 
 }  // namespace vold

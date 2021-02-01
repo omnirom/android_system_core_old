@@ -91,6 +91,8 @@ interface IVold {
     void mountFstab(@utf8InCpp String blkDevice, @utf8InCpp String mountPoint);
     void encryptFstab(@utf8InCpp String blkDevice, @utf8InCpp String mountPoint, boolean shouldFormat, @utf8InCpp String fsType);
 
+    void setStorageBindingSeed(in byte[] seed);
+
     void createUserKey(int userId, int userSerial, boolean ephemeral);
     void destroyUserKey(int userId);
 
