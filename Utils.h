@@ -51,6 +51,9 @@ std::string GetFuseMountPathForUser(userid_t user_id, const std::string& relativ
 status_t CreateDeviceNode(const std::string& path, dev_t dev);
 status_t DestroyDeviceNode(const std::string& path);
 
+status_t SetDefaultAcl(const std::string& path, mode_t mode, uid_t uid, gid_t gid,
+                       std::vector<gid_t> additionalGids);
+
 status_t AbortFuseConnections();
 
 int SetQuotaInherit(const std::string& path);
