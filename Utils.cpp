@@ -136,8 +136,8 @@ status_t DestroyDeviceNode(const std::string& path) {
 }
 
 // Sets a default ACL on the directory.
-int SetDefaultAcl(const std::string& path, mode_t mode, uid_t uid, gid_t gid,
-                  std::vector<gid_t> additionalGids) {
+status_t SetDefaultAcl(const std::string& path, mode_t mode, uid_t uid, gid_t gid,
+                       std::vector<gid_t> additionalGids) {
     if (IsSdcardfsUsed()) {
         // sdcardfs magically takes care of this
         return OK;
