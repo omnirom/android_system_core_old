@@ -90,7 +90,7 @@ cc_library_static {
         export_aidl_headers: true,
     },
     whole_static_libs: [
-        "libincremental_aidl-unstable-cpp",
+        "libincremental_aidl-cpp",
     ],
 }
 
@@ -163,7 +163,7 @@ cc_library_static {
     },
     shared_libs: [
         "android.hardware.health.storage@1.0",
-        "android.hardware.health.storage-unstable-ndk_platform",
+        "android.hardware.health.storage-V1-ndk_platform",
         "libbinder_ndk",
     ],
     whole_static_libs: [
@@ -194,7 +194,7 @@ cc_binary {
 
     shared_libs: [
         "android.hardware.health.storage@1.0",
-        "android.hardware.health.storage-unstable-ndk_platform",
+        "android.hardware.health.storage-V1-ndk_platform",
         "libbinder_ndk",
     ],
 
