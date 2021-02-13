@@ -903,10 +903,16 @@ binder::Status VoldNativeService::resetCheckpoint() {
     return Ok();
 }
 
+static void initializeIncFs() {
+    // Obtaining IncFS features triggers initialization of IncFS.
+    incfs::features();
+}
+
 binder::Status VoldNativeService::earlyBootEnded() {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_LOCK;
 
+    initializeIncFs();
     Keymaster::earlyBootEnded();
     return Ok();
 }
