@@ -1371,6 +1371,10 @@ bool FsyncDirectory(const std::string& dirname) {
     return true;
 }
 
+bool FsyncParentDirectory(const std::string& path) {
+    return FsyncDirectory(android::base::Dirname(path));
+}
+
 bool writeStringToFile(const std::string& payload, const std::string& filename) {
     android::base::unique_fd fd(TEMP_FAILURE_RETRY(
         open(filename.c_str(), O_WRONLY | O_CREAT | O_NOFOLLOW | O_TRUNC | O_CLOEXEC, 0666)));

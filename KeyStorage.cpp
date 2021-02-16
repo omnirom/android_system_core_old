@@ -661,6 +661,7 @@ bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path
         PLOG(ERROR) << "Unable to move new key to location: " << key_path;
         return false;
     }
+    if (!FsyncParentDirectory(key_path)) return false;
     LOG(DEBUG) << "Created key: " << key_path;
     return true;
 }

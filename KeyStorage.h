@@ -55,7 +55,8 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBu
 // Create a directory at the named path, and store "key" in it as storeKey
 // This version creates the key in "tmp_path" then atomically renames "tmp_path"
 // to "key_path" thereby ensuring that the key is either stored entirely or
-// not at all.
+// not at all.  All the needed files and directories are also fsync'ed to ensure
+// that the key is actually persisted to disk.
 bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path,
                         const KeyAuthentication& auth, const KeyBuffer& key);
 

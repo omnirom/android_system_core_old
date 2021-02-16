@@ -463,7 +463,6 @@ bool fscrypt_initialize_systemwide_keys() {
         return false;
     LOG(INFO) << "Wrote per boot key reference to:" << per_boot_ref_filename;
 
-    if (!android::vold::FsyncDirectory(device_key_dir)) return false;
     return true;
 }
 
@@ -705,7 +704,6 @@ static bool fscrypt_rewrap_user_key(userid_t user_id, int serial,
     if (!get_ce_key_new_path(directory_path, paths, &ce_key_path)) return false;
     if (!android::vold::storeKeyAtomically(ce_key_path, user_key_temp, store_auth, ce_key))
         return false;
-    if (!android::vold::FsyncDirectory(directory_path)) return false;
     return true;
 }
 
