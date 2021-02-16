@@ -1349,6 +1349,10 @@ status_t WaitForFile(const char* filename, std::chrono::nanoseconds timeout) {
     return -1;
 }
 
+bool pathExists(const std::string& path) {
+    return access(path.c_str(), F_OK) == 0;
+}
+
 bool FsyncDirectory(const std::string& dirname) {
     android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(dirname.c_str(), O_RDONLY | O_CLOEXEC)));
     if (fd == -1) {

@@ -179,6 +179,8 @@ status_t DeleteDirContents(const std::string& pathname);
 
 status_t WaitForFile(const char* filename, std::chrono::nanoseconds timeout);
 
+bool pathExists(const std::string& path);
+
 bool FsyncDirectory(const std::string& dirname);
 
 bool writeStringToFile(const std::string& payload, const std::string& filename);

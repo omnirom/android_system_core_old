@@ -43,9 +43,6 @@ class KeyAuthentication {
 
 extern const KeyAuthentication kEmptyAuthentication;
 
-// Checks if path "path" exists.
-bool pathExists(const std::string& path);
-
 bool createSecdiscardable(const std::string& path, std::string* hash);
 bool readSecdiscardable(const std::string& path, std::string* hash);
 
