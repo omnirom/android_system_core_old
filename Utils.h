@@ -185,6 +185,8 @@ bool FsyncDirectory(const std::string& dirname);
 
 bool FsyncParentDirectory(const std::string& path);
 
+bool MkdirsSync(const std::string& path, mode_t mode);
+
 bool writeStringToFile(const std::string& payload, const std::string& filename);
 
 void ConfigureMaxDirtyRatioForFuse(const std::string& fuse_mount, unsigned int max_ratio);
