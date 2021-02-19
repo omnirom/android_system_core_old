@@ -606,10 +606,6 @@ static bool decryptWithoutKeymaster(const std::string& preKey, const std::string
     return true;
 }
 
-bool pathExists(const std::string& path) {
-    return access(path.c_str(), F_OK) == 0;
-}
-
 bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBuffer& key) {
     if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), 0700)) == -1) {
         PLOG(ERROR) << "key mkdir " << dir;
@@ -665,6 +661,7 @@ bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path
         PLOG(ERROR) << "Unable to move new key to location: " << key_path;
         return false;
     }
+    if (!FsyncParentDirectory(key_path)) return false;
     LOG(DEBUG) << "Created key: " << key_path;
     return true;
 }
