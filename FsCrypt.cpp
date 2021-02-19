@@ -462,7 +462,6 @@ bool fscrypt_initialize_systemwide_keys() {
         return false;
     LOG(INFO) << "Wrote per boot key reference to:" << per_boot_ref_filename;
 
-    if (!android::vold::FsyncDirectory(device_key_dir)) return false;
     return true;
 }
 
@@ -652,18 +651,12 @@ static bool read_or_create_volkey(const std::string& misc_path, const std::strin
         if (!android::vold::readSecdiscardable(secdiscardable_path, &secdiscardable_hash))
             return false;
     } else {
-        if (fs_mkdirs(secdiscardable_path.c_str(), 0700) != 0) {
-            PLOG(ERROR) << "Creating directories for: " << secdiscardable_path;
-            return false;
-        }
+        if (!android::vold::MkdirsSync(secdiscardable_path, 0700)) return false;
         if (!android::vold::createSecdiscardable(secdiscardable_path, &secdiscardable_hash))
             return false;
     }
     auto key_path = volkey_path(misc_path, volume_uuid);
-    if (fs_mkdirs(key_path.c_str(), 0700) != 0) {
-        PLOG(ERROR) << "Creating directories for: " << key_path;
-        return false;
-    }
+    if (!android::vold::MkdirsSync(key_path, 0700)) return false;
     android::vold::KeyAuthentication auth("", secdiscardable_hash);
 
     EncryptionOptions options;
@@ -704,7 +697,6 @@ static bool fscrypt_rewrap_user_key(userid_t user_id, int serial,
     if (!get_ce_key_new_path(directory_path, paths, &ce_key_path)) return false;
     if (!android::vold::storeKeyAtomically(ce_key_path, user_key_temp, store_auth, ce_key))
         return false;
-    if (!android::vold::FsyncDirectory(directory_path)) return false;
     return true;
 }
 

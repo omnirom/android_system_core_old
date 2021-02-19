@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <android-base/file.h>
 #include <gtest/gtest.h>
 
 #include "../Utils.h"
@@ -41,6 +42,24 @@ TEST_F(UtilsTest, FindValueTest) {
 
     ASSERT_TRUE(FindValue("BADKEY=\"VALUE\" NOTKEY=\"OTHER\" KEY=\"QUUX\"", "KEY", &tmp));
     ASSERT_EQ("QUUX", tmp);
+}
+
+TEST_F(UtilsTest, MkdirsSyncTest) {
+    TemporaryDir temp_dir;
+    std::string temp_dir_path;
+
+    ASSERT_TRUE(android::base::Realpath(temp_dir.path, &temp_dir_path));
+
+    ASSERT_FALSE(pathExists(temp_dir_path + "/a"));
+    ASSERT_TRUE(MkdirsSync(temp_dir_path + "/a/b/c", 0700));
+    ASSERT_TRUE(pathExists(temp_dir_path + "/a"));
+    ASSERT_TRUE(pathExists(temp_dir_path + "/a/b"));
+    // The final component of the path should not be created; only the previous
+    // components should be.
+    ASSERT_FALSE(pathExists(temp_dir_path + "/a/b/c"));
+
+    // Currently, MkdirsSync() only supports absolute paths.
+    ASSERT_FALSE(MkdirsSync("foo", 0700));
 }
 
 }  // namespace vold
