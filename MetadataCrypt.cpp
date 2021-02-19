@@ -111,10 +111,7 @@ static bool read_key(const std::string& metadata_key_dir, const KeyGeneration& g
     std::string sKey;
     auto dir = metadata_key_dir + "/key";
     LOG(DEBUG) << "metadata_key_dir/key: " << dir;
-    if (fs_mkdirs(dir.c_str(), 0700)) {
-        PLOG(ERROR) << "Creating directories: " << dir;
-        return false;
-    }
+    if (!MkdirsSync(dir, 0700)) return false;
     auto temp = metadata_key_dir + "/tmp";
     return retrieveOrGenerateKey(dir, temp, kEmptyAuthentication, gen, key);
 }
