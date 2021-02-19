@@ -1349,6 +1349,10 @@ status_t WaitForFile(const char* filename, std::chrono::nanoseconds timeout) {
     return -1;
 }
 
+bool pathExists(const std::string& path) {
+    return access(path.c_str(), F_OK) == 0;
+}
+
 bool FsyncDirectory(const std::string& dirname) {
     android::base::unique_fd fd(TEMP_FAILURE_RETRY(open(dirname.c_str(), O_RDONLY | O_CLOEXEC)));
     if (fd == -1) {
@@ -1362,6 +1366,40 @@ bool FsyncDirectory(const std::string& dirname) {
         } else {
             PLOG(ERROR) << "Failed to fsync " << dirname;
             return false;
+        }
+    }
+    return true;
+}
+
+bool FsyncParentDirectory(const std::string& path) {
+    return FsyncDirectory(android::base::Dirname(path));
+}
+
+// Creates all parent directories of |path| that don't already exist.  Assigns
+// the specified |mode| to any new directories, and also fsync()s their parent
+// directories so that the new directories get written to disk right away.
+bool MkdirsSync(const std::string& path, mode_t mode) {
+    if (path[0] != '/') {
+        LOG(ERROR) << "MkdirsSync() needs an absolute path, but got " << path;
+        return false;
+    }
+    std::vector<std::string> components = android::base::Split(android::base::Dirname(path), "/");
+
+    std::string current_dir = "/";
+    for (const std::string& component : components) {
+        if (component.empty()) continue;
+
+        std::string parent_dir = current_dir;
+        if (current_dir != "/") current_dir += "/";
+        current_dir += component;
+
+        if (!pathExists(current_dir)) {
+            if (mkdir(current_dir.c_str(), mode) != 0) {
+                PLOG(ERROR) << "Failed to create " << current_dir;
+                return false;
+            }
+            if (!FsyncDirectory(parent_dir)) return false;
+            LOG(DEBUG) << "Created directory " << current_dir;
         }
     }
     return true;
