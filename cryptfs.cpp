@@ -2083,7 +2083,16 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
     int num_vols;
     bool rebootEncryption = false;
     bool onlyCreateHeader = false;
-    std::unique_ptr<android::wakelock::WakeLock> wakeLock = nullptr;
+
+    /* Get a wakelock as this may take a while, and we don't want the
+     * device to sleep on us.  We'll grab a partial wakelock, and if the UI
+     * wants to keep the screen on, it can grab a full wakelock.
+     */
+    snprintf(lockid, sizeof(lockid), "enablecrypto%d", (int)getpid());
+    auto wl = android::wakelock::WakeLock::tryGet(lockid);
+    if (!wl.has_value()) {
+        return android::UNEXPECTED_NULL;
+    }
 
     if (get_crypt_ftr_and_key(&crypt_ftr) == 0) {
         if (crypt_ftr.flags & CRYPT_FORCE_ENCRYPTION) {
@@ -2131,13 +2140,6 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
             goto error_unencrypted;
         }
     }
-
-    /* Get a wakelock as this may take a while, and we don't want the
-     * device to sleep on us.  We'll grab a partial wakelock, and if the UI
-     * wants to keep the screen on, it can grab a full wakelock.
-     */
-    snprintf(lockid, sizeof(lockid), "enablecrypto%d", (int)getpid());
-    wakeLock = std::make_unique<android::wakelock::WakeLock>(lockid);
 
     /* The init files are setup to stop the class main and late start when
      * vold sets trigger_shutdown_framework.
@@ -2291,7 +2293,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
             /* default encryption - continue first boot sequence */
             property_set("ro.crypto.state", "encrypted");
             property_set("ro.crypto.type", "block");
-            wakeLock.reset(nullptr);
+            wl.reset();
             if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
                 // Bring up cryptkeeper that will check the password and set it
                 property_set("vold.decrypt", "trigger_shutdown_framework");
