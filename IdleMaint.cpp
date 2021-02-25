@@ -154,7 +154,10 @@ static void addFromFstab(std::list<std::string>* paths, PathTypes path_type) {
 }
 
 void Trim(const android::sp<android::os::IVoldTaskListener>& listener) {
-    android::wakelock::WakeLock wl{kWakeLock};
+    auto wl = android::wakelock::WakeLock::tryGet(kWakeLock);
+    if (!wl.has_value()) {
+        return;
+    }
 
     // Collect both fstab and vold volumes
     std::list<std::string> paths;
@@ -414,7 +417,10 @@ int RunIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener) {
 
     LOG(DEBUG) << "idle maintenance started";
 
-    android::wakelock::WakeLock wl{kWakeLock};
+    auto wl = android::wakelock::WakeLock::tryGet(kWakeLock);
+    if (!wl.has_value()) {
+        return android::UNEXPECTED_NULL;
+    }
 
     std::list<std::string> paths;
     addFromFstab(&paths, PathTypes::kBlkDevice);
@@ -448,7 +454,10 @@ int RunIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener) {
 }
 
 int AbortIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener) {
-    android::wakelock::WakeLock wl{kWakeLock};
+    auto wl = android::wakelock::WakeLock::tryGet(kWakeLock);
+    if (!wl.has_value()) {
+        return android::UNEXPECTED_NULL;
+    }
 
     std::unique_lock<std::mutex> lk(cv_m);
     if (idle_maint_stat != IdleMaintStats::kStopped) {
