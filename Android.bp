@@ -96,6 +96,9 @@ cc_library_static {
     whole_static_libs: [
         "libincremental_aidl-cpp",
     ],
+    export_shared_lib_headers: [
+        "libbinder",
+    ],
 }
 
 cc_library_headers {
