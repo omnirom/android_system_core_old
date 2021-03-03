@@ -543,16 +543,9 @@ bool forkAndRemountChild(uid_t uid, pid_t pid, int nsFd, const char* name, void*
         case VoldNativeService::REMOUNT_MODE_DEFAULT:
             storageSource = "/mnt/runtime/default";
             break;
-        case VoldNativeService::REMOUNT_MODE_READ:
-            storageSource = "/mnt/runtime/read";
-            break;
-        case VoldNativeService::REMOUNT_MODE_WRITE:
-        case VoldNativeService::REMOUNT_MODE_LEGACY:
+        case VoldNativeService::REMOUNT_MODE_ANDROID_WRITABLE:
         case VoldNativeService::REMOUNT_MODE_INSTALLER:
             storageSource = "/mnt/runtime/write";
-            break;
-        case VoldNativeService::REMOUNT_MODE_FULL:
-            storageSource = "/mnt/runtime/full";
             break;
         case VoldNativeService::REMOUNT_MODE_PASS_THROUGH:
             return true;
