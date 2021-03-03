@@ -174,13 +174,9 @@ interface IVold {
 
     const int REMOUNT_MODE_NONE = 0;
     const int REMOUNT_MODE_DEFAULT = 1;
-    const int REMOUNT_MODE_READ = 2;
-    const int REMOUNT_MODE_WRITE = 3;
-    const int REMOUNT_MODE_LEGACY = 4;
-    const int REMOUNT_MODE_INSTALLER = 5;
-    const int REMOUNT_MODE_FULL = 6;
-    const int REMOUNT_MODE_PASS_THROUGH = 7;
-    const int REMOUNT_MODE_ANDROID_WRITABLE = 8;
+    const int REMOUNT_MODE_INSTALLER = 2;
+    const int REMOUNT_MODE_PASS_THROUGH = 3;
+    const int REMOUNT_MODE_ANDROID_WRITABLE = 4;
 
     const int VOLUME_STATE_UNMOUNTED = 0;
     const int VOLUME_STATE_CHECKING = 1;
