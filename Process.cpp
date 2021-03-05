@@ -39,6 +39,7 @@
 #include <android-base/strings.h>
 
 #include "Process.h"
+#include "Utils.h"
 
 using android::base::StringPrintf;
 
@@ -127,7 +128,7 @@ int KillProcessesWithMounts(const std::string& prefix, int signal) {
     return pids.size();
 }
 
-int KillProcessesWithOpenFiles(const std::string& prefix, int signal) {
+int KillProcessesWithOpenFiles(const std::string& prefix, int signal, bool killFuseDaemon) {
     std::unordered_set<pid_t> pids;
 
     auto proc_d = std::unique_ptr<DIR, int (*)(DIR*)>(opendir("/proc"), closedir);
@@ -164,7 +165,11 @@ int KillProcessesWithOpenFiles(const std::string& prefix, int signal) {
         }
 
         if (found) {
-            pids.insert(pid);
+            if (!IsFuseDaemon(pid) || killFuseDaemon) {
+                pids.insert(pid);
+            } else {
+                LOG(WARNING) << "Found FUSE daemon with open file. Skipping...";
+            }
         }
     }
     if (signal != 0) {
