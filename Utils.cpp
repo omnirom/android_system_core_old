@@ -525,24 +525,25 @@ status_t KillProcessesWithMountPrefix(const std::string& path) {
 }
 
 status_t KillProcessesUsingPath(const std::string& path) {
-    if (KillProcessesWithOpenFiles(path, SIGINT) == 0) {
+    if (KillProcessesWithOpenFiles(path, SIGINT, false /* killFuseDaemon */) == 0) {
         return OK;
     }
     if (sSleepOnUnmount) sleep(5);
 
-    if (KillProcessesWithOpenFiles(path, SIGTERM) == 0) {
+    if (KillProcessesWithOpenFiles(path, SIGTERM, false /* killFuseDaemon */) == 0) {
         return OK;
     }
     if (sSleepOnUnmount) sleep(5);
 
-    if (KillProcessesWithOpenFiles(path, SIGKILL) == 0) {
+    if (KillProcessesWithOpenFiles(path, SIGKILL, false /* killFuseDaemon */) == 0) {
         return OK;
     }
     if (sSleepOnUnmount) sleep(5);
 
     // Send SIGKILL a second time to determine if we've
     // actually killed everyone with open files
-    if (KillProcessesWithOpenFiles(path, SIGKILL) == 0) {
+    // This time, we also kill the FUSE daemon if found
+    if (KillProcessesWithOpenFiles(path, SIGKILL, true /* killFuseDaemon */) == 0) {
         return OK;
     }
     PLOG(ERROR) << "Failed to kill processes using " << path;
