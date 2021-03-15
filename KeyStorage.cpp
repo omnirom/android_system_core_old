@@ -133,17 +133,33 @@ static void hashWithPrefix(char const* prefix, const std::string& tohash, std::s
     SHA512_Final(reinterpret_cast<uint8_t*>(&(*res)[0]), &c);
 }
 
-static bool generateKeymasterKey(Keymaster& keymaster, const KeyAuthentication& auth,
-                                 const std::string& appId, std::string* key) {
+// Generates a keymaster key, using rollback resistance if supported.
+static bool generateKeymasterKey(Keymaster& keymaster,
+                                 const km::AuthorizationSetBuilder& paramBuilder,
+                                 std::string* key) {
+    auto paramsWithRollback = paramBuilder;
+    paramsWithRollback.Authorization(km::TAG_ROLLBACK_RESISTANCE);
+
+    if (!keymaster.generateKey(paramsWithRollback, key)) {
+        LOG(WARNING) << "Failed to generate rollback-resistant key.  This is expected if keymaster "
+                        "doesn't support rollback resistance.  Falling back to "
+                        "non-rollback-resistant key.";
+        if (!keymaster.generateKey(paramBuilder, key)) return false;
+    }
+    return true;
+}
+
+static bool generateKeyStorageKey(Keymaster& keymaster, const KeyAuthentication& auth,
+                                  const std::string& appId, std::string* key) {
     auto paramBuilder = km::AuthorizationSetBuilder()
                             .AesEncryptionKey(AES_KEY_BYTES * 8)
                             .GcmModeMinMacLen(GCM_MAC_BYTES * 8)
                             .Authorization(km::TAG_APPLICATION_ID, km::support::blob2hidlVec(appId));
     if (auth.token.empty()) {
-        LOG(DEBUG) << "Creating key that doesn't need auth token";
+        LOG(DEBUG) << "Generating \"key storage\" key that doesn't need auth token";
         paramBuilder.Authorization(km::TAG_NO_AUTH_REQUIRED);
     } else {
-        LOG(DEBUG) << "Auth token required for key";
+        LOG(DEBUG) << "Generating \"key storage\" key that needs auth token";
         if (auth.token.size() != sizeof(hw_auth_token_t)) {
             LOG(ERROR) << "Auth token should be " << sizeof(hw_auth_token_t) << " bytes, was "
                        << auth.token.size() << " bytes";
@@ -155,13 +171,7 @@ static bool generateKeymasterKey(Keymaster& keymaster, const KeyAuthentication& 
         paramBuilder.Authorization(km::TAG_USER_AUTH_TYPE, km::HardwareAuthenticatorType::PASSWORD);
         paramBuilder.Authorization(km::TAG_AUTH_TIMEOUT, AUTH_TIMEOUT);
     }
-
-    auto paramsWithRollback = paramBuilder;
-    paramsWithRollback.Authorization(km::TAG_ROLLBACK_RESISTANCE);
-
-    // Generate rollback-resistant key if possible.
-    return keymaster.generateKey(paramsWithRollback, key) ||
-           keymaster.generateKey(paramBuilder, key);
+    return generateKeymasterKey(keymaster, paramBuilder, key);
 }
 
 bool generateWrappedStorageKey(KeyBuffer* key) {
@@ -170,11 +180,7 @@ bool generateWrappedStorageKey(KeyBuffer* key) {
     std::string key_temp;
     auto paramBuilder = km::AuthorizationSetBuilder().AesEncryptionKey(AES_KEY_BYTES * 8);
     paramBuilder.Authorization(km::TAG_STORAGE_KEY);
-    auto paramsWithRollback = paramBuilder;
-    paramsWithRollback.Authorization(km::TAG_ROLLBACK_RESISTANCE);
-    if (!keymaster.generateKey(paramsWithRollback, &key_temp)) {
-        if (!keymaster.generateKey(paramBuilder, &key_temp)) return false;
-    }
+    if (!generateKeymasterKey(keymaster, paramBuilder, &key_temp)) return false;
     *key = KeyBuffer(key_temp.size());
     memcpy(reinterpret_cast<void*>(key->data()), key_temp.c_str(), key->size());
     return true;
@@ -631,7 +637,7 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBu
         Keymaster keymaster;
         if (!keymaster) return false;
         std::string kmKey;
-        if (!generateKeymasterKey(keymaster, auth, appId, &kmKey)) return false;
+        if (!generateKeyStorageKey(keymaster, auth, appId, &kmKey)) return false;
         if (!writeStringToFile(kmKey, dir + "/" + kFn_keymaster_key_blob)) return false;
         km::AuthorizationSet keyParams;
         km::HardwareAuthToken authToken;
