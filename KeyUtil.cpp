@@ -57,8 +57,10 @@ bool generateStorageKey(const KeyGeneration& gen, KeyBuffer* key) {
             LOG(ERROR) << "Cannot generate a wrapped key " << gen.keysize << " bytes long";
             return false;
         }
+        LOG(DEBUG) << "Generating wrapped storage key";
         return generateWrappedStorageKey(key);
     } else {
+        LOG(DEBUG) << "Generating standard storage key";
         return randomKey(gen.keysize, key);
     }
 }
