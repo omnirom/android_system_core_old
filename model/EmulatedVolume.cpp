@@ -116,24 +116,22 @@ status_t EmulatedVolume::mountFuseBindMounts() {
     }
 
     status_t status = OK;
-    // When app data isolation is enabled, obb/ will be mounted per app, otherwise we should
-    // bind mount the whole Android/ to speed up reading.
-    if (!mAppDataIsolationEnabled) {
-        std::string androidDataSource = StringPrintf("%s/data", androidSource.c_str());
-        std::string androidDataTarget(
-                StringPrintf("/mnt/user/%d/%s/%d/Android/data", userId, label.c_str(), userId));
-        status = doFuseBindMount(androidDataSource, androidDataTarget, pathsToUnmount);
-        if (status != OK) {
-            return status;
-        }
+    // Zygote will unmount these dirs if app data isolation is enabled, so apps
+    // cannot access these dirs directly.
+    std::string androidDataSource = StringPrintf("%s/data", androidSource.c_str());
+    std::string androidDataTarget(
+            StringPrintf("/mnt/user/%d/%s/%d/Android/data", userId, label.c_str(), userId));
+    status = doFuseBindMount(androidDataSource, androidDataTarget, pathsToUnmount);
+    if (status != OK) {
+        return status;
+    }
 
-        std::string androidObbSource = StringPrintf("%s/obb", androidSource.c_str());
-        std::string androidObbTarget(
-                StringPrintf("/mnt/user/%d/%s/%d/Android/obb", userId, label.c_str(), userId));
-        status = doFuseBindMount(androidObbSource, androidObbTarget, pathsToUnmount);
-        if (status != OK) {
-            return status;
-        }
+    std::string androidObbSource = StringPrintf("%s/obb", androidSource.c_str());
+    std::string androidObbTarget(
+            StringPrintf("/mnt/user/%d/%s/%d/Android/obb", userId, label.c_str(), userId));
+    status = doFuseBindMount(androidObbSource, androidObbTarget, pathsToUnmount);
+    if (status != OK) {
+        return status;
     }
 
     // Installers get the same view as all other apps, with the sole exception that the
@@ -150,44 +148,8 @@ status_t EmulatedVolume::mountFuseBindMounts() {
         if (status != OK) {
             return status;
         }
-    } else if (mAppDataIsolationEnabled) {
-        std::string obbSource(StringPrintf("%s/obb", androidSource.c_str()));
-        std::string obbInstallerTarget(StringPrintf("/mnt/installer/%d/%s/%d/Android/obb",
-                userId, label.c_str(), userId));
-
-        status = doFuseBindMount(obbSource, obbInstallerTarget, pathsToUnmount);
-        if (status != OK) {
-            return status;
-        }
     }
 
-    // /mnt/androidwriteable is similar to /mnt/installer, but it's for
-    // MOUNT_EXTERNAL_ANDROID_WRITABLE apps and it can also access DATA (Android/data) dirs.
-    if (mAppDataIsolationEnabled) {
-        std::string obbSource = mUseSdcardFs ?
-            StringPrintf("/mnt/runtime/write/%s/%d/Android/obb", label.c_str(), userId)
-            : StringPrintf("%s/obb", androidSource.c_str());
-
-        std::string obbAndroidWritableTarget(
-                StringPrintf("/mnt/androidwritable/%d/%s/%d/Android/obb",
-                userId, label.c_str(), userId));
-
-        status = doFuseBindMount(obbSource, obbAndroidWritableTarget, pathsToUnmount);
-        if (status != OK) {
-            return status;
-        }
-
-        std::string dataSource = mUseSdcardFs ?
-                StringPrintf("/mnt/runtime/write/%s/%d/Android/data", label.c_str(), userId)
-                : StringPrintf("%s/data", androidSource.c_str());
-        std::string dataTarget(StringPrintf("/mnt/androidwritable/%d/%s/%d/Android/data",
-                userId, label.c_str(), userId));
-
-        status = doFuseBindMount(dataSource, dataTarget, pathsToUnmount);
-        if (status != OK) {
-            return status;
-        }
-    }
     unmount_guard.Disable();
     return OK;
 }
