@@ -178,7 +178,9 @@ binder::Status VoldNativeService::shutdown() {
 
 binder::Status VoldNativeService::abortFuse() {
     ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_LOCK;
+    // if acquire lock, maybe lead to a deadlock if lock is held by a
+    // thread that is blocked on a FUSE operation.
+    // abort fuse doesn't need to access any state, so do not acquire lock
 
     return translate(VolumeManager::Instance()->abortFuse());
 }
