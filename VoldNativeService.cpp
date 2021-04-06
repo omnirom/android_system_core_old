@@ -764,6 +764,14 @@ binder::Status VoldNativeService::fixateNewestUserKeyAuth(int32_t userId) {
     return translateBool(fscrypt_fixate_newest_user_key_auth(userId));
 }
 
+binder::Status VoldNativeService::getUnlockedUsers(std::vector<int>* _aidl_return) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_CRYPT_LOCK;
+
+    *_aidl_return = fscrypt_get_unlocked_users();
+    return Ok();
+}
+
 binder::Status VoldNativeService::unlockUserKey(int32_t userId, int32_t userSerial,
                                                 const std::string& token,
                                                 const std::string& secret) {

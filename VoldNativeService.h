@@ -127,6 +127,7 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
                                     const std::string& secret);
     binder::Status fixateNewestUserKeyAuth(int32_t userId);
 
+    binder::Status getUnlockedUsers(std::vector<int>* _aidl_return);
     binder::Status unlockUserKey(int32_t userId, int32_t userSerial, const std::string& token,
                                  const std::string& secret);
     binder::Status lockUserKey(int32_t userId);
