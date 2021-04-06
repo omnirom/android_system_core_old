@@ -15,6 +15,7 @@
  */
 
 #include <string>
+#include <vector>
 
 #include <cutils/multiuser.h>
 
@@ -27,6 +28,7 @@ bool fscrypt_add_user_key_auth(userid_t user_id, int serial, const std::string& 
 bool fscrypt_clear_user_key_auth(userid_t user_id, int serial, const std::string& secret);
 bool fscrypt_fixate_newest_user_key_auth(userid_t user_id);
 
+std::vector<int> fscrypt_get_unlocked_users();
 bool fscrypt_unlock_user_key(userid_t user_id, int serial, const std::string& secret);
 bool fscrypt_lock_user_key(userid_t user_id);
 
