@@ -415,7 +415,7 @@ static std::string getStretching(const KeyAuthentication& auth) {
 }
 
 static bool stretchSecret(const std::string& stretching, const std::string& secret,
-                          const std::string& salt, std::string* stretched) {
+                          std::string* stretched) {
     if (stretching == kStretch_nopassword) {
         if (!secret.empty()) {
             LOG(WARNING) << "Password present but stretching is nopassword";
@@ -432,10 +432,9 @@ static bool stretchSecret(const std::string& stretching, const std::string& secr
 }
 
 static bool generateAppId(const KeyAuthentication& auth, const std::string& stretching,
-                          const std::string& salt, const std::string& secdiscardable_hash,
-                          std::string* appId) {
+                          const std::string& secdiscardable_hash, std::string* appId) {
     std::string stretched;
-    if (!stretchSecret(stretching, auth.secret, salt, &stretched)) return false;
+    if (!stretchSecret(stretching, auth.secret, &stretched)) return false;
     *appId = secdiscardable_hash + stretched;
 
     const std::lock_guard<std::mutex> scope_lock(storage_binding_info.guard);
@@ -570,9 +569,8 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBu
     if (!createSecdiscardable(dir + "/" + kFn_secdiscardable, &secdiscardable_hash)) return false;
     std::string stretching = getStretching(auth);
     if (!writeStringToFile(stretching, dir + "/" + kFn_stretching)) return false;
-    std::string salt;
     std::string appId;
-    if (!generateAppId(auth, stretching, salt, secdiscardable_hash, &appId)) return false;
+    if (!generateAppId(auth, stretching, secdiscardable_hash, &appId)) return false;
     std::string encryptedKey;
     if (auth.usesKeymaster()) {
         Keymaster keymaster;
@@ -621,9 +619,8 @@ bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, KeyBuffe
     if (!readSecdiscardable(dir + "/" + kFn_secdiscardable, &secdiscardable_hash)) return false;
     std::string stretching;
     if (!readFileToString(dir + "/" + kFn_stretching, &stretching)) return false;
-    std::string salt;
     std::string appId;
-    if (!generateAppId(auth, stretching, salt, secdiscardable_hash, &appId)) return false;
+    if (!generateAppId(auth, stretching, secdiscardable_hash, &appId)) return false;
     std::string encryptedMessage;
     if (!readFileToString(dir + "/" + kFn_encrypted_key, &encryptedMessage)) return false;
     if (auth.usesKeymaster()) {
