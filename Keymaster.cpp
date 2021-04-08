@@ -198,7 +198,6 @@ bool Keymaster::upgradeKey(const std::string& oldKey, const km::AuthorizationSet
 
 KeymasterOperation Keymaster::begin(km::KeyPurpose purpose, const std::string& key,
                                     const km::AuthorizationSet& inParams,
-                                    const km::HardwareAuthToken& authToken,
                                     km::AuthorizationSet* outParams) {
     auto keyBlob = km::support::blob2hidlVec(key);
     uint64_t mOpHandle;
@@ -212,7 +211,8 @@ KeymasterOperation Keymaster::begin(km::KeyPurpose purpose, const std::string& k
         mOpHandle = operationHandle;
     };
 
-    auto error = mDevice->begin(purpose, keyBlob, inParams.hidl_data(), authToken, hidlCb);
+    auto error =
+            mDevice->begin(purpose, keyBlob, inParams.hidl_data(), km::HardwareAuthToken(), hidlCb);
     if (!error.isOk()) {
         LOG(ERROR) << "begin failed: " << error.description();
         return KeymasterOperation(km::ErrorCode::UNKNOWN_ERROR);
@@ -343,7 +343,7 @@ KeymasterSignResult keymaster_sign_object_for_cryptfs_scrypt(
 
     auto paramBuilder = km::AuthorizationSetBuilder().NoDigestOrPadding();
     while (true) {
-        op = dev.begin(km::KeyPurpose::SIGN, key, paramBuilder, km::HardwareAuthToken(), &outParams);
+        op = dev.begin(km::KeyPurpose::SIGN, key, paramBuilder, &outParams);
         if (op.errorCode() == km::ErrorCode::KEY_RATE_LIMIT_EXCEEDED) {
             sleep(ratelimit);
             continue;
