@@ -54,6 +54,7 @@ namespace vold {
 namespace {
 
 constexpr const char* kDump = "android.permission.DUMP";
+constexpr auto kIncFsReadNoTimeoutMs = 100;
 
 static binder::Status error(const std::string& msg) {
     PLOG(ERROR) << msg;
@@ -955,6 +956,7 @@ binder::Status VoldNativeService::mountIncFs(
 
     auto control = incfs::mount(backingPath, targetDir,
                                 {.flags = IncFsMountFlags(flags),
+                                 // Mount with read timeouts.
                                  .defaultReadTimeoutMs = INCFS_DEFAULT_READ_TIMEOUT_MS,
                                  // Mount with read logs disabled.
                                  .readLogBufferPages = 0});
@@ -981,7 +983,7 @@ binder::Status VoldNativeService::unmountIncFs(const std::string& dir) {
 
 binder::Status VoldNativeService::setIncFsMountOptions(
         const ::android::os::incremental::IncrementalFileSystemControlParcel& control,
-        bool enableReadLogs) {
+        bool enableReadLogs, bool enableReadTimeouts) {
     ENFORCE_SYSTEM_OR_ROOT;
 
     auto incfsControl =
@@ -996,7 +998,8 @@ binder::Status VoldNativeService::setIncFsMountOptions(
             std::unique_ptr<incfs::Control, decltype(cleanupFunc)>(&incfsControl, cleanupFunc);
     if (auto error = incfs::setOptions(
                 incfsControl,
-                {.defaultReadTimeoutMs = INCFS_DEFAULT_READ_TIMEOUT_MS,
+                {.defaultReadTimeoutMs =
+                         enableReadTimeouts ? INCFS_DEFAULT_READ_TIMEOUT_MS : kIncFsReadNoTimeoutMs,
                  .readLogBufferPages = enableReadLogs ? INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES : 0});
         error < 0) {
         return binder::Status::fromServiceSpecificError(error);
