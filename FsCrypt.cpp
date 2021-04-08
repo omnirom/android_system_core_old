@@ -490,7 +490,7 @@ bool fscrypt_init_user0() {
     // If this is a non-FBE device that recently left an emulated mode,
     // restore user data directories to known-good state.
     if (!fscrypt_is_native() && !fscrypt_is_emulated()) {
-        fscrypt_unlock_user_key(0, 0, "!", "!");
+        fscrypt_unlock_user_key(0, 0, "!");
     }
 
     // In some scenarios (e.g. userspace reboot) we might unmount userdata
@@ -625,14 +625,13 @@ static bool parse_hex(const std::string& hex, std::string* result) {
 }
 
 static std::optional<android::vold::KeyAuthentication> authentication_from_hex(
-        const std::string& token_hex, const std::string& secret_hex) {
-    std::string token, secret;
-    if (!parse_hex(token_hex, &token)) return std::optional<android::vold::KeyAuthentication>();
+        const std::string& secret_hex) {
+    std::string secret;
     if (!parse_hex(secret_hex, &secret)) return std::optional<android::vold::KeyAuthentication>();
     if (secret.empty()) {
         return kEmptyAuthentication;
     } else {
-        return android::vold::KeyAuthentication(token, secret);
+        return android::vold::KeyAuthentication(secret);
     }
 }
 
@@ -658,7 +657,7 @@ static bool read_or_create_volkey(const std::string& misc_path, const std::strin
     }
     auto key_path = volkey_path(misc_path, volume_uuid);
     if (!android::vold::MkdirsSync(key_path, 0700)) return false;
-    android::vold::KeyAuthentication auth("", secdiscardable_hash);
+    android::vold::KeyAuthentication auth(secdiscardable_hash);
 
     EncryptionOptions options;
     if (!get_volume_file_encryption_options(&options)) return false;
@@ -701,22 +700,18 @@ static bool fscrypt_rewrap_user_key(userid_t user_id, int serial,
     return true;
 }
 
-bool fscrypt_add_user_key_auth(userid_t user_id, int serial, const std::string& token_hex,
-                               const std::string& secret_hex) {
-    LOG(DEBUG) << "fscrypt_add_user_key_auth " << user_id << " serial=" << serial
-               << " token_present=" << (token_hex != "!");
+bool fscrypt_add_user_key_auth(userid_t user_id, int serial, const std::string& secret_hex) {
+    LOG(DEBUG) << "fscrypt_add_user_key_auth " << user_id << " serial=" << serial;
     if (!fscrypt_is_native()) return true;
-    auto auth = authentication_from_hex(token_hex, secret_hex);
+    auto auth = authentication_from_hex(secret_hex);
     if (!auth) return false;
     return fscrypt_rewrap_user_key(user_id, serial, kEmptyAuthentication, *auth);
 }
 
-bool fscrypt_clear_user_key_auth(userid_t user_id, int serial, const std::string& token_hex,
-                                 const std::string& secret_hex) {
-    LOG(DEBUG) << "fscrypt_clear_user_key_auth " << user_id << " serial=" << serial
-               << " token_present=" << (token_hex != "!");
+bool fscrypt_clear_user_key_auth(userid_t user_id, int serial, const std::string& secret_hex) {
+    LOG(DEBUG) << "fscrypt_clear_user_key_auth " << user_id << " serial=" << serial;
     if (!fscrypt_is_native()) return true;
-    auto auth = authentication_from_hex(token_hex, secret_hex);
+    auto auth = authentication_from_hex(secret_hex);
     if (!auth) return false;
     return fscrypt_rewrap_user_key(user_id, serial, *auth, kEmptyAuthentication);
 }
@@ -736,16 +731,14 @@ bool fscrypt_fixate_newest_user_key_auth(userid_t user_id) {
 }
 
 // TODO: rename to 'install' for consistency, and take flags to know which keys to install
-bool fscrypt_unlock_user_key(userid_t user_id, int serial, const std::string& token_hex,
-                             const std::string& secret_hex) {
-    LOG(DEBUG) << "fscrypt_unlock_user_key " << user_id << " serial=" << serial
-               << " token_present=" << (token_hex != "!");
+bool fscrypt_unlock_user_key(userid_t user_id, int serial, const std::string& secret_hex) {
+    LOG(DEBUG) << "fscrypt_unlock_user_key " << user_id << " serial=" << serial;
     if (fscrypt_is_native()) {
         if (s_ce_policies.count(user_id) != 0) {
             LOG(WARNING) << "Tried to unlock already-unlocked key for user " << user_id;
             return true;
         }
-        auto auth = authentication_from_hex(token_hex, secret_hex);
+        auto auth = authentication_from_hex(secret_hex);
         if (!auth) return false;
         if (!read_and_install_user_ce_key(user_id, *auth)) {
             LOG(ERROR) << "Couldn't read key for " << user_id;
