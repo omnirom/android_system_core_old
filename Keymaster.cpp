@@ -219,10 +219,6 @@ KeymasterOperation Keymaster::begin(const std::string& key, const km::Authorizat
     return KeymasterOperation(cor.iOperation, cor.upgradedBlob);
 }
 
-bool Keymaster::isSecure() {
-    return true;
-}
-
 void Keymaster::earlyBootEnded() {
     ::ndk::SpAIBinder binder(AServiceManager_getService(maintenance_service_name));
     auto maint_service = ks2_maint::IKeystoreMaintenance::fromBinder(binder);
@@ -238,14 +234,3 @@ void Keymaster::earlyBootEnded() {
 
 }  // namespace vold
 }  // namespace android
-
-// TODO: This always returns true right now since we hardcode the security level.
-// If it's alright to hardcode it, we should remove this function and simplify the callers.
-int keymaster_compatibility_cryptfs_scrypt() {
-    android::vold::Keymaster dev;
-    if (!dev) {
-        LOG(ERROR) << "Failed to initiate keymaster session";
-        return -1;
-    }
-    return dev.isSecure();
-}

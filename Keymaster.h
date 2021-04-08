@@ -122,7 +122,6 @@ class Keymaster {
     // also stores the upgraded key blob.
     KeymasterOperation begin(const std::string& key, const km::AuthorizationSet& inParams,
                              km::AuthorizationSet* outParams);
-    bool isSecure();
 
     // Tell all Keymint devices that early boot has ended and early boot-only keys can no longer
     // be created or used.
@@ -135,7 +134,5 @@ class Keymaster {
 
 }  // namespace vold
 }  // namespace android
-
-int keymaster_compatibility_cryptfs_scrypt();
 
 #endif
