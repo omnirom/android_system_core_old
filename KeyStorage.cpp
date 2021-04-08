@@ -57,7 +57,7 @@ extern "C" {
 namespace android {
 namespace vold {
 
-const KeyAuthentication kEmptyAuthentication{"", ""};
+const KeyAuthentication kEmptyAuthentication{""};
 
 static constexpr size_t AES_KEY_BYTES = 32;
 static constexpr size_t GCM_NONCE_BYTES = 12;
@@ -149,28 +149,15 @@ static bool generateKeymasterKey(Keymaster& keymaster,
     return true;
 }
 
-static bool generateKeyStorageKey(Keymaster& keymaster, const KeyAuthentication& auth,
-                                  const std::string& appId, std::string* key) {
-    auto paramBuilder = km::AuthorizationSetBuilder()
-                            .AesEncryptionKey(AES_KEY_BYTES * 8)
-                            .GcmModeMinMacLen(GCM_MAC_BYTES * 8)
-                            .Authorization(km::TAG_APPLICATION_ID, km::support::blob2hidlVec(appId));
-    if (auth.token.empty()) {
-        LOG(DEBUG) << "Generating \"key storage\" key that doesn't need auth token";
-        paramBuilder.Authorization(km::TAG_NO_AUTH_REQUIRED);
-    } else {
-        LOG(DEBUG) << "Generating \"key storage\" key that needs auth token";
-        if (auth.token.size() != sizeof(hw_auth_token_t)) {
-            LOG(ERROR) << "Auth token should be " << sizeof(hw_auth_token_t) << " bytes, was "
-                       << auth.token.size() << " bytes";
-            return false;
-        }
-        const hw_auth_token_t* at = reinterpret_cast<const hw_auth_token_t*>(auth.token.data());
-        auto user_id = at->user_id;  // Make a copy because at->user_id is unaligned.
-        paramBuilder.Authorization(km::TAG_USER_SECURE_ID, user_id);
-        paramBuilder.Authorization(km::TAG_USER_AUTH_TYPE, km::HardwareAuthenticatorType::PASSWORD);
-        paramBuilder.Authorization(km::TAG_AUTH_TIMEOUT, AUTH_TIMEOUT);
-    }
+static bool generateKeyStorageKey(Keymaster& keymaster, const std::string& appId,
+                                  std::string* key) {
+    auto paramBuilder =
+            km::AuthorizationSetBuilder()
+                    .AesEncryptionKey(AES_KEY_BYTES * 8)
+                    .GcmModeMinMacLen(GCM_MAC_BYTES * 8)
+                    .Authorization(km::TAG_APPLICATION_ID, km::support::blob2hidlVec(appId))
+                    .Authorization(km::TAG_NO_AUTH_REQUIRED);
+    LOG(DEBUG) << "Generating \"key storage\" key that doesn't need auth token";
     return generateKeymasterKey(keymaster, paramBuilder, key);
 }
 
@@ -197,17 +184,10 @@ bool exportWrappedStorageKey(const KeyBuffer& kmKey, KeyBuffer* key) {
     return true;
 }
 
-static std::pair<km::AuthorizationSet, km::HardwareAuthToken> beginParams(
-    const KeyAuthentication& auth, const std::string& appId) {
-    auto paramBuilder = km::AuthorizationSetBuilder()
-                            .GcmModeMacLen(GCM_MAC_BYTES * 8)
-                            .Authorization(km::TAG_APPLICATION_ID, km::support::blob2hidlVec(appId));
-    km::HardwareAuthToken authToken;
-    if (!auth.token.empty()) {
-        LOG(DEBUG) << "Supplying auth token to Keymaster";
-        authToken = km::support::hidlVec2AuthToken(km::support::blob2hidlVec(auth.token));
-    }
-    return {paramBuilder, authToken};
+static km::AuthorizationSet beginParams(const std::string& appId) {
+    return km::AuthorizationSetBuilder()
+            .GcmModeMacLen(GCM_MAC_BYTES * 8)
+            .Authorization(km::TAG_APPLICATION_ID, km::support::blob2hidlVec(appId));
 }
 
 static bool readFileToString(const std::string& filename, std::string* result) {
@@ -343,7 +323,6 @@ static KeymasterOperation BeginKeymasterOp(Keymaster& keymaster, const std::stri
                                            km::KeyPurpose purpose,
                                            const km::AuthorizationSet& keyParams,
                                            const km::AuthorizationSet& opParams,
-                                           const km::HardwareAuthToken& authToken,
                                            km::AuthorizationSet* outParams) {
     km::AuthorizationSet inParams(keyParams);
     inParams.append(opParams.begin(), opParams.end());
@@ -365,7 +344,7 @@ static KeymasterOperation BeginKeymasterOp(Keymaster& keymaster, const std::stri
         if (!readFileToString(blob_file, &blob)) return KeymasterOperation();
     }
 
-    auto opHandle = keymaster.begin(purpose, blob, inParams, authToken, outParams);
+    auto opHandle = keymaster.begin(purpose, blob, inParams, outParams);
     if (opHandle) return opHandle;
     if (opHandle.errorCode() != km::ErrorCode::KEY_REQUIRES_UPGRADE) return opHandle;
 
@@ -386,17 +365,16 @@ static KeymasterOperation BeginKeymasterOp(Keymaster& keymaster, const std::stri
         LOG(INFO) << "Key upgraded: " << blob_file;
     }
 
-    return keymaster.begin(purpose, blob, inParams, authToken, outParams);
+    return keymaster.begin(purpose, blob, inParams, outParams);
 }
 
 static bool encryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir,
                                     const km::AuthorizationSet& keyParams,
-                                    const km::HardwareAuthToken& authToken,
                                     const KeyBuffer& message, std::string* ciphertext) {
     km::AuthorizationSet opParams;
     km::AuthorizationSet outParams;
     auto opHandle = BeginKeymasterOp(keymaster, dir, km::KeyPurpose::ENCRYPT, keyParams, opParams,
-                                     authToken, &outParams);
+                                     &outParams);
     if (!opHandle) return false;
     auto nonceBlob = outParams.GetTagValue(km::TAG_NONCE);
     if (!nonceBlob.isOk()) {
@@ -419,14 +397,13 @@ static bool encryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir
 
 static bool decryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir,
                                     const km::AuthorizationSet& keyParams,
-                                    const km::HardwareAuthToken& authToken,
                                     const std::string& ciphertext, KeyBuffer* message) {
     auto nonce = ciphertext.substr(0, GCM_NONCE_BYTES);
     auto bodyAndMac = ciphertext.substr(GCM_NONCE_BYTES);
     auto opParams = km::AuthorizationSetBuilder().Authorization(km::TAG_NONCE,
                                                                 km::support::blob2hidlVec(nonce));
-    auto opHandle = BeginKeymasterOp(keymaster, dir, km::KeyPurpose::DECRYPT, keyParams, opParams,
-                                     authToken, nullptr);
+    auto opHandle =
+            BeginKeymasterOp(keymaster, dir, km::KeyPurpose::DECRYPT, keyParams, opParams, nullptr);
     if (!opHandle) return false;
     if (!opHandle.updateCompletely(bodyAndMac, message)) return false;
     if (!opHandle.finish(nullptr)) return false;
@@ -434,20 +411,11 @@ static bool decryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir
 }
 
 static std::string getStretching(const KeyAuthentication& auth) {
-    if (!auth.usesKeymaster()) {
-        return kStretch_none;
-    } else if (auth.secret.empty()) {
+    if (auth.usesKeymaster()) {
         return kStretch_nopassword;
     } else {
-        char paramstr[PROPERTY_VALUE_MAX];
-
-        property_get(SCRYPT_PROP, paramstr, SCRYPT_DEFAULTS);
-        return std::string() + kStretchPrefix_scrypt + paramstr;
+        return kStretch_none;
     }
-}
-
-static bool stretchingNeedsSalt(const std::string& stretching) {
-    return stretching != kStretch_nopassword && stretching != kStretch_none;
 }
 
 static bool stretchSecret(const std::string& stretching, const std::string& secret,
@@ -460,22 +428,6 @@ static bool stretchSecret(const std::string& stretching, const std::string& secr
         stretched->clear();
     } else if (stretching == kStretch_none) {
         *stretched = secret;
-    } else if (std::equal(kStretchPrefix_scrypt.begin(), kStretchPrefix_scrypt.end(),
-                          stretching.begin())) {
-        int Nf, rf, pf;
-        if (!parse_scrypt_parameters(stretching.substr(kStretchPrefix_scrypt.size()).c_str(), &Nf,
-                                     &rf, &pf)) {
-            LOG(ERROR) << "Unable to parse scrypt params in stretching: " << stretching;
-            return false;
-        }
-        stretched->assign(STRETCHED_BYTES, '\0');
-        if (crypto_scrypt(reinterpret_cast<const uint8_t*>(secret.data()), secret.size(),
-                          reinterpret_cast<const uint8_t*>(salt.data()), salt.size(), 1 << Nf,
-                          1 << rf, 1 << pf, reinterpret_cast<uint8_t*>(&(*stretched)[0]),
-                          stretched->size()) != 0) {
-            LOG(ERROR) << "scrypt failed with params: " << stretching;
-            return false;
-        }
     } else {
         LOG(ERROR) << "Unknown stretching type: " << stretching;
         return false;
@@ -623,13 +575,6 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBu
     std::string stretching = getStretching(auth);
     if (!writeStringToFile(stretching, dir + "/" + kFn_stretching)) return false;
     std::string salt;
-    if (stretchingNeedsSalt(stretching)) {
-        if (ReadRandomBytes(SALT_BYTES, salt) != OK) {
-            LOG(ERROR) << "Random read failed";
-            return false;
-        }
-        if (!writeStringToFile(salt, dir + "/" + kFn_salt)) return false;
-    }
     std::string appId;
     if (!generateAppId(auth, stretching, salt, secdiscardable_hash, &appId)) return false;
     std::string encryptedKey;
@@ -637,13 +582,10 @@ bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBu
         Keymaster keymaster;
         if (!keymaster) return false;
         std::string kmKey;
-        if (!generateKeyStorageKey(keymaster, auth, appId, &kmKey)) return false;
+        if (!generateKeyStorageKey(keymaster, appId, &kmKey)) return false;
         if (!writeStringToFile(kmKey, dir + "/" + kFn_keymaster_key_blob)) return false;
-        km::AuthorizationSet keyParams;
-        km::HardwareAuthToken authToken;
-        std::tie(keyParams, authToken) = beginParams(auth, appId);
-        if (!encryptWithKeymasterKey(keymaster, dir, keyParams, authToken, key, &encryptedKey))
-            return false;
+        km::AuthorizationSet keyParams = beginParams(appId);
+        if (!encryptWithKeymasterKey(keymaster, dir, keyParams, key, &encryptedKey)) return false;
     } else {
         if (!encryptWithoutKeymaster(appId, key, &encryptedKey)) return false;
     }
@@ -684,9 +626,6 @@ bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, KeyBuffe
     std::string stretching;
     if (!readFileToString(dir + "/" + kFn_stretching, &stretching)) return false;
     std::string salt;
-    if (stretchingNeedsSalt(stretching)) {
-        if (!readFileToString(dir + "/" + kFn_salt, &salt)) return false;
-    }
     std::string appId;
     if (!generateAppId(auth, stretching, salt, secdiscardable_hash, &appId)) return false;
     std::string encryptedMessage;
@@ -694,10 +633,8 @@ bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, KeyBuffe
     if (auth.usesKeymaster()) {
         Keymaster keymaster;
         if (!keymaster) return false;
-        km::AuthorizationSet keyParams;
-        km::HardwareAuthToken authToken;
-        std::tie(keyParams, authToken) = beginParams(auth, appId);
-        if (!decryptWithKeymasterKey(keymaster, dir, keyParams, authToken, encryptedMessage, key))
+        km::AuthorizationSet keyParams = beginParams(appId);
+        if (!decryptWithKeymasterKey(keymaster, dir, keyParams, encryptedMessage, key))
             return false;
     } else {
         if (!decryptWithoutKeymaster(appId, encryptedMessage, key)) return false;

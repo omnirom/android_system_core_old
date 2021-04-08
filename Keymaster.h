@@ -124,7 +124,6 @@ class Keymaster {
     // Begin a new cryptographic operation, collecting output parameters if pointer is non-null
     KeymasterOperation begin(km::KeyPurpose purpose, const std::string& key,
                              const km::AuthorizationSet& inParams,
-                             const km::HardwareAuthToken& authToken,
                              km::AuthorizationSet* outParams);
     bool isSecure();
 
