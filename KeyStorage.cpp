@@ -46,8 +46,6 @@
 #include <cutils/properties.h>
 
 #include <hardware/hw_auth_token.h>
-#include <keymasterV4_1/authorization_set.h>
-#include <keymasterV4_1/keymaster_utils.h>
 
 extern "C" {
 
@@ -151,12 +149,11 @@ static bool generateKeymasterKey(Keymaster& keymaster,
 
 static bool generateKeyStorageKey(Keymaster& keymaster, const std::string& appId,
                                   std::string* key) {
-    auto paramBuilder =
-            km::AuthorizationSetBuilder()
-                    .AesEncryptionKey(AES_KEY_BYTES * 8)
-                    .GcmModeMinMacLen(GCM_MAC_BYTES * 8)
-                    .Authorization(km::TAG_APPLICATION_ID, km::support::blob2hidlVec(appId))
-                    .Authorization(km::TAG_NO_AUTH_REQUIRED);
+    auto paramBuilder = km::AuthorizationSetBuilder()
+                                .AesEncryptionKey(AES_KEY_BYTES * 8)
+                                .GcmModeMinMacLen(GCM_MAC_BYTES * 8)
+                                .Authorization(km::TAG_APPLICATION_ID, appId)
+                                .Authorization(km::TAG_NO_AUTH_REQUIRED);
     LOG(DEBUG) << "Generating \"key storage\" key that doesn't need auth token";
     return generateKeymasterKey(keymaster, paramBuilder, key);
 }
@@ -187,7 +184,7 @@ bool exportWrappedStorageKey(const KeyBuffer& kmKey, KeyBuffer* key) {
 static km::AuthorizationSet beginParams(const std::string& appId) {
     return km::AuthorizationSetBuilder()
             .GcmModeMacLen(GCM_MAC_BYTES * 8)
-            .Authorization(km::TAG_APPLICATION_ID, km::support::blob2hidlVec(appId));
+            .Authorization(km::TAG_APPLICATION_ID, appId);
 }
 
 static bool readFileToString(const std::string& filename, std::string* result) {
@@ -320,7 +317,6 @@ static void DeleteUpgradedKey(Keymaster& keymaster, const std::string& path) {
 
 // Begins a Keymaster operation using the key stored in |dir|.
 static KeymasterOperation BeginKeymasterOp(Keymaster& keymaster, const std::string& dir,
-                                           km::KeyPurpose purpose,
                                            const km::AuthorizationSet& keyParams,
                                            const km::AuthorizationSet& opParams,
                                            km::AuthorizationSet* outParams) {
@@ -344,9 +340,11 @@ static KeymasterOperation BeginKeymasterOp(Keymaster& keymaster, const std::stri
         if (!readFileToString(blob_file, &blob)) return KeymasterOperation();
     }
 
-    auto opHandle = keymaster.begin(purpose, blob, inParams, outParams);
-    if (opHandle) return opHandle;
-    if (opHandle.errorCode() != km::ErrorCode::KEY_REQUIRES_UPGRADE) return opHandle;
+    auto opHandle = keymaster.begin(blob, inParams, outParams);
+    if (!opHandle) return opHandle;
+
+    // If key blob wasn't upgraded, nothing left to do.
+    if (!opHandle.getUpgradedBlob()) return opHandle;
 
     if (already_upgraded) {
         LOG(ERROR) << "Unexpected case; already-upgraded key " << upgraded_blob_file
@@ -354,8 +352,8 @@ static KeymasterOperation BeginKeymasterOp(Keymaster& keymaster, const std::stri
         return KeymasterOperation();
     }
     LOG(INFO) << "Upgrading key: " << blob_file;
-    if (!keymaster.upgradeKey(blob, keyParams, &blob)) return KeymasterOperation();
-    if (!writeStringToFile(blob, upgraded_blob_file)) return KeymasterOperation();
+    if (!writeStringToFile(*opHandle.getUpgradedBlob(), upgraded_blob_file))
+        return KeymasterOperation();
     if (cp_needsCheckpoint()) {
         LOG(INFO) << "Wrote upgraded key to " << upgraded_blob_file
                   << "; delaying commit due to checkpoint";
@@ -364,26 +362,24 @@ static KeymasterOperation BeginKeymasterOp(Keymaster& keymaster, const std::stri
         if (!CommitUpgradedKey(keymaster, dir)) return KeymasterOperation();
         LOG(INFO) << "Key upgraded: " << blob_file;
     }
-
-    return keymaster.begin(purpose, blob, inParams, outParams);
+    return opHandle;
 }
 
 static bool encryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir,
                                     const km::AuthorizationSet& keyParams,
                                     const KeyBuffer& message, std::string* ciphertext) {
-    km::AuthorizationSet opParams;
+    km::AuthorizationSet opParams =
+            km::AuthorizationSetBuilder().Authorization(km::TAG_PURPOSE, km::KeyPurpose::ENCRYPT);
     km::AuthorizationSet outParams;
-    auto opHandle = BeginKeymasterOp(keymaster, dir, km::KeyPurpose::ENCRYPT, keyParams, opParams,
-                                     &outParams);
+    auto opHandle = BeginKeymasterOp(keymaster, dir, keyParams, opParams, &outParams);
     if (!opHandle) return false;
     auto nonceBlob = outParams.GetTagValue(km::TAG_NONCE);
-    if (!nonceBlob.isOk()) {
+    if (!nonceBlob) {
         LOG(ERROR) << "GCM encryption but no nonce generated";
         return false;
     }
     // nonceBlob here is just a pointer into existing data, must not be freed
-    std::string nonce(reinterpret_cast<const char*>(&nonceBlob.value()[0]),
-                      nonceBlob.value().size());
+    std::string nonce(nonceBlob.value().get().begin(), nonceBlob.value().get().end());
     if (!checkSize("nonce", nonce.size(), GCM_NONCE_BYTES)) return false;
     std::string body;
     if (!opHandle.updateCompletely(message, &body)) return false;
@@ -398,12 +394,12 @@ static bool encryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir
 static bool decryptWithKeymasterKey(Keymaster& keymaster, const std::string& dir,
                                     const km::AuthorizationSet& keyParams,
                                     const std::string& ciphertext, KeyBuffer* message) {
-    auto nonce = ciphertext.substr(0, GCM_NONCE_BYTES);
+    const std::string nonce = ciphertext.substr(0, GCM_NONCE_BYTES);
     auto bodyAndMac = ciphertext.substr(GCM_NONCE_BYTES);
-    auto opParams = km::AuthorizationSetBuilder().Authorization(km::TAG_NONCE,
-                                                                km::support::blob2hidlVec(nonce));
-    auto opHandle =
-            BeginKeymasterOp(keymaster, dir, km::KeyPurpose::DECRYPT, keyParams, opParams, nullptr);
+    auto opParams = km::AuthorizationSetBuilder()
+                            .Authorization(km::TAG_NONCE, nonce)
+                            .Authorization(km::TAG_PURPOSE, km::KeyPurpose::DECRYPT);
+    auto opHandle = BeginKeymasterOp(keymaster, dir, keyParams, opParams, nullptr);
     if (!opHandle) return false;
     if (!opHandle.updateCompletely(bodyAndMac, message)) return false;
     if (!opHandle.finish(nullptr)) return false;
