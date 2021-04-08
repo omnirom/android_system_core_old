@@ -29,6 +29,7 @@
 #include "VoldUtil.h"
 #include "VolumeManager.h"
 
+#include <android-base/logging.h>
 #include <android-base/parseint.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
@@ -80,6 +81,7 @@ using android::fs_mgr::GetEntryForMountPoint;
 using android::vold::CryptoType;
 using android::vold::KeyBuffer;
 using android::vold::KeyGeneration;
+using namespace android::vold;
 using namespace android::dm;
 using namespace std::chrono_literals;
 
@@ -331,6 +333,45 @@ static int keymaster_check_compatibility() {
     return keymaster_compatibility_cryptfs_scrypt();
 }
 
+static bool write_string_to_buf(const std::string& towrite, uint8_t* buffer, uint32_t buffer_size,
+                                uint32_t* out_size) {
+    if (!buffer || !out_size) {
+        LOG(ERROR) << "Missing target pointers";
+        return false;
+    }
+    *out_size = towrite.size();
+    if (buffer_size < towrite.size()) {
+        LOG(ERROR) << "Buffer too small " << buffer_size << " < " << towrite.size();
+        return false;
+    }
+    memset(buffer, '\0', buffer_size);
+    std::copy(towrite.begin(), towrite.end(), buffer);
+    return true;
+}
+
+static int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size, uint64_t rsa_exponent,
+                                                   uint32_t ratelimit, uint8_t* key_buffer,
+                                                   uint32_t key_buffer_size,
+                                                   uint32_t* key_out_size) {
+    if (key_out_size) {
+        *key_out_size = 0;
+    }
+    Keymaster dev;
+    if (!dev) {
+        LOG(ERROR) << "Failed to initiate keymaster session";
+        return -1;
+    }
+    auto keyParams = km::AuthorizationSetBuilder()
+                             .RsaSigningKey(rsa_key_size, rsa_exponent)
+                             .NoDigestOrPadding()
+                             .Authorization(km::TAG_NO_AUTH_REQUIRED)
+                             .Authorization(km::TAG_MIN_SECONDS_BETWEEN_OPS, ratelimit);
+    std::string key;
+    if (!dev.generateKey(keyParams, &key)) return -1;
+    if (!write_string_to_buf(key, key_buffer, key_buffer_size, key_out_size)) return -1;
+    return 0;
+}
+
 /* Create a new keymaster key and store it in this footer */
 static int keymaster_create_key(struct crypt_mnt_ftr* ftr) {
     if (ftr->keymaster_blob_size) {
@@ -349,6 +390,79 @@ static int keymaster_create_key(struct crypt_mnt_ftr* ftr) {
         SLOGE("Failed to generate keypair");
         return -1;
     }
+    return 0;
+}
+
+static int keymaster_sign_object_for_cryptfs_scrypt(struct crypt_mnt_ftr* ftr, uint32_t ratelimit,
+                                                    const uint8_t* object, const size_t object_size,
+                                                    uint8_t** signature_buffer,
+                                                    size_t* signature_buffer_size) {
+    if (!object || !signature_buffer || !signature_buffer_size) {
+        LOG(ERROR) << __FILE__ << ":" << __LINE__ << ":Invalid argument";
+        return -1;
+    }
+
+    Keymaster dev;
+    if (!dev) {
+        LOG(ERROR) << "Failed to initiate keymaster session";
+        return -1;
+    }
+
+    km::AuthorizationSet outParams;
+    std::string key(reinterpret_cast<const char*>(ftr->keymaster_blob), ftr->keymaster_blob_size);
+    std::string input(reinterpret_cast<const char*>(object), object_size);
+    std::string output;
+    KeymasterOperation op;
+
+    auto paramBuilder = km::AuthorizationSetBuilder().NoDigestOrPadding().Authorization(
+            km::TAG_PURPOSE, km::KeyPurpose::SIGN);
+    while (true) {
+        op = dev.begin(key, paramBuilder, &outParams);
+        if (op.getErrorCode() == km::ErrorCode::KEY_RATE_LIMIT_EXCEEDED) {
+            sleep(ratelimit);
+            continue;
+        } else
+            break;
+    }
+
+    if (!op) {
+        LOG(ERROR) << "Error starting keymaster signature transaction: "
+                   << int32_t(op.getErrorCode());
+        return -1;
+    }
+
+    if (op.getUpgradedBlob()) {
+        write_string_to_buf(*op.getUpgradedBlob(), ftr->keymaster_blob, KEYMASTER_BLOB_SIZE,
+                            &ftr->keymaster_blob_size);
+
+        SLOGD("Upgrading key");
+        if (put_crypt_ftr_and_key(ftr) != 0) {
+            SLOGE("Failed to write upgraded key to disk");
+            return -1;
+        }
+        SLOGD("Key upgraded successfully");
+    }
+
+    if (!op.updateCompletely(input, &output)) {
+        LOG(ERROR) << "Error sending data to keymaster signature transaction: "
+                   << int32_t(op.getErrorCode());
+        return -1;
+    }
+
+    if (!op.finish(&output)) {
+        LOG(ERROR) << "Error finalizing keymaster signature transaction: "
+                   << int32_t(op.getErrorCode());
+        return -1;
+    }
+
+    *signature_buffer = reinterpret_cast<uint8_t*>(malloc(output.size()));
+    if (*signature_buffer == nullptr) {
+        LOG(ERROR) << "Error allocation buffer for keymaster signature";
+        return -1;
+    }
+    *signature_buffer_size = output.size();
+    std::copy(output.data(), output.data() + output.size(), *signature_buffer);
+
     return 0;
 }
 
@@ -389,31 +503,8 @@ static int keymaster_sign_object(struct crypt_mnt_ftr* ftr, const unsigned char*
             SLOGE("Unknown KDF type %d", ftr->kdf_type);
             return -1;
     }
-    for (;;) {
-        auto result = keymaster_sign_object_for_cryptfs_scrypt(
-            ftr->keymaster_blob, ftr->keymaster_blob_size, KEYMASTER_CRYPTFS_RATE_LIMIT, to_sign,
-            to_sign_size, signature, signature_size);
-        switch (result) {
-            case KeymasterSignResult::ok:
-                return 0;
-            case KeymasterSignResult::upgrade:
-                break;
-            default:
-                return -1;
-        }
-        SLOGD("Upgrading key");
-        if (keymaster_upgrade_key_for_cryptfs_scrypt(
-                RSA_KEY_SIZE, RSA_EXPONENT, KEYMASTER_CRYPTFS_RATE_LIMIT, ftr->keymaster_blob,
-                ftr->keymaster_blob_size, ftr->keymaster_blob, KEYMASTER_BLOB_SIZE,
-                &ftr->keymaster_blob_size) != 0) {
-            SLOGE("Failed to upgrade key");
-            return -1;
-        }
-        if (put_crypt_ftr_and_key(ftr) != 0) {
-            SLOGE("Failed to write upgraded key to disk");
-        }
-        SLOGD("Key upgraded successfully");
-    }
+    return keymaster_sign_object_for_cryptfs_scrypt(ftr, KEYMASTER_CRYPTFS_RATE_LIMIT, to_sign,
+                                                    to_sign_size, signature, signature_size);
 }
 
 /* Store password when userdata is successfully decrypted and mounted.
