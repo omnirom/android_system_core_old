@@ -730,6 +730,14 @@ bool fscrypt_fixate_newest_user_key_auth(userid_t user_id) {
     return true;
 }
 
+std::vector<int> fscrypt_get_unlocked_users() {
+    std::vector<int> user_ids;
+    for (const auto& it : s_ce_policies) {
+        user_ids.push_back(it.first);
+    }
+    return user_ids;
+}
+
 // TODO: rename to 'install' for consistency, and take flags to know which keys to install
 bool fscrypt_unlock_user_key(userid_t user_id, int serial, const std::string& secret_hex) {
     LOG(DEBUG) << "fscrypt_unlock_user_key " << user_id << " serial=" << serial;
