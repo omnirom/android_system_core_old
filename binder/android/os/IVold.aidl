@@ -102,6 +102,7 @@ interface IVold {
                         @utf8InCpp String secret);
     void fixateNewestUserKeyAuth(int userId);
 
+    int[] getUnlockedUsers();
     void unlockUserKey(int userId, int userSerial, @utf8InCpp String token,
                        @utf8InCpp String secret);
     void lockUserKey(int userId);
