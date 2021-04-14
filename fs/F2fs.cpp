@@ -20,6 +20,7 @@
 #include <android-base/logging.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
+#include <logwrap/logwrap.h>
 #include <fscrypt/fscrypt.h>
 
 #include <string>
@@ -71,45 +72,46 @@ status_t Mount(const std::string& source, const std::string& target) {
 }
 
 status_t Format(const std::string& source) {
-    std::vector<std::string> cmd;
-    cmd.push_back(kMkfsPath);
+    std::vector<char const*> cmd;
+    cmd.emplace_back(kMkfsPath);
 
-    cmd.push_back("-f");
-    cmd.push_back("-d1");
+    cmd.emplace_back("-f");
+    cmd.emplace_back("-d1");
 
     if (android::base::GetBoolProperty("vold.has_quota", false)) {
-        cmd.push_back("-O");
-        cmd.push_back("quota");
+        cmd.emplace_back("-O");
+        cmd.emplace_back("quota");
     }
     if (fscrypt_is_native()) {
-        cmd.push_back("-O");
-        cmd.push_back("encrypt");
+        cmd.emplace_back("-O");
+        cmd.emplace_back("encrypt");
     }
     if (android::base::GetBoolProperty("vold.has_compress", false)) {
-        cmd.push_back("-O");
-        cmd.push_back("compression");
-        cmd.push_back("-O");
-        cmd.push_back("extra_attr");
+        cmd.emplace_back("-O");
+        cmd.emplace_back("compression");
+        cmd.emplace_back("-O");
+        cmd.emplace_back("extra_attr");
     }
-    cmd.push_back("-O");
-    cmd.push_back("verity");
+    cmd.emplace_back("-O");
+    cmd.emplace_back("verity");
 
     const bool needs_casefold =
             android::base::GetBoolProperty("external_storage.casefold.enabled", false);
     const bool needs_projid =
             android::base::GetBoolProperty("external_storage.projid.enabled", false);
     if (needs_projid) {
-        cmd.push_back("-O");
-        cmd.push_back("project_quota,extra_attr");
+        cmd.emplace_back("-O");
+        cmd.emplace_back("project_quota,extra_attr");
     }
     if (needs_casefold) {
-        cmd.push_back("-O");
-        cmd.push_back("casefold");
-        cmd.push_back("-C");
-        cmd.push_back("utf8");
+        cmd.emplace_back("-O");
+        cmd.emplace_back("casefold");
+        cmd.emplace_back("-C");
+        cmd.emplace_back("utf8");
     }
-    cmd.push_back(source);
-    return ForkExecvp(cmd);
+    cmd.emplace_back(source.c_str());
+    return logwrap_fork_execvp(cmd.size(), cmd.data(), nullptr, false, LOG_KLOG,
+                             false, nullptr);
 }
 
 }  // namespace f2fs
