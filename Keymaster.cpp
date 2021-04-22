@@ -81,14 +81,7 @@ bool KeymasterOperation::updateCompletely(const char* input, size_t inputLen,
             ks2Operation = nullptr;
             return false;
         }
-
-        if (!output) {
-            LOG(ERROR) << "Keystore2 operation update didn't return output.";
-            ks2Operation = nullptr;
-            return false;
-        }
-
-        consumer((const char*)output->data(), output->size());
+        if (output) consumer((const char*)output->data(), output->size());
     }
     return true;
 }
