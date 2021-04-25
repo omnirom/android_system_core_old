@@ -115,6 +115,9 @@ namespace fs_mgr {
 
 void MapScratchPartitionIfNeeded(Fstab*,
                                  const std::function<bool(const std::set<std::string>&)>&) {}
+                                 
+void CleanupOldScratchFiles() {}
+
 }  // namespace fs_mgr
 }  // namespace android
 
