@@ -162,6 +162,7 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status incFsEnabled(bool* _aidl_return) override;
     binder::Status mountIncFs(
             const std::string& backingPath, const std::string& targetDir, int32_t flags,
+            const std::string& sysfsName,
             ::android::os::incremental::IncrementalFileSystemControlParcel* _aidl_return) override;
     binder::Status unmountIncFs(const std::string& dir) override;
     binder::Status setIncFsMountOptions(
