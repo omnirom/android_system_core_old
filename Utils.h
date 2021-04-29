@@ -78,8 +78,8 @@ status_t ForceUnmount(const std::string& path);
 /* Kills any processes using given path */
 status_t KillProcessesUsingPath(const std::string& path);
 
-/* Kills any processes using given mount prifix */
-status_t KillProcessesWithMountPrefix(const std::string& path);
+/* Kills any processes using given tmpfs mount prifix */
+status_t KillProcessesWithTmpfsMountPrefix(const std::string& path);
 
 /* Creates bind mount from source to target */
 status_t BindMount(const std::string& source, const std::string& target);
