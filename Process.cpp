@@ -84,7 +84,7 @@ static bool checkSymlink(const std::string& path, const std::string& prefix) {
 }
 
 // TODO: Refactor the code with KillProcessesWithOpenFiles().
-int KillProcessesWithMounts(const std::string& prefix, int signal) {
+int KillProcessesWithTmpfsMounts(const std::string& prefix, int signal) {
     std::unordered_set<pid_t> pids;
 
     auto proc_d = std::unique_ptr<DIR, int (*)(DIR*)>(opendir("/proc"), closedir);
@@ -112,7 +112,8 @@ int KillProcessesWithMounts(const std::string& prefix, int signal) {
         // Check if obb directory is mounted, and get all packages of mounted app data directory.
         mntent* mentry;
         while ((mentry = getmntent(fp.get())) != nullptr) {
-            if (android::base::StartsWith(mentry->mnt_dir, prefix)) {
+            if (mentry->mnt_fsname != nullptr && strncmp(mentry->mnt_fsname, "tmpfs", 5) == 0
+                    && android::base::StartsWith(mentry->mnt_dir, prefix)) {
                 pids.insert(pid);
                 break;
             }
