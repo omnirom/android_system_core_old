@@ -191,7 +191,9 @@ status_t EmulatedVolume::unmountFuseBindMounts() {
     // umount the whole Android/ dir.
     if (mAppDataIsolationEnabled) {
         std::string appObbDir(StringPrintf("%s/%d/Android/obb", getPath().c_str(), userId));
-        KillProcessesWithMountPrefix(appObbDir);
+        // Here we assume obb/data dirs is mounted as tmpfs, then it must be caused by
+        // app data isolation.
+        KillProcessesWithTmpfsMountPrefix(appObbDir);
     } else {
         std::string androidDataTarget(
                 StringPrintf("/mnt/user/%d/%s/%d/Android/data", userId, label.c_str(), userId));
