@@ -140,7 +140,7 @@ interface IVold {
     FileDescriptor openAppFuseFile(int uid, int mountId, int fileId, int flags);
 
     boolean incFsEnabled();
-    IncrementalFileSystemControlParcel mountIncFs(@utf8InCpp String backingPath, @utf8InCpp String targetDir, int flags);
+    IncrementalFileSystemControlParcel mountIncFs(@utf8InCpp String backingPath, @utf8InCpp String targetDir, int flags, @utf8InCpp String sysfsName);
     void unmountIncFs(@utf8InCpp String dir);
     void setIncFsMountOptions(in IncrementalFileSystemControlParcel control, boolean enableReadLogs, boolean enableReadTimeouts);
     void bindMount(@utf8InCpp String sourceDir, @utf8InCpp String targetDir);
