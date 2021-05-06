@@ -194,27 +194,28 @@ status_t EmulatedVolume::unmountFuseBindMounts() {
         // Here we assume obb/data dirs is mounted as tmpfs, then it must be caused by
         // app data isolation.
         KillProcessesWithTmpfsMountPrefix(appObbDir);
-    } else {
-        std::string androidDataTarget(
-                StringPrintf("/mnt/user/%d/%s/%d/Android/data", userId, label.c_str(), userId));
-
-        LOG(INFO) << "Unmounting " << androidDataTarget;
-        auto status = UnmountTree(androidDataTarget);
-        if (status != OK) {
-            return status;
-        }
-        LOG(INFO) << "Unmounted " << androidDataTarget;
-
-        std::string androidObbTarget(
-                StringPrintf("/mnt/user/%d/%s/%d/Android/obb", userId, label.c_str(), userId));
-
-        LOG(INFO) << "Unmounting " << androidObbTarget;
-        status = UnmountTree(androidObbTarget);
-        if (status != OK) {
-            return status;
-        }
-        LOG(INFO) << "Unmounted " << androidObbTarget;
     }
+
+    // Always unmount data and obb dirs as they are mounted to lowerfs for speeding up access.
+    std::string androidDataTarget(
+            StringPrintf("/mnt/user/%d/%s/%d/Android/data", userId, label.c_str(), userId));
+
+    LOG(INFO) << "Unmounting " << androidDataTarget;
+    auto status = UnmountTree(androidDataTarget);
+    if (status != OK) {
+        return status;
+    }
+    LOG(INFO) << "Unmounted " << androidDataTarget;
+
+    std::string androidObbTarget(
+            StringPrintf("/mnt/user/%d/%s/%d/Android/obb", userId, label.c_str(), userId));
+
+    LOG(INFO) << "Unmounting " << androidObbTarget;
+    status = UnmountTree(androidObbTarget);
+    if (status != OK) {
+        return status;
+    }
+    LOG(INFO) << "Unmounted " << androidObbTarget;
     return OK;
 }
 
