@@ -175,7 +175,15 @@ int KillProcessesWithOpenFiles(const std::string& prefix, int signal, bool killF
     }
     if (signal != 0) {
         for (const auto& pid : pids) {
-            LOG(WARNING) << "Sending " << strsignal(signal) << " to " << pid;
+            std::string comm;
+            android::base::ReadFileToString(StringPrintf("/proc/%d/comm", pid), &comm);
+            comm = android::base::Trim(comm);
+
+            std::string exe;
+            android::base::Readlink(StringPrintf("/proc/%d/exe", pid), &exe);
+
+            LOG(WARNING) << "Sending " << strsignal(signal) << " to pid " << pid << " (" << comm
+                         << ", " << exe << ")";
             kill(pid, signal);
         }
     }
