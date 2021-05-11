@@ -256,8 +256,6 @@ struct crypt_persist_data {
     struct crypt_persist_entry persist_entry[0];
 };
 
-static int wait_and_unmount(const char* mountpoint, bool kill);
-
 typedef int (*kdf_func)(const char* passwd, const unsigned char* salt, unsigned char* ikey,
                         void* params);
 
@@ -1515,7 +1513,7 @@ static void ensure_subdirectory_unmounted(const char *prefix) {
     }
 }
 
-static int wait_and_unmount(const char* mountpoint, bool kill) {
+static int wait_and_unmount(const char* mountpoint) {
     int i, err, rc;
 
     // Subdirectory mount will cause a failure of umount.
@@ -1537,15 +1535,19 @@ static int wait_and_unmount(const char* mountpoint, bool kill) {
 
         err = errno;
 
-        /* If allowed, be increasingly aggressive before the last two retries */
-        if (kill) {
-            if (i == (WAIT_UNMOUNT_COUNT - 3)) {
-                SLOGW("sending SIGHUP to processes with open files\n");
-                android::vold::KillProcessesWithOpenFiles(mountpoint, SIGTERM);
-            } else if (i == (WAIT_UNMOUNT_COUNT - 2)) {
-                SLOGW("sending SIGKILL to processes with open files\n");
-                android::vold::KillProcessesWithOpenFiles(mountpoint, SIGKILL);
-            }
+        // If it's taking too long, kill the processes with open files.
+        //
+        // Originally this logic was only a fail-safe, but now it's relied on to
+        // kill certain processes that aren't stopped by init because they
+        // aren't in the main or late_start classes.  So to avoid waiting for
+        // too long, we now are fairly aggressive in starting to kill processes.
+        static_assert(WAIT_UNMOUNT_COUNT >= 4);
+        if (i == 2) {
+            SLOGW("sending SIGTERM to processes with open files\n");
+            android::vold::KillProcessesWithOpenFiles(mountpoint, SIGTERM);
+        } else if (i >= 3) {
+            SLOGW("sending SIGKILL to processes with open files\n");
+            android::vold::KillProcessesWithOpenFiles(mountpoint, SIGKILL);
         }
 
         sleep(1);
@@ -1679,7 +1681,7 @@ static int cryptfs_restart_internal(int restart_main) {
         return -1;
     }
 
-    if (!(rc = wait_and_unmount(DATA_MNT_POINT, true))) {
+    if (!(rc = wait_and_unmount(DATA_MNT_POINT))) {
         /* If ro.crypto.readonly is set to 1, mount the decrypted
          * filesystem readonly.  This is used when /data is mounted by
          * recovery mode.
@@ -2238,7 +2240,7 @@ int cryptfs_enable_internal(int crypt_type, const char* passwd, int no_ui) {
          * /data, set a property saying we're doing inplace encryption,
          * and restart the framework.
          */
-        wait_and_unmount(DATA_MNT_POINT, true);
+        wait_and_unmount(DATA_MNT_POINT);
         if (fs_mgr_do_tmpfs_mount(DATA_MNT_POINT)) {
             goto error_shutting_down;
         }
