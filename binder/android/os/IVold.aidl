@@ -142,7 +142,7 @@ interface IVold {
     boolean incFsEnabled();
     IncrementalFileSystemControlParcel mountIncFs(@utf8InCpp String backingPath, @utf8InCpp String targetDir, int flags, @utf8InCpp String sysfsName);
     void unmountIncFs(@utf8InCpp String dir);
-    void setIncFsMountOptions(in IncrementalFileSystemControlParcel control, boolean enableReadLogs, boolean enableReadTimeouts);
+    void setIncFsMountOptions(in IncrementalFileSystemControlParcel control, boolean enableReadLogs, boolean enableReadTimeouts, @utf8InCpp String sysfsName);
     void bindMount(@utf8InCpp String sourceDir, @utf8InCpp String targetDir);
 
     void destroyDsuMetadataKey(@utf8InCpp String dsuSlot);

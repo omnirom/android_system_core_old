@@ -167,7 +167,7 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status unmountIncFs(const std::string& dir) override;
     binder::Status setIncFsMountOptions(
             const ::android::os::incremental::IncrementalFileSystemControlParcel& control,
-            bool enableReadLogs, bool enableReadTimeouts) override;
+            bool enableReadLogs, bool enableReadTimeouts, const std::string& sysfsName) override;
     binder::Status bindMount(const std::string& sourceDir, const std::string& targetDir) override;
 
     binder::Status destroyDsuMetadataKey(const std::string& dsuSlot) override;
