@@ -993,7 +993,7 @@ binder::Status VoldNativeService::unmountIncFs(const std::string& dir) {
 
 binder::Status VoldNativeService::setIncFsMountOptions(
         const ::android::os::incremental::IncrementalFileSystemControlParcel& control,
-        bool enableReadLogs, bool enableReadTimeouts) {
+        bool enableReadLogs, bool enableReadTimeouts, const std::string& sysfsName) {
     ENFORCE_SYSTEM_OR_ROOT;
 
     auto incfsControl =
@@ -1010,7 +1010,8 @@ binder::Status VoldNativeService::setIncFsMountOptions(
                 incfsControl,
                 {.defaultReadTimeoutMs =
                          enableReadTimeouts ? INCFS_DEFAULT_READ_TIMEOUT_MS : kIncFsReadNoTimeoutMs,
-                 .readLogBufferPages = enableReadLogs ? INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES : 0});
+                 .readLogBufferPages = enableReadLogs ? INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES : 0,
+                 .sysfsName = sysfsName.c_str()});
         error < 0) {
         return binder::Status::fromServiceSpecificError(error);
     }
