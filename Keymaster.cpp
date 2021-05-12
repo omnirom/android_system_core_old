@@ -104,7 +104,7 @@ bool KeymasterOperation::finish(std::string* output) {
 }
 
 Keymaster::Keymaster() {
-    ::ndk::SpAIBinder binder(AServiceManager_getService(keystore2_service_name));
+    ::ndk::SpAIBinder binder(AServiceManager_waitForService(keystore2_service_name));
     auto keystore2Service = ks2::IKeystoreService::fromBinder(binder);
 
     if (!keystore2Service) {
