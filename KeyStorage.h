@@ -27,10 +27,6 @@ namespace android {
 namespace vold {
 
 // Represents the information needed to decrypt a disk encryption key.
-// If "token" is nonempty, it is passed in as a required Gatekeeper auth token.
-// If "token" and "secret" are nonempty, "secret" is appended to the application-specific
-// binary needed to unlock.
-// If only "secret" is nonempty, it is used to decrypt in a non-Keymaster process.
 class KeyAuthentication {
   public:
     KeyAuthentication(const std::string& s) : secret{s} {};
