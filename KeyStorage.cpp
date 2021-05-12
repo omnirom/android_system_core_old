@@ -45,8 +45,6 @@
 
 #include <cutils/properties.h>
 
-#include <hardware/hw_auth_token.h>
-
 extern "C" {
 
 #include "crypto_scrypt.h"
@@ -60,24 +58,18 @@ const KeyAuthentication kEmptyAuthentication{""};
 static constexpr size_t AES_KEY_BYTES = 32;
 static constexpr size_t GCM_NONCE_BYTES = 12;
 static constexpr size_t GCM_MAC_BYTES = 16;
-static constexpr size_t SALT_BYTES = 1 << 4;
 static constexpr size_t SECDISCARDABLE_BYTES = 1 << 14;
-static constexpr size_t STRETCHED_BYTES = 1 << 6;
-
-static constexpr uint32_t AUTH_TIMEOUT = 30;  // Seconds
 
 static const char* kCurrentVersion = "1";
 static const char* kRmPath = "/system/bin/rm";
 static const char* kSecdiscardPath = "/system/bin/secdiscard";
 static const char* kStretch_none = "none";
 static const char* kStretch_nopassword = "nopassword";
-static const std::string kStretchPrefix_scrypt = "scrypt ";
 static const char* kHashPrefix_secdiscardable = "Android secdiscardable SHA512";
 static const char* kHashPrefix_keygen = "Android key wrapping key generation SHA512";
 static const char* kFn_encrypted_key = "encrypted_key";
 static const char* kFn_keymaster_key_blob = "keymaster_key_blob";
 static const char* kFn_keymaster_key_blob_upgraded = "keymaster_key_blob_upgraded";
-static const char* kFn_salt = "salt";
 static const char* kFn_secdiscardable = "secdiscardable";
 static const char* kFn_stretching = "stretching";
 static const char* kFn_version = "version";
@@ -154,7 +146,7 @@ static bool generateKeyStorageKey(Keymaster& keymaster, const std::string& appId
                                 .GcmModeMinMacLen(GCM_MAC_BYTES * 8)
                                 .Authorization(km::TAG_APPLICATION_ID, appId)
                                 .Authorization(km::TAG_NO_AUTH_REQUIRED);
-    LOG(DEBUG) << "Generating \"key storage\" key that doesn't need auth token";
+    LOG(DEBUG) << "Generating \"key storage\" key";
     return generateKeymasterKey(keymaster, paramBuilder, key);
 }
 
