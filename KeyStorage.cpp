@@ -286,6 +286,24 @@ static void CancelPendingKeyCommit(const std::string& dir) {
     }
 }
 
+// Renames a key directory. Also updates the deferred commit vector
+// (key_dirs_to_commit) appropriately.
+//
+// However, @old_name must be the path to the directory that was used to put that
+// directory into the deferred commit list in the first place (since this function
+// directly compares paths instead of using IsSameFile()).
+static bool RenameKeyDir(const std::string& old_name, const std::string& new_name) {
+    std::lock_guard<std::mutex> lock(key_upgrade_lock);
+
+    if (rename(old_name.c_str(), new_name.c_str()) != 0) return false;
+
+    // IsSameFile() doesn't work here since we just renamed @old_name.
+    for (auto it = key_dirs_to_commit.begin(); it != key_dirs_to_commit.end(); it++) {
+        if (*it == old_name) *it = new_name;
+    }
+    return true;
+}
+
 // Deletes a leftover upgraded key, if present.  An upgraded key can be left
 // over if an update failed, or if we rebooted before committing the key in a
 // freak accident.  Either way, we can re-upgrade the key if we need to.
@@ -591,7 +609,8 @@ bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path
         destroyKey(tmp_path);  // May be partially created so ignore errors
     }
     if (!storeKey(tmp_path, auth, key)) return false;
-    if (rename(tmp_path.c_str(), key_path.c_str()) != 0) {
+
+    if (!RenameKeyDir(tmp_path, key_path)) {
         PLOG(ERROR) << "Unable to move new key to location: " << key_path;
         return false;
     }
