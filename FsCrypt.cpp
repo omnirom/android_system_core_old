@@ -569,9 +569,12 @@ bool fscrypt_destroy_user_key(userid_t user_id) {
     if (it != s_ephemeral_users.end()) {
         s_ephemeral_users.erase(it);
     } else {
-        for (auto const path : get_ce_key_paths(get_ce_key_directory_path(user_id))) {
+        auto ce_path = get_ce_key_directory_path(user_id);
+        for (auto const path : get_ce_key_paths(ce_path)) {
             success &= android::vold::destroyKey(path);
         }
+        success &= destroy_dir(ce_path);
+
         auto de_key_path = get_de_key_path(user_id);
         if (android::vold::pathExists(de_key_path)) {
             success &= android::vold::destroyKey(de_key_path);
