@@ -1508,20 +1508,23 @@ static void ensure_subdirectory_unmounted(const char *prefix) {
         [](const std::string& s1, const std::string& s2) {return s1.length() > s2.length(); });
 
     for (std::string& mount_point : umount_points) {
-        umount(mount_point.c_str());
-        SLOGW("umount sub-directory mount %s\n", mount_point.c_str());
+        SLOGW("unmounting sub-directory mount %s\n", mount_point.c_str());
+        if (umount(mount_point.c_str()) != 0) {
+            SLOGE("unmounting %s failed: %s\n", mount_point.c_str(), strerror(errno));
+        }
     }
 }
 
 static int wait_and_unmount(const char* mountpoint) {
     int i, err, rc;
 
-    // Subdirectory mount will cause a failure of umount.
-    ensure_subdirectory_unmounted(mountpoint);
 #define WAIT_UNMOUNT_COUNT 20
 
     /*  Now umount the tmpfs filesystem */
     for (i = 0; i < WAIT_UNMOUNT_COUNT; i++) {
+        // Subdirectory mount will cause a failure of umount.
+        ensure_subdirectory_unmounted(mountpoint);
+
         if (umount(mountpoint) == 0) {
             break;
         }
