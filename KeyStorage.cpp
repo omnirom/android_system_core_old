@@ -575,7 +575,12 @@ static bool decryptWithoutKeymaster(const std::string& preKey, const std::string
     return true;
 }
 
-bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBuffer& key) {
+// Creates a directory at the given path |dir| and stores |key| in it, in such a
+// way that it can only be retrieved via Keymaster (if no secret is given in
+// |auth|) or with the given secret (if a secret is given in |auth|), and can be
+// securely deleted.  If a storage binding seed has been set, then the storage
+// binding seed will be required to retrieve the key as well.
+static bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBuffer& key) {
     if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), 0700)) == -1) {
         PLOG(ERROR) << "key mkdir " << dir;
         return false;
