@@ -288,9 +288,7 @@ static void CancelPendingKeyCommit(const std::string& dir) {
     }
 }
 
-// Renames a key directory. Also updates the deferred commit vector
-// (key_dirs_to_commit) appropriately.
-static bool RenameKeyDir(const std::string& old_name, const std::string& new_name) {
+bool RenameKeyDir(const std::string& old_name, const std::string& new_name) {
     std::lock_guard<std::mutex> lock(key_upgrade_lock);
 
     // Find the entry in key_dirs_to_commit (if any) for this directory so that
@@ -301,7 +299,11 @@ static bool RenameKeyDir(const std::string& old_name, const std::string& new_nam
         if (IsSameFile(old_name, *it)) break;
     }
 
-    if (rename(old_name.c_str(), new_name.c_str()) != 0) return false;
+    if (rename(old_name.c_str(), new_name.c_str()) != 0) {
+        PLOG(ERROR) << "Failed to rename key directory \"" << old_name << "\" to \"" << new_name
+                    << "\"";
+        return false;
+    }
 
     if (it != key_dirs_to_commit.end()) *it = new_name;
 
@@ -614,10 +616,8 @@ bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path
     }
     if (!storeKey(tmp_path, auth, key)) return false;
 
-    if (!RenameKeyDir(tmp_path, key_path)) {
-        PLOG(ERROR) << "Unable to move new key to location: " << key_path;
-        return false;
-    }
+    if (!RenameKeyDir(tmp_path, key_path)) return false;
+
     if (!FsyncParentDirectory(key_path)) return false;
     LOG(DEBUG) << "Created key: " << key_path;
     return true;
