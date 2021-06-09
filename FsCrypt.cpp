@@ -186,10 +186,7 @@ static void fixate_user_ce_key(const std::string& directory_path, const std::str
     auto const current_path = get_ce_key_current_path(directory_path);
     if (to_fix != current_path) {
         LOG(DEBUG) << "Renaming " << to_fix << " to " << current_path;
-        if (rename(to_fix.c_str(), current_path.c_str()) != 0) {
-            PLOG(WARNING) << "Unable to rename " << to_fix << " to " << current_path;
-            return;
-        }
+        if (!android::vold::RenameKeyDir(to_fix, current_path)) return;
     }
     android::vold::FsyncDirectory(directory_path);
 }
