@@ -41,11 +41,9 @@ extern const KeyAuthentication kEmptyAuthentication;
 bool createSecdiscardable(const std::string& path, std::string* hash);
 bool readSecdiscardable(const std::string& path, std::string* hash);
 
-// Create a directory at the named path, and store "key" in it,
-// in such a way that it can only be retrieved via Keymaster and
-// can be securely deleted.
-// It's safe to move/rename the directory after creation.
-bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBuffer& key);
+// Renames a key directory while also managing deferred commits appropriately.
+// This method should be used whenever a key directory needs to be moved/renamed.
+bool RenameKeyDir(const std::string& old_name, const std::string& new_name);
 
 // Create a directory at the named path, and store "key" in it as storeKey
 // This version creates the key in "tmp_path" then atomically renames "tmp_path"

@@ -216,6 +216,7 @@ static std::mutex key_upgrade_lock;
 // List of key directories that have had their Keymaster key upgraded during
 // this boot and written to "keymaster_key_blob_upgraded", but replacing the old
 // key was delayed due to an active checkpoint.  Protected by key_upgrade_lock.
+// A directory can be in this list at most once.
 static std::vector<std::string> key_dirs_to_commit;
 
 // Replaces |dir|/keymaster_key_blob with |dir|/keymaster_key_blob_upgraded and
@@ -267,8 +268,9 @@ static bool IsKeyCommitPending(const std::string& dir) {
     return false;
 }
 
-// Schedules the upgraded Keymaster key in |dir| to be committed later.
-// Assumes that key_upgrade_lock is held.
+// Schedules the upgraded Keymaster key in |dir| to be committed later.  Assumes
+// that key_upgrade_lock is held and that a commit isn't already pending for the
+// directory.
 static void ScheduleKeyCommit(const std::string& dir) {
     if (key_dirs_to_commit.empty()) std::thread(DeferredCommitKeys).detach();
     key_dirs_to_commit.push_back(dir);
@@ -286,21 +288,25 @@ static void CancelPendingKeyCommit(const std::string& dir) {
     }
 }
 
-// Renames a key directory. Also updates the deferred commit vector
-// (key_dirs_to_commit) appropriately.
-//
-// However, @old_name must be the path to the directory that was used to put that
-// directory into the deferred commit list in the first place (since this function
-// directly compares paths instead of using IsSameFile()).
-static bool RenameKeyDir(const std::string& old_name, const std::string& new_name) {
+bool RenameKeyDir(const std::string& old_name, const std::string& new_name) {
     std::lock_guard<std::mutex> lock(key_upgrade_lock);
 
-    if (rename(old_name.c_str(), new_name.c_str()) != 0) return false;
-
-    // IsSameFile() doesn't work here since we just renamed @old_name.
-    for (auto it = key_dirs_to_commit.begin(); it != key_dirs_to_commit.end(); it++) {
-        if (*it == old_name) *it = new_name;
+    // Find the entry in key_dirs_to_commit (if any) for this directory so that
+    // we can update it if the rename succeeds.  We don't allow duplicates in
+    // this list, so there can be at most one such entry.
+    auto it = key_dirs_to_commit.begin();
+    for (; it != key_dirs_to_commit.end(); it++) {
+        if (IsSameFile(old_name, *it)) break;
     }
+
+    if (rename(old_name.c_str(), new_name.c_str()) != 0) {
+        PLOG(ERROR) << "Failed to rename key directory \"" << old_name << "\" to \"" << new_name
+                    << "\"";
+        return false;
+    }
+
+    if (it != key_dirs_to_commit.end()) *it = new_name;
+
     return true;
 }
 
@@ -569,7 +575,12 @@ static bool decryptWithoutKeymaster(const std::string& preKey, const std::string
     return true;
 }
 
-bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBuffer& key) {
+// Creates a directory at the given path |dir| and stores |key| in it, in such a
+// way that it can only be retrieved via Keymaster (if no secret is given in
+// |auth|) or with the given secret (if a secret is given in |auth|), and can be
+// securely deleted.  If a storage binding seed has been set, then the storage
+// binding seed will be required to retrieve the key as well.
+static bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBuffer& key) {
     if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), 0700)) == -1) {
         PLOG(ERROR) << "key mkdir " << dir;
         return false;
@@ -610,10 +621,8 @@ bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path
     }
     if (!storeKey(tmp_path, auth, key)) return false;
 
-    if (!RenameKeyDir(tmp_path, key_path)) {
-        PLOG(ERROR) << "Unable to move new key to location: " << key_path;
-        return false;
-    }
+    if (!RenameKeyDir(tmp_path, key_path)) return false;
+
     if (!FsyncParentDirectory(key_path)) return false;
     LOG(DEBUG) << "Created key: " << key_path;
     return true;
