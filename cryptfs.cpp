@@ -1525,6 +1525,7 @@ static int wait_and_unmount(const char* mountpoint) {
         // Subdirectory mount will cause a failure of umount.
         ensure_subdirectory_unmounted(mountpoint);
 
+        SLOGD("unmounting mount %s\n", mountpoint);
         if (umount(mountpoint) == 0) {
             break;
         }
@@ -1533,10 +1534,12 @@ static int wait_and_unmount(const char* mountpoint) {
             /* EINVAL is returned if the directory is not a mountpoint,
              * i.e. there is no filesystem mounted there.  So just get out.
              */
+            SLOGD("%s is not a mountpoint, nothing to do\n", mountpoint);
             break;
         }
 
         err = errno;
+        SLOGW("unmounting mount %s failed: %s\n", mountpoint, strerror(err));
 
         // If it's taking too long, kill the processes with open files.
         //
@@ -1560,8 +1563,8 @@ static int wait_and_unmount(const char* mountpoint) {
         SLOGD("unmounting %s succeeded\n", mountpoint);
         rc = 0;
     } else {
+        SLOGE("too many retries -- giving up unmounting %s\n", mountpoint);
         android::vold::KillProcessesWithOpenFiles(mountpoint, 0);
-        SLOGE("unmounting %s failed: %s\n", mountpoint, strerror(err));
         rc = -1;
     }
 
