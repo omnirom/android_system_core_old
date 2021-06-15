@@ -123,7 +123,7 @@ cc_library_static {
         "KeyBuffer.cpp",
         "KeyStorage.cpp",
         "KeyUtil.cpp",
-        "Keymaster.cpp",
+        "Keystore.cpp",
         "Loop.cpp",
         "MetadataCrypt.cpp",
         "MoveStorage.cpp",
@@ -241,7 +241,7 @@ cc_binary {
 
     srcs: [
         "wait_for_keymaster.cpp",
-        "Keymaster.cpp",
+        "Keystore.cpp",
     ],
     shared_libs: [
         "libbase",
