@@ -13,9 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// TODO: Maybe "Keymaster" should be replaced with Keystore2 everywhere?
-#ifndef ANDROID_VOLD_KEYMASTER_H
-#define ANDROID_VOLD_KEYMASTER_H
+#ifndef ANDROID_VOLD_KEYSTORE_H
+#define ANDROID_VOLD_KEYSTORE_H
 
 #include "KeyBuffer.h"
 
@@ -45,9 +44,9 @@ namespace km = ::aidl::android::hardware::security::keymint;
 // ongoing Keystore2 operation.  Aborts the operation
 // in the destructor if it is unfinished. Methods log failures
 // to LOG(ERROR).
-class KeymasterOperation {
+class KeystoreOperation {
   public:
-    ~KeymasterOperation();
+    ~KeystoreOperation();
     // Is this instance valid? This is false if creation fails, and becomes
     // false on finish or if an update fails.
     explicit operator bool() const { return (bool)ks2Operation; }
@@ -66,11 +65,11 @@ class KeymasterOperation {
     // Finish and write the output to this string, unless pointer is null.
     bool finish(std::string* output);
     // Move constructor
-    KeymasterOperation(KeymasterOperation&& rhs) { *this = std::move(rhs); }
+    KeystoreOperation(KeystoreOperation&& rhs) { *this = std::move(rhs); }
     // Construct an object in an error state for error returns
-    KeymasterOperation() { errorCode = km::ErrorCode::UNKNOWN_ERROR; }
+    KeystoreOperation() { errorCode = km::ErrorCode::UNKNOWN_ERROR; }
     // Move Assignment
-    KeymasterOperation& operator=(KeymasterOperation&& rhs) {
+    KeystoreOperation& operator=(KeystoreOperation&& rhs) {
         ks2Operation = rhs.ks2Operation;
         rhs.ks2Operation = nullptr;
 
@@ -84,8 +83,8 @@ class KeymasterOperation {
     }
 
   private:
-    KeymasterOperation(std::shared_ptr<ks2::IKeystoreOperation> ks2Op,
-                       std::optional<std::vector<uint8_t>> blob)
+    KeystoreOperation(std::shared_ptr<ks2::IKeystoreOperation> ks2Op,
+                      std::optional<std::vector<uint8_t>> blob)
         : ks2Operation{ks2Op}, errorCode{km::ErrorCode::OK} {
         if (blob)
             upgradedBlob = std::optional(std::string(blob->begin(), blob->end()));
@@ -93,7 +92,7 @@ class KeymasterOperation {
             upgradedBlob = std::nullopt;
     }
 
-    KeymasterOperation(km::ErrorCode errCode) : errorCode{errCode} {}
+    KeystoreOperation(km::ErrorCode errCode) : errorCode{errCode} {}
 
     bool updateCompletely(const char* input, size_t inputLen,
                           const std::function<void(const char*, size_t)> consumer);
@@ -101,27 +100,27 @@ class KeymasterOperation {
     std::shared_ptr<ks2::IKeystoreOperation> ks2Operation;
     std::optional<std::string> upgradedBlob;
     km::ErrorCode errorCode;
-    DISALLOW_COPY_AND_ASSIGN(KeymasterOperation);
-    friend class Keymaster;
+    DISALLOW_COPY_AND_ASSIGN(KeystoreOperation);
+    friend class Keystore;
 };
 
 // Wrapper for keystore2 methods that vold uses.
-class Keymaster {
+class Keystore {
   public:
-    Keymaster();
+    Keystore();
     // false if we failed to get a keystore2 security level.
     explicit operator bool() { return (bool)securityLevel; }
     // Generate a key using keystore2 from the given params.
     bool generateKey(const km::AuthorizationSet& inParams, std::string* key);
     // Exports a keystore2 key with STORAGE_KEY tag wrapped with a per-boot ephemeral key
-    bool exportKey(const KeyBuffer& kmKey, std::string* key);
+    bool exportKey(const KeyBuffer& ksKey, std::string* key);
     // If supported, permanently delete a key from the keymint device it belongs to.
     bool deleteKey(const std::string& key);
     // Begin a new cryptographic operation, collecting output parameters if pointer is non-null
-    // If the key was upgraded as a result of a call to this method, the returned KeymasterOperation
+    // If the key was upgraded as a result of a call to this method, the returned KeystoreOperation
     // also stores the upgraded key blob.
-    KeymasterOperation begin(const std::string& key, const km::AuthorizationSet& inParams,
-                             km::AuthorizationSet* outParams);
+    KeystoreOperation begin(const std::string& key, const km::AuthorizationSet& inParams,
+                            km::AuthorizationSet* outParams);
 
     // Tell all Keymint devices that early boot has ended and early boot-only keys can no longer
     // be created or used.
@@ -129,7 +128,7 @@ class Keymaster {
 
   private:
     std::shared_ptr<ks2::IKeystoreSecurityLevel> securityLevel;
-    DISALLOW_COPY_AND_ASSIGN(Keymaster);
+    DISALLOW_COPY_AND_ASSIGN(Keystore);
 };
 
 }  // namespace vold
