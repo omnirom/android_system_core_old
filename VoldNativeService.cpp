@@ -34,7 +34,7 @@
 #include "FsCrypt.h"
 #include "IdleMaint.h"
 #include "KeyStorage.h"
-#include "Keymaster.h"
+#include "Keystore.h"
 #include "MetadataCrypt.h"
 #include "MoveStorage.h"
 #include "Process.h"
@@ -944,7 +944,7 @@ binder::Status VoldNativeService::earlyBootEnded() {
     ACQUIRE_LOCK;
 
     initializeIncFs();
-    Keymaster::earlyBootEnded();
+    Keystore::earlyBootEnded();
     return Ok();
 }
 

@@ -31,7 +31,7 @@ class KeyAuthentication {
   public:
     KeyAuthentication(const std::string& s) : secret{s} {};
 
-    bool usesKeymaster() const { return secret.empty(); };
+    bool usesKeystore() const { return secret.empty(); };
 
     const std::string secret;
 };
@@ -61,10 +61,10 @@ bool destroyKey(const std::string& dir);
 
 bool runSecdiscardSingle(const std::string& file);
 
-// Generate wrapped storage key using keymaster. Uses STORAGE_KEY tag in keymaster.
+// Generate wrapped storage key using keystore. Uses STORAGE_KEY tag in keystore.
 bool generateWrappedStorageKey(KeyBuffer* key);
-// Export the per-boot boot wrapped storage key using keymaster.
-bool exportWrappedStorageKey(const KeyBuffer& kmKey, KeyBuffer* key);
+// Export the per-boot boot wrapped storage key using keystore.
+bool exportWrappedStorageKey(const KeyBuffer& ksKey, KeyBuffer* key);
 
 // Set a seed to be mixed into all key storage encryption keys.
 bool setKeyStorageBindingSeed(const std::vector<uint8_t>& seed);
