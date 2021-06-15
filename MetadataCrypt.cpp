@@ -38,7 +38,7 @@
 #include "EncryptInplace.h"
 #include "KeyStorage.h"
 #include "KeyUtil.h"
-#include "Keymaster.h"
+#include "Keystore.h"
 #include "Utils.h"
 #include "VoldUtil.h"
 #include "fs/Ext4.h"
