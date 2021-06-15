@@ -16,7 +16,7 @@
 
 #include <android-base/logging.h>
 
-#include "Keymaster.h"
+#include "Keystore.h"
 
 int main(int argc, char** argv) {
     setenv("ANDROID_LOG_TAGS", "*:v", 1);
@@ -26,8 +26,8 @@ int main(int argc, char** argv) {
     } else {
         android::base::InitLogging(argv, &android::base::StderrLogger);
     }
-    LOG(INFO) << "Waiting for Keymaster device";
-    android::vold::Keymaster keymaster;
-    LOG(INFO) << "Keymaster device ready";
+    LOG(INFO) << "Waiting for Keystore to be ready";
+    android::vold::Keystore keystore;
+    LOG(INFO) << "Keystore ready";
     return 0;
 }

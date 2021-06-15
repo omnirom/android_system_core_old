@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "Keymaster.h"
+#include "Keystore.h"
 
 #include <android-base/logging.h>
 
@@ -43,7 +43,7 @@ namespace vold {
 
 namespace ks2_maint = ::aidl::android::security::maintenance;
 
-KeymasterOperation::~KeymasterOperation() {
+KeystoreOperation::~KeystoreOperation() {
     if (ks2Operation) ks2Operation->abort();
 }
 
@@ -65,8 +65,8 @@ static bool logKeystore2ExceptionIfPresent(::ndk::ScopedAStatus& rc, const std::
     return true;
 }
 
-bool KeymasterOperation::updateCompletely(const char* input, size_t inputLen,
-                                          const std::function<void(const char*, size_t)> consumer) {
+bool KeystoreOperation::updateCompletely(const char* input, size_t inputLen,
+                                         const std::function<void(const char*, size_t)> consumer) {
     if (!ks2Operation) return false;
 
     while (inputLen != 0) {
@@ -87,7 +87,7 @@ bool KeymasterOperation::updateCompletely(const char* input, size_t inputLen,
     return true;
 }
 
-bool KeymasterOperation::finish(std::string* output) {
+bool KeystoreOperation::finish(std::string* output) {
     std::optional<std::vector<uint8_t>> out_vec;
 
     if (!ks2Operation) return false;
@@ -103,7 +103,7 @@ bool KeymasterOperation::finish(std::string* output) {
     return true;
 }
 
-Keymaster::Keymaster() {
+Keystore::Keystore() {
     ::ndk::SpAIBinder binder(AServiceManager_waitForService(keystore2_service_name));
     auto keystore2Service = ks2::IKeystoreService::fromBinder(binder);
 
@@ -127,7 +127,7 @@ Keymaster::Keymaster() {
         LOG(ERROR) << "Vold unable to get security level from keystore2.";
 }
 
-bool Keymaster::generateKey(const km::AuthorizationSet& inParams, std::string* key) {
+bool Keystore::generateKey(const km::AuthorizationSet& inParams, std::string* key) {
     ks2::KeyDescriptor in_key = {
             .domain = ks2::Domain::BLOB,
             .alias = std::nullopt,
@@ -150,14 +150,14 @@ bool Keymaster::generateKey(const km::AuthorizationSet& inParams, std::string* k
     return true;
 }
 
-bool Keymaster::exportKey(const KeyBuffer& kmKey, std::string* key) {
+bool Keystore::exportKey(const KeyBuffer& ksKey, std::string* key) {
     bool ret = false;
     ks2::KeyDescriptor storageKey = {
             .domain = ks2::Domain::BLOB,
             .alias = std::nullopt,
             .nspace = VOLD_NAMESPACE,
     };
-    storageKey.blob = std::make_optional<std::vector<uint8_t>>(kmKey.begin(), kmKey.end());
+    storageKey.blob = std::make_optional<std::vector<uint8_t>>(ksKey.begin(), ksKey.end());
     ks2::EphemeralStorageKeyResponse ephemeral_key_response;
     auto rc = securityLevel->convertStorageKeyToEphemeral(storageKey, &ephemeral_key_response);
 
@@ -175,7 +175,7 @@ out:
     return ret;
 }
 
-bool Keymaster::deleteKey(const std::string& key) {
+bool Keystore::deleteKey(const std::string& key) {
     ks2::KeyDescriptor keyDesc = {
             .domain = ks2::Domain::BLOB,
             .alias = std::nullopt,
@@ -188,8 +188,8 @@ bool Keymaster::deleteKey(const std::string& key) {
     return !logKeystore2ExceptionIfPresent(rc, "deleteKey");
 }
 
-KeymasterOperation Keymaster::begin(const std::string& key, const km::AuthorizationSet& inParams,
-                                    km::AuthorizationSet* outParams) {
+KeystoreOperation Keystore::begin(const std::string& key, const km::AuthorizationSet& inParams,
+                                  km::AuthorizationSet* outParams) {
     ks2::KeyDescriptor keyDesc = {
             .domain = ks2::Domain::BLOB,
             .alias = std::nullopt,
@@ -202,22 +202,22 @@ KeymasterOperation Keymaster::begin(const std::string& key, const km::Authorizat
     auto rc = securityLevel->createOperation(keyDesc, inParams.vector_data(), true, &cor);
     if (logKeystore2ExceptionIfPresent(rc, "createOperation")) {
         if (rc.getExceptionCode() == EX_SERVICE_SPECIFIC)
-            return KeymasterOperation((km::ErrorCode)rc.getServiceSpecificError());
+            return KeystoreOperation((km::ErrorCode)rc.getServiceSpecificError());
         else
-            return KeymasterOperation();
+            return KeystoreOperation();
     }
 
     if (!cor.iOperation) {
         LOG(ERROR) << "keystore2 createOperation didn't return an operation";
-        return KeymasterOperation();
+        return KeystoreOperation();
     }
 
     if (outParams && cor.parameters) *outParams = cor.parameters->keyParameter;
 
-    return KeymasterOperation(cor.iOperation, cor.upgradedBlob);
+    return KeystoreOperation(cor.iOperation, cor.upgradedBlob);
 }
 
-void Keymaster::earlyBootEnded() {
+void Keystore::earlyBootEnded() {
     ::ndk::SpAIBinder binder(AServiceManager_getService(maintenance_service_name));
     auto maint_service = ks2_maint::IKeystoreMaintenance::fromBinder(binder);
 

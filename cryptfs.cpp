@@ -22,7 +22,7 @@
 #include "CryptoType.h"
 #include "EncryptInplace.h"
 #include "FsCrypt.h"
-#include "Keymaster.h"
+#include "Keystore.h"
 #include "Process.h"
 #include "ScryptParameters.h"
 #include "Utils.h"
@@ -349,7 +349,7 @@ static int keymaster_create_key_for_cryptfs_scrypt(uint32_t rsa_key_size, uint64
     if (key_out_size) {
         *key_out_size = 0;
     }
-    Keymaster dev;
+    Keystore dev;
     if (!dev) {
         LOG(ERROR) << "Failed to initiate keymaster session";
         return -1;
@@ -395,7 +395,7 @@ static int keymaster_sign_object_for_cryptfs_scrypt(struct crypt_mnt_ftr* ftr, u
         return -1;
     }
 
-    Keymaster dev;
+    Keystore dev;
     if (!dev) {
         LOG(ERROR) << "Failed to initiate keymaster session";
         return -1;
@@ -405,7 +405,7 @@ static int keymaster_sign_object_for_cryptfs_scrypt(struct crypt_mnt_ftr* ftr, u
     std::string key(reinterpret_cast<const char*>(ftr->keymaster_blob), ftr->keymaster_blob_size);
     std::string input(reinterpret_cast<const char*>(object), object_size);
     std::string output;
-    KeymasterOperation op;
+    KeystoreOperation op;
 
     auto paramBuilder = km::AuthorizationSetBuilder().NoDigestOrPadding().Authorization(
             km::TAG_PURPOSE, km::KeyPurpose::SIGN);
