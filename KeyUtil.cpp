@@ -36,6 +36,9 @@
 namespace android {
 namespace vold {
 
+using android::fscrypt::EncryptionOptions;
+using android::fscrypt::EncryptionPolicy;
+
 const KeyGeneration neverGen() {
     return KeyGeneration{0, false, false};
 }

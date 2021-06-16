@@ -28,8 +28,6 @@
 namespace android {
 namespace vold {
 
-using namespace android::fscrypt;
-
 // Description of how to generate a key when needed.
 struct KeyGeneration {
     size_t keysize;
@@ -63,8 +61,8 @@ bool isFsKeyringSupported(void);
 //
 // Returns %true on success, %false on failure.  On success also sets *policy
 // to the EncryptionPolicy used to refer to this key.
-bool installKey(const std::string& mountpoint, const EncryptionOptions& options,
-                const KeyBuffer& key, EncryptionPolicy* policy);
+bool installKey(const std::string& mountpoint, const android::fscrypt::EncryptionOptions& options,
+                const KeyBuffer& key, android::fscrypt::EncryptionPolicy* policy);
 
 // Evict a file-based encryption key from the kernel.
 //
@@ -72,7 +70,7 @@ bool installKey(const std::string& mountpoint, const EncryptionOptions& options,
 //
 // If the kernel doesn't support the filesystem-level keyring, the caller is
 // responsible for dropping caches.
-bool evictKey(const std::string& mountpoint, const EncryptionPolicy& policy);
+bool evictKey(const std::string& mountpoint, const android::fscrypt::EncryptionPolicy& policy);
 
 // Retrieves the key from the named directory, or generates it if it doesn't
 // exist.
@@ -82,7 +80,8 @@ bool retrieveOrGenerateKey(const std::string& key_path, const std::string& tmp_p
 
 // Re-installs a file-based encryption key of fscrypt-provisioning type from the
 // global session keyring back into fs keyring of the mountpoint.
-bool reloadKeyFromSessionKeyring(const std::string& mountpoint, const EncryptionPolicy& policy);
+bool reloadKeyFromSessionKeyring(const std::string& mountpoint,
+                                 const android::fscrypt::EncryptionPolicy& policy);
 
 }  // namespace vold
 }  // namespace android
