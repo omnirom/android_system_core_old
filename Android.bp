@@ -188,13 +188,11 @@ cc_binary {
     static_libs: ["libvold"],
     init_rc: [
         "vold.rc",
-        "wait_for_keymaster.rc",
     ],
 
     required: [
         "mke2fs",
         "vold_prepare_subdirs",
-        "wait_for_keymaster",
     ],
 
     shared_libs: [
@@ -233,29 +231,6 @@ cc_binary {
         "libvold_binder",
     ],
     init_rc: ["vdc.rc"],
-}
-
-cc_binary {
-    name: "wait_for_keymaster",
-    defaults: ["vold_default_flags"],
-
-    srcs: [
-        "wait_for_keymaster.cpp",
-        "Keystore.cpp",
-    ],
-    shared_libs: [
-        "libbase",
-        "libbinder",
-        "libbinder_ndk",
-
-        "android.system.keystore2-V1-ndk_platform",
-        "android.security.maintenance-ndk_platform",
-        "libhardware",
-        "libhardware_legacy",
-        "libhidlbase",
-        "libkeymint_support",
-        "libutils",
-    ],
 }
 
 cc_binary {
