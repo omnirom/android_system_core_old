@@ -26,6 +26,7 @@
 #include <private/android_filesystem_config.h>
 #include <utils/Trace.h>
 
+#include <sys/vfs.h>
 #include <fstream>
 #include <thread>
 
@@ -939,9 +940,41 @@ static void initializeIncFs() {
     incfs::features();
 }
 
+// This is missing from the kernel UAPI headers.
+#define ST_RDONLY 0x0001
+
+// FDE devices run the post-fs-data trigger (and hence also earlyBootEnded)
+// multiple times, sometimes prior to the real /data being mounted.  That causes
+// keystore2 to try to open a file in /data, causing it to panic or have to be
+// killed by vold later, causing problems (vold failing to connect to keystore2,
+// or keystore2 operations erroring out later).  As a workaround to keep FDE
+// working, ignore these too-early calls to earlyBootEnded.
+//
+// This can be removed when support for FDE is removed.
+static bool IgnoreEarlyBootEnded() {
+    // The statfs("/data") below should be sufficient by itself, but to be safe
+    // we also explicitly return false on FBE devices.  (This really should be
+    // ro.crypto.type != "block" for "non-FDE devices", but on FDE devices this
+    // is sometimes called before ro.crypto.type gets set.)
+    if (fscrypt_is_native()) return false;
+
+    struct statfs buf;
+    if (statfs(DATA_MNT_POINT, &buf) != 0) {
+        PLOG(ERROR) << "statfs(\"/data\") failed";
+        return false;
+    }
+    if (buf.f_type == TMPFS_MAGIC || (buf.f_flags & ST_RDONLY)) {
+        LOG(INFO) << "Ignoring earlyBootEnded since real /data isn't mounted yet";
+        return true;
+    }
+    return false;
+}
+
 binder::Status VoldNativeService::earlyBootEnded() {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_LOCK;
+
+    if (IgnoreEarlyBootEnded()) return Ok();
 
     initializeIncFs();
     Keymaster::earlyBootEnded();
