@@ -222,11 +222,16 @@ cc_binary {
     name: "vdc",
     defaults: ["vold_default_flags"],
 
-    srcs: ["vdc.cpp"],
+    srcs: [
+        "vdc.cpp",
+        "Utils.cpp",
+    ],
     shared_libs: [
         "libbase",
         "libbinder",
         "libcutils",
+        "liblogwrap",
+        "libselinux",
         "libutils",
     ],
     static_libs: [
