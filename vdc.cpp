@@ -28,6 +28,7 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include "Utils.h"
 #include "android/os/IVold.h"
 
 #include <android-base/logging.h>
@@ -37,6 +38,7 @@
 #include <android-base/strings.h>
 #include <binder/IServiceManager.h>
 #include <binder/Status.h>
+#include <utils/Errors.h>
 
 #include <private/android_filesystem_config.h>
 
@@ -62,6 +64,26 @@ static void checkStatus(std::vector<std::string>& cmd, android::binder::Status s
     std::string command = ::android::base::Join(cmd, " ");
     LOG(ERROR) << "Command: " << command << " Failed: " << status.toString8().string();
     exit(ENOTTY);
+}
+
+static void bindkeys(std::vector<std::string>& args, const android::sp<android::os::IVold>& vold) {
+    std::string raw_bytes;
+    const char* seed_value;
+
+    seed_value = getenv("SEED_VALUE");
+    if (seed_value == NULL) {
+        LOG(ERROR) << "Empty seed";
+        exit(EINVAL);
+    }
+
+    android::status_t status = android::vold::HexToStr(seed_value, raw_bytes);
+    if (status != android::OK) {
+        LOG(ERROR) << "Extraction of seed failed: " << status;
+        exit(status);
+    }
+
+    std::vector<uint8_t> seed{raw_bytes.begin(), raw_bytes.end()};
+    checkStatus(args, vold->setStorageBindingSeed(seed));
 }
 
 int main(int argc, char** argv) {
@@ -106,6 +128,8 @@ int main(int argc, char** argv) {
         checkStatus(args, vold->shutdown());
     } else if (args[0] == "volume" && args[1] == "reset") {
         checkStatus(args, vold->reset());
+    } else if (args[0] == "cryptfs" && args[1] == "bindkeys") {
+        bindkeys(args, vold);
     } else if (args[0] == "cryptfs" && args[1] == "mountFstab" && args.size() == 4) {
         checkStatus(args, vold->mountFstab(args[2], args[3]));
     } else if (args[0] == "cryptfs" && args[1] == "encryptFstab" && args.size() == 6) {
