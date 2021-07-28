@@ -165,9 +165,9 @@ cc_library_static {
     },
     shared_libs: [
         "android.hardware.health.storage@1.0",
-        "android.hardware.health.storage-V1-ndk_platform",
-        "android.system.keystore2-V1-ndk_platform",
-        "android.security.maintenance-ndk_platform",
+        "android.hardware.health.storage-V1-ndk",
+        "android.system.keystore2-V1-ndk",
+        "android.security.maintenance-ndk",
         "libbinder_ndk",
         "libkeymint_support",
     ],
@@ -197,9 +197,9 @@ cc_binary {
 
     shared_libs: [
         "android.hardware.health.storage@1.0",
-        "android.hardware.health.storage-V1-ndk_platform",
-        "android.system.keystore2-V1-ndk_platform",
-        "android.security.maintenance-ndk_platform",
+        "android.hardware.health.storage-V1-ndk",
+        "android.system.keystore2-V1-ndk",
+        "android.security.maintenance-ndk",
         "libbinder_ndk",
         "libkeymint_support",
     ],
