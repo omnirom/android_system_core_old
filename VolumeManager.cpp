@@ -239,7 +239,7 @@ void VolumeManager::handleBlockEvent(NetlinkEvent* evt) {
             break;
         }
         case NetlinkEvent::Action::kChange: {
-            LOG(DEBUG) << "Disk at " << major << ":" << minor << " changed";
+            LOG(VERBOSE) << "Disk at " << major << ":" << minor << " changed";
             handleDiskChanged(device);
             break;
         }
