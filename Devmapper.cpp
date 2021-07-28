@@ -94,8 +94,6 @@ int Devmapper::destroyAll() {
                     PLOG(WARNING) << "Failed to destroy dm device named " << device.name();
                 }
             }
-        } else {
-            LOG(DEBUG) << "Found unmanaged dm device named " << device.name();
         }
     }
     return 0;
