@@ -126,6 +126,9 @@ class Keystore {
     // be created or used.
     static void earlyBootEnded();
 
+    // Tell all Keymint devices to delete all rollback-protected keys.
+    static void deleteAllKeys();
+
   private:
     std::shared_ptr<ks2::IKeystoreSecurityLevel> securityLevel;
     DISALLOW_COPY_AND_ASSIGN(Keystore);
