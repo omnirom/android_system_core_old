@@ -230,5 +230,18 @@ void Keystore::earlyBootEnded() {
     logKeystore2ExceptionIfPresent(rc, "earlyBootEnded");
 }
 
+void Keystore::deleteAllKeys() {
+    ::ndk::SpAIBinder binder(AServiceManager_getService(maintenance_service_name));
+    auto maint_service = ks2_maint::IKeystoreMaintenance::fromBinder(binder);
+
+    if (!maint_service) {
+        LOG(ERROR) << "Unable to connect to keystore2 maintenance service for deleteAllKeys";
+        return;
+    }
+
+    auto rc = maint_service->deleteAllKeys();
+    logKeystore2ExceptionIfPresent(rc, "deleteAllKeys");
+}
+
 }  // namespace vold
 }  // namespace android
