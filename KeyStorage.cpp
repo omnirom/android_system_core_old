@@ -706,6 +706,7 @@ bool setKeyStorageBindingSeed(const std::vector<uint8_t>& seed) {
         case StorageBindingInfo::State::UNINITIALIZED:
             storage_binding_info.state = StorageBindingInfo::State::IN_USE;
             storage_binding_info.seed = seed;
+            android::base::SetProperty("vold.storage_seed_bound", "1");
             return true;
         case StorageBindingInfo::State::IN_USE:
             LOG(ERROR) << "key storage binding seed already set";
