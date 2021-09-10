@@ -68,10 +68,10 @@ using android::base::unique_fd;
 namespace android {
 namespace vold {
 
-security_context_t sBlkidContext = nullptr;
-security_context_t sBlkidUntrustedContext = nullptr;
-security_context_t sFsckContext = nullptr;
-security_context_t sFsckUntrustedContext = nullptr;
+char* sBlkidContext = nullptr;
+char* sBlkidUntrustedContext = nullptr;
+char* sFsckContext = nullptr;
+char* sFsckUntrustedContext = nullptr;
 
 bool sSleepOnUnmount = true;
 
@@ -702,7 +702,7 @@ static status_t ReadLinesFromFdAndLog(std::vector<std::string>* output,
 }
 
 status_t ForkExecvp(const std::vector<std::string>& args, std::vector<std::string>* output,
-                    security_context_t context) {
+                    char* context) {
     auto argv = ConvertToArgv(args);
 
     android::base::unique_fd pipe_read, pipe_write;
