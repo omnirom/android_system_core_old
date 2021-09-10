@@ -38,10 +38,10 @@ static const char* kVoldAppDataIsolationEnabled = "persist.sys.vold_app_data_iso
 static const char* kExternalStorageSdcardfs = "external_storage.sdcardfs.enabled";
 
 /* SELinux contexts used depending on the block device type */
-extern security_context_t sBlkidContext;
-extern security_context_t sBlkidUntrustedContext;
-extern security_context_t sFsckContext;
-extern security_context_t sFsckUntrustedContext;
+extern char* sBlkidContext;
+extern char* sBlkidUntrustedContext;
+extern char* sFsckContext;
+extern char* sFsckUntrustedContext;
 
 // TODO remove this with better solution, b/64143519
 extern bool sSleepOnUnmount;
@@ -104,8 +104,8 @@ status_t ReadMetadataUntrusted(const std::string& path, std::string* fsType, std
                                std::string* fsLabel);
 
 /* Returns either WEXITSTATUS() status, or a negative errno */
-status_t ForkExecvp(const std::vector<std::string>& args, std::vector<std::string>* output = nullptr,
-                    security_context_t context = nullptr);
+status_t ForkExecvp(const std::vector<std::string>& args,
+                    std::vector<std::string>* output = nullptr, char* context = nullptr);
 
 pid_t ForkExecvpAsync(const std::vector<std::string>& args);
 
