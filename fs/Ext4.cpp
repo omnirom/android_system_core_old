@@ -198,7 +198,7 @@ status_t Format(const std::string& source, unsigned long numSectors, const std::
         cmd.push_back("-E");
         std::string extopts = "";
         if (needs_casefold) extopts += "encoding=utf8,";
-        if (needs_projid) extopts += "quotatype=prjquota,";
+        if (needs_projid) extopts += "quotatype=usrquota:grpquota:prjquota,";
         cmd.push_back(extopts);
     }
 
