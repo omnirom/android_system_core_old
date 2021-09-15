@@ -754,7 +754,53 @@ status_t ForkExecvp(const std::vector<std::string>& args, std::vector<std::strin
     return OK;
 }
 
-pid_t ForkExecvpAsync(const std::vector<std::string>& args) {
+status_t ForkExecvpTimeout(const std::vector<std::string>& args, std::chrono::seconds timeout,
+                           char* context) {
+    int status;
+
+    pid_t wait_timeout_pid = fork();
+    if (wait_timeout_pid == 0) {
+        pid_t pid = ForkExecvpAsync(args, context);
+        if (pid == -1) {
+            _exit(EXIT_FAILURE);
+        }
+        pid_t timer_pid = fork();
+        if (timer_pid == 0) {
+            sleep(timeout.count());
+            _exit(ETIMEDOUT);
+        }
+        if (timer_pid == -1) {
+            PLOG(ERROR) << "fork in ForkExecvpAsync_timeout";
+            kill(pid, SIGTERM);
+            _exit(EXIT_FAILURE);
+        }
+        pid_t finished = wait(&status);
+        if (finished == pid) {
+            kill(timer_pid, SIGTERM);
+        } else {
+            kill(pid, SIGTERM);
+        }
+        if (!WIFEXITED(status)) {
+            _exit(ECHILD);
+        }
+        _exit(WEXITSTATUS(status));
+    }
+    if (waitpid(wait_timeout_pid, &status, 0) == -1) {
+        PLOG(ERROR) << "waitpid in ForkExecvpAsync_timeout";
+        return -errno;
+    }
+    if (!WIFEXITED(status)) {
+        LOG(ERROR) << "Process did not exit normally, status: " << status;
+        return -ECHILD;
+    }
+    if (WEXITSTATUS(status)) {
+        LOG(ERROR) << "Process exited with code: " << WEXITSTATUS(status);
+        return WEXITSTATUS(status);
+    }
+    return OK;
+}
+
+pid_t ForkExecvpAsync(const std::vector<std::string>& args, char* context) {
     auto argv = ConvertToArgv(args);
 
     pid_t pid = fork();
@@ -762,6 +808,12 @@ pid_t ForkExecvpAsync(const std::vector<std::string>& args) {
         close(STDIN_FILENO);
         close(STDOUT_FILENO);
         close(STDERR_FILENO);
+        if (context) {
+            if (setexeccon(context)) {
+                LOG(ERROR) << "Failed to setexeccon in ForkExecvpAsync";
+                abort();
+            }
+        }
 
         execvp(argv[0], const_cast<char**>(argv.data()));
         PLOG(ERROR) << "exec in ForkExecvpAsync";
