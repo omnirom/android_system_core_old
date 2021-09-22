@@ -113,7 +113,9 @@ static bool read_key(const std::string& metadata_key_dir, const KeyGeneration& g
     auto dir = metadata_key_dir + "/key";
     LOG(DEBUG) << "metadata_key_dir/key: " << dir;
     if (!MkdirsSync(dir, 0700)) return false;
-    if (!pathExists(dir)) {
+    auto in_dsu = android::base::GetBoolProperty("ro.gsid.image_running", false);
+    // !pathExists(dir) does not imply there's a factory reset when in DSU mode.
+    if (!pathExists(dir) && !in_dsu) {
         auto delete_all = android::base::GetBoolProperty(
                 "ro.crypto.metadata_init_delete_all_keys.enabled", false);
         if (delete_all) {
