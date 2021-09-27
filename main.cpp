@@ -16,6 +16,7 @@
 
 #define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
 
+#include "MetadataCrypt.h"
 #include "NetlinkManager.h"
 #include "VoldNativeService.h"
 #include "VoldUtil.h"
@@ -245,6 +246,11 @@ static int process_config(VolumeManager* vm, VoldConfigs* configs) {
         if (entry.fs_mgr_flags.logical && !fs_mgr_update_logical_partition(&entry) &&
             !entry.fs_mgr_flags.no_fail) {
             PLOG(FATAL) << "could not find logical partition " << entry.blk_device;
+        }
+
+        if (entry.mount_point == "/data" && !entry.metadata_encryption.empty()) {
+            // Pre-populate userdata dm-devices since the uevents are asynchronous (b/198405417).
+            android::vold::defaultkey_precreate_dm_device();
         }
 
         if (entry.fs_mgr_flags.vold_managed) {
