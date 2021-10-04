@@ -6,3 +6,4 @@ service vold /system/bin/vold \
     writepid /dev/cpuset/foreground/tasks
     shutdown critical
     group root reserved_disk
+    reboot_on_failure reboot,vold-failed
