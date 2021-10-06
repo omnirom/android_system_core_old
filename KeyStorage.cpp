@@ -383,7 +383,9 @@ static bool encryptWithKeystoreKey(Keystore& keystore, const std::string& dir,
                                    const km::AuthorizationSet& keyParams, const KeyBuffer& message,
                                    std::string* ciphertext) {
     km::AuthorizationSet opParams =
-            km::AuthorizationSetBuilder().Authorization(km::TAG_PURPOSE, km::KeyPurpose::ENCRYPT);
+            km::AuthorizationSetBuilder()
+                    .Authorization(km::TAG_ROLLBACK_RESISTANCE)
+                    .Authorization(km::TAG_PURPOSE, km::KeyPurpose::ENCRYPT);
     km::AuthorizationSet outParams;
     auto opHandle = BeginKeystoreOp(keystore, dir, keyParams, opParams, &outParams);
     if (!opHandle) return false;
@@ -412,6 +414,7 @@ static bool decryptWithKeystoreKey(Keystore& keystore, const std::string& dir,
     auto bodyAndMac = ciphertext.substr(GCM_NONCE_BYTES);
     auto opParams = km::AuthorizationSetBuilder()
                             .Authorization(km::TAG_NONCE, nonce)
+                            .Authorization(km::TAG_ROLLBACK_RESISTANCE)
                             .Authorization(km::TAG_PURPOSE, km::KeyPurpose::DECRYPT);
     auto opHandle = BeginKeystoreOp(keystore, dir, keyParams, opParams, nullptr);
     if (!opHandle) return false;
