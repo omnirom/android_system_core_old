@@ -55,6 +55,7 @@ namespace vold {
 namespace {
 
 constexpr const char* kDump = "android.permission.DUMP";
+constexpr auto kIncFsReadNoTimeoutMs = 100;
 
 static binder::Status error(const std::string& msg) {
     PLOG(ERROR) << msg;
@@ -989,6 +990,7 @@ binder::Status VoldNativeService::incFsEnabled(bool* _aidl_return) {
 
 binder::Status VoldNativeService::mountIncFs(
         const std::string& backingPath, const std::string& targetDir, int32_t flags,
+        const std::string& sysfsName,
         ::android::os::incremental::IncrementalFileSystemControlParcel* _aidl_return) {
     ENFORCE_SYSTEM_OR_ROOT;
     CHECK_ARGUMENT_PATH(backingPath);
@@ -996,9 +998,11 @@ binder::Status VoldNativeService::mountIncFs(
 
     auto control = incfs::mount(backingPath, targetDir,
                                 {.flags = IncFsMountFlags(flags),
+                                 // Mount with read timeouts.
                                  .defaultReadTimeoutMs = INCFS_DEFAULT_READ_TIMEOUT_MS,
                                  // Mount with read logs disabled.
-                                 .readLogBufferPages = 0});
+                                 .readLogBufferPages = 0,
+                                 .sysfsName = sysfsName.c_str()});
     if (!control) {
         return translate(-errno);
     }
@@ -1007,6 +1011,9 @@ binder::Status VoldNativeService::mountIncFs(
     _aidl_return->cmd.reset(unique_fd(fds[CMD].release()));
     _aidl_return->pendingReads.reset(unique_fd(fds[PENDING_READS].release()));
     _aidl_return->log.reset(unique_fd(fds[LOGS].release()));
+    if (fds[BLOCKS_WRITTEN].ok()) {
+        _aidl_return->blocksWritten.emplace(unique_fd(fds[BLOCKS_WRITTEN].release()));
+    }
     return Ok();
 }
 
@@ -1019,11 +1026,12 @@ binder::Status VoldNativeService::unmountIncFs(const std::string& dir) {
 
 binder::Status VoldNativeService::setIncFsMountOptions(
         const ::android::os::incremental::IncrementalFileSystemControlParcel& control,
-        bool enableReadLogs) {
+        bool enableReadLogs, bool enableReadTimeouts, const std::string& sysfsName) {
     ENFORCE_SYSTEM_OR_ROOT;
 
     auto incfsControl =
-            incfs::createControl(control.cmd.get(), control.pendingReads.get(), control.log.get());
+            incfs::createControl(control.cmd.get(), control.pendingReads.get(), control.log.get(),
+                                 control.blocksWritten ? control.blocksWritten->get() : -1);
     auto cleanupFunc = [](auto incfsControl) {
         for (auto& fd : incfsControl->releaseFds()) {
             (void)fd.release();
@@ -1033,8 +1041,10 @@ binder::Status VoldNativeService::setIncFsMountOptions(
             std::unique_ptr<incfs::Control, decltype(cleanupFunc)>(&incfsControl, cleanupFunc);
     if (auto error = incfs::setOptions(
                 incfsControl,
-                {.defaultReadTimeoutMs = INCFS_DEFAULT_READ_TIMEOUT_MS,
-                 .readLogBufferPages = enableReadLogs ? INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES : 0});
+                {.defaultReadTimeoutMs =
+                         enableReadTimeouts ? INCFS_DEFAULT_READ_TIMEOUT_MS : kIncFsReadNoTimeoutMs,
+                 .readLogBufferPages = enableReadLogs ? INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES : 0,
+                 .sysfsName = sysfsName.c_str()});
         error < 0) {
         return binder::Status::fromServiceSpecificError(error);
     }
