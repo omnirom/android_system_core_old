@@ -26,6 +26,7 @@
 #include <private/android_filesystem_config.h>
 #include <utils/Trace.h>
 
+#include <stdio.h>
 #include <sys/vfs.h>
 #include <fstream>
 #include <thread>
@@ -133,15 +134,14 @@ status_t VoldNativeService::start() {
 }
 
 status_t VoldNativeService::dump(int fd, const Vector<String16>& /* args */) {
-    auto out = std::fstream(StringPrintf("/proc/self/fd/%d", fd));
     const binder::Status dump_permission = CheckPermission(kDump);
     if (!dump_permission.isOk()) {
-        out << dump_permission.toString8() << endl;
+        dprintf(fd, "%s\n", dump_permission.toString8().c_str());
         return PERMISSION_DENIED;
     }
 
     ACQUIRE_LOCK;
-    out << "vold is happy!" << endl;
+    dprintf(fd, "vold is happy!\n");
     return NO_ERROR;
 }
 
