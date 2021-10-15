@@ -208,6 +208,7 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/vold")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/storaged")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/rollback")) return false;
+            if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/checkin")) return false;
 
             // TODO: Return false if this returns false once sure this should succeed.
             prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/apexrollback");
