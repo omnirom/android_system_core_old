@@ -6,3 +6,4 @@ service vold /system/bin/vold \
     task_profiles ProcessCapacityHigh
     shutdown critical
     group root reserved_disk
+    reboot_on_failure reboot,vold-failed
