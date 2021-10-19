@@ -208,11 +208,15 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/vold")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/storaged")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/rollback")) return false;
-            if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/checkin")) return false;
-
             // TODO: Return false if this returns false once sure this should succeed.
             prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/apexrollback");
             prepare_apex_subdirs(sehandle, misc_ce_path);
+            // Give gmscore (who runs in cache group) access to the checkin directory. Also provide
+            // the user id to set the correct selinux mls_level.
+            if (!prepare_dir_for_user(sehandle, 0770, AID_SYSTEM, AID_CACHE,
+                                      misc_ce_path + "/checkin", user_id)) {
+                return false;
+            }
 
             auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
             if (!prepare_dir(sehandle, 0700, AID_SYSTEM, AID_SYSTEM, system_ce_path + "/backup")) {
