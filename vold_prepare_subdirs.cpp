@@ -215,7 +215,15 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             // the user id to set the correct selinux mls_level.
             if (!prepare_dir_for_user(sehandle, 0770, AID_SYSTEM, AID_CACHE,
                                       misc_ce_path + "/checkin", user_id)) {
-                return false;
+                // TODO(b/203742483) the checkin directory was created with the wrong permission &
+                // context. Delete the directory to get these devices out of the bad state. Revert
+                // the change once the droidfood population is on newer build.
+                LOG(INFO) << "Failed to prepare the checkin directory, deleting for recreation";
+                android::vold::DeleteDirContentsAndDir(misc_ce_path + "/checkin");
+                if (!prepare_dir_for_user(sehandle, 0770, AID_SYSTEM, AID_CACHE,
+                                          misc_ce_path + "/checkin", user_id)) {
+                    return false;
+                }
             }
 
             auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
