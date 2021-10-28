@@ -1039,16 +1039,30 @@ binder::Status VoldNativeService::setIncFsMountOptions(
     };
     auto cleanup =
             std::unique_ptr<incfs::Control, decltype(cleanupFunc)>(&incfsControl, cleanupFunc);
-    if (auto error = incfs::setOptions(
-                incfsControl,
-                {.defaultReadTimeoutMs =
-                         enableReadTimeouts ? INCFS_DEFAULT_READ_TIMEOUT_MS : kIncFsReadNoTimeoutMs,
-                 .readLogBufferPages = enableReadLogs ? INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES : 0,
-                 .sysfsName = sysfsName.c_str()});
-        error < 0) {
-        return binder::Status::fromServiceSpecificError(error);
-    }
 
+    constexpr auto minReadLogBufferPages = INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES;
+    constexpr auto maxReadLogBufferPages = 8 * INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES;
+    auto options = incfs::MountOptions{
+            .defaultReadTimeoutMs =
+                    enableReadTimeouts ? INCFS_DEFAULT_READ_TIMEOUT_MS : kIncFsReadNoTimeoutMs,
+            .readLogBufferPages = enableReadLogs ? maxReadLogBufferPages : 0,
+            .sysfsName = sysfsName.c_str()};
+
+    for (;;) {
+        const auto error = incfs::setOptions(incfsControl, options);
+        if (!error) {
+            return Ok();
+        }
+        if (!enableReadLogs || error != -ENOMEM) {
+            return binder::Status::fromServiceSpecificError(error);
+        }
+        // In case of memory allocation error retry with a smaller buffer.
+        options.readLogBufferPages /= 2;
+        if (options.readLogBufferPages < minReadLogBufferPages) {
+            return binder::Status::fromServiceSpecificError(error);
+        }
+    }
+    // unreachable, but makes the compiler happy
     return Ok();
 }
 
