@@ -993,10 +993,25 @@ binder::Status VoldNativeService::mountIncFs(
         const std::string& sysfsName,
         ::android::os::incremental::IncrementalFileSystemControlParcel* _aidl_return) {
     ENFORCE_SYSTEM_OR_ROOT;
-    CHECK_ARGUMENT_PATH(backingPath);
-    CHECK_ARGUMENT_PATH(targetDir);
+    if (auto status = CheckIncrementalPath(IncrementalPathKind::MountTarget, targetDir);
+        !status.isOk()) {
+        return status;
+    }
+    if (auto status = CheckIncrementalPath(IncrementalPathKind::MountSource, backingPath);
+        !status.isOk()) {
+        return status;
+    }
 
-    auto control = incfs::mount(backingPath, targetDir,
+    auto [backingFd, backingSymlink] = OpenDirInProcfs(backingPath);
+    if (!backingFd.ok()) {
+        return translate(-errno);
+    }
+    auto [targetFd, targetSymlink] = OpenDirInProcfs(targetDir);
+    if (!targetFd.ok()) {
+        return translate(-errno);
+    }
+
+    auto control = incfs::mount(backingSymlink, targetSymlink,
                                 {.flags = IncFsMountFlags(flags),
                                  // Mount with read timeouts.
                                  .defaultReadTimeoutMs = INCFS_DEFAULT_READ_TIMEOUT_MS,
@@ -1019,9 +1034,15 @@ binder::Status VoldNativeService::mountIncFs(
 
 binder::Status VoldNativeService::unmountIncFs(const std::string& dir) {
     ENFORCE_SYSTEM_OR_ROOT;
-    CHECK_ARGUMENT_PATH(dir);
+    if (auto status = CheckIncrementalPath(IncrementalPathKind::Any, dir); !status.isOk()) {
+        return status;
+    }
 
-    return translate(incfs::unmount(dir));
+    auto [fd, symLink] = OpenDirInProcfs(dir);
+    if (!fd.ok()) {
+        return translate(-errno);
+    }
+    return translate(incfs::unmount(symLink));
 }
 
 binder::Status VoldNativeService::setIncFsMountOptions(
@@ -1069,10 +1090,22 @@ binder::Status VoldNativeService::setIncFsMountOptions(
 binder::Status VoldNativeService::bindMount(const std::string& sourceDir,
                                             const std::string& targetDir) {
     ENFORCE_SYSTEM_OR_ROOT;
-    CHECK_ARGUMENT_PATH(sourceDir);
-    CHECK_ARGUMENT_PATH(targetDir);
+    if (auto status = CheckIncrementalPath(IncrementalPathKind::Any, sourceDir); !status.isOk()) {
+        return status;
+    }
+    if (auto status = CheckIncrementalPath(IncrementalPathKind::Bind, targetDir); !status.isOk()) {
+        return status;
+    }
 
-    return translate(incfs::bindMount(sourceDir, targetDir));
+    auto [sourceFd, sourceSymlink] = OpenDirInProcfs(sourceDir);
+    if (!sourceFd.ok()) {
+        return translate(-errno);
+    }
+    auto [targetFd, targetSymlink] = OpenDirInProcfs(targetDir);
+    if (!targetFd.ok()) {
+        return translate(-errno);
+    }
+    return translate(incfs::bindMount(sourceSymlink, targetSymlink));
 }
 
 binder::Status VoldNativeService::destroyDsuMetadataKey(const std::string& dsuSlot) {
