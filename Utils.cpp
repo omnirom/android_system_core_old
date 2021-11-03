@@ -1695,5 +1695,55 @@ status_t PrepareAndroidDirs(const std::string& volumeRoot) {
 
     return OK;
 }
+
+namespace ab = android::base;
+
+static ab::unique_fd openDirFd(int parentFd, const char* name) {
+    return ab::unique_fd{::openat(parentFd, name, O_CLOEXEC | O_DIRECTORY | O_PATH | O_NOFOLLOW)};
+}
+
+static ab::unique_fd openAbsolutePathFd(std::string_view path) {
+    if (path.empty() || path[0] != '/') {
+        errno = EINVAL;
+        return {};
+    }
+    if (path == "/") {
+        return openDirFd(-1, "/");
+    }
+
+    // first component is special - it includes the leading slash
+    auto next = path.find('/', 1);
+    auto component = std::string(path.substr(0, next));
+    if (component == "..") {
+        errno = EINVAL;
+        return {};
+    }
+    auto fd = openDirFd(-1, component.c_str());
+    if (!fd.ok()) {
+        return fd;
+    }
+    path.remove_prefix(std::min(next + 1, path.size()));
+    while (next != path.npos && !path.empty()) {
+        next = path.find('/');
+        component.assign(path.substr(0, next));
+        fd = openDirFd(fd, component.c_str());
+        if (!fd.ok()) {
+            return fd;
+        }
+        path.remove_prefix(std::min(next + 1, path.size()));
+    }
+    return fd;
+}
+
+std::pair<android::base::unique_fd, std::string> OpenDirInProcfs(std::string_view path) {
+    auto fd = openAbsolutePathFd(path);
+    if (!fd.ok()) {
+        return {};
+    }
+
+    auto linkPath = std::string("/proc/self/fd/") += std::to_string(fd.get());
+    return {std::move(fd), std::move(linkPath)};
+}
+
 }  // namespace vold
 }  // namespace android

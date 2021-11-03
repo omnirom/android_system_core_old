@@ -27,6 +27,7 @@
 
 #include <chrono>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct DIR;
@@ -200,6 +201,18 @@ status_t UnmountUserFuse(userid_t userId, const std::string& absolute_lower_path
                          const std::string& relative_upper_path);
 
 status_t PrepareAndroidDirs(const std::string& volumeRoot);
+
+// Open a given directory as an FD, and return that and the corresponding procfs virtual
+// symlink path that can be used in any API that accepts a path string. Path stays valid until
+// the directory FD is closed.
+//
+// This may be useful when an API wants to restrict a path passed from an untrusted process,
+// and do it without any TOCTOU attacks possible (e.g. where an attacker replaces one of
+// the components with a symlink after the check passed). In that case opening a path through
+// this function guarantees that the target directory stays the same, and that it can be
+// referenced inside the current process via the virtual procfs symlink returned here.
+std::pair<android::base::unique_fd, std::string> OpenDirInProcfs(std::string_view path);
+
 }  // namespace vold
 }  // namespace android
 
