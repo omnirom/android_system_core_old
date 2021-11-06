@@ -245,7 +245,8 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
                << fs_type;
     auto encrypted_state = android::base::GetProperty("ro.crypto.state", "");
     if (encrypted_state != "" && encrypted_state != "encrypted") {
-        LOG(DEBUG) << "fscrypt_enable_crypto got unexpected starting state: " << encrypted_state;
+        LOG(ERROR) << "fscrypt_mount_metadata_encrypted got unexpected starting state: "
+                   << encrypted_state;
         return false;
     }
 
@@ -282,12 +283,18 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
 
     auto gen = needs_encrypt ? makeGen(options) : neverGen();
     KeyBuffer key;
-    if (!read_key(data_rec->metadata_key_dir, gen, &key)) return false;
+    if (!read_key(data_rec->metadata_key_dir, gen, &key)) {
+        LOG(ERROR) << "read_key failed in mountFstab";
+        return false;
+    }
 
     std::string crypto_blkdev;
     uint64_t nr_sec;
-    if (!create_crypto_blk_dev(kDmNameUserdata, blk_device, key, options, &crypto_blkdev, &nr_sec))
+    if (!create_crypto_blk_dev(kDmNameUserdata, blk_device, key, options, &crypto_blkdev,
+                               &nr_sec)) {
+        LOG(ERROR) << "create_crypto_blk_dev failed in mountFstab";
         return false;
+    }
 
     if (needs_encrypt) {
         if (should_format) {
@@ -301,10 +308,17 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
                 LOG(ERROR) << "Unknown filesystem type: " << fs_type;
                 return false;
             }
-            LOG(DEBUG) << "Format (err=" << error << ") " << crypto_blkdev << " on " << mount_point;
-            if (error != 0) return false;
+            if (error != 0) {
+                LOG(ERROR) << "Format of " << crypto_blkdev << " for " << mount_point
+                           << " failed (err=" << error << ").";
+                return false;
+            }
+            LOG(DEBUG) << "Format of " << crypto_blkdev << " for " << mount_point << " succeeded.";
         } else {
-            if (!encrypt_inplace(crypto_blkdev, blk_device, nr_sec, false)) return false;
+            if (!encrypt_inplace(crypto_blkdev, blk_device, nr_sec, false)) {
+                LOG(ERROR) << "encrypt_inplace failed in mountFstab";
+                return false;
+            }
         }
     }
 
