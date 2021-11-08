@@ -52,8 +52,11 @@ typedef struct vold_configs {
 static int process_config(VolumeManager* vm, VoldConfigs* configs);
 static void coldboot(const char* path);
 static void parse_args(int argc, char** argv);
+static void VoldLogger(android::base::LogId log_buffer_id, android::base::LogSeverity severity,
+                       const char* tag, const char* file, unsigned int line, const char* message);
 
 struct selabel_handle* sehandle;
+android::base::LogdLogger logd_logger(android::base::SYSTEM);
 
 using android::base::StringPrintf;
 using android::fs_mgr::ReadDefaultFstab;
@@ -61,7 +64,7 @@ using android::fs_mgr::ReadDefaultFstab;
 int main(int argc, char** argv) {
     atrace_set_tracing_enabled(false);
     setenv("ANDROID_LOG_TAGS", "*:d", 1);  // Do not submit with verbose logs enabled
-    android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
+    android::base::InitLogging(argv, &VoldLogger);
 
     LOG(INFO) << "Vold 3.0 (the awakening) firing up";
 
@@ -277,4 +280,24 @@ static int process_config(VolumeManager* vm, VoldConfigs* configs) {
         }
     }
     return 0;
+}
+
+static void VoldLogger(android::base::LogId log_buffer_id, android::base::LogSeverity severity,
+                       const char* tag, const char* file, unsigned int line, const char* message) {
+    logd_logger(log_buffer_id, severity, tag, file, line, message);
+
+    if (severity >= android::base::ERROR) {
+        static bool is_data_mounted = false;
+
+        // When /data fails to mount, we don't have adb to get logcat. So until /data is
+        // mounted we log errors to the kernel. This allows us to get failures via serial logs
+        // and via last dmesg/"fastboot oem dmesg" on devices that support it.
+        //
+        // As a very quick-and-dirty test for /data, we check whether /data/misc/vold exists.
+        if (is_data_mounted || access("/data/misc/vold", F_OK) == 0) {
+            is_data_mounted = true;
+            return;
+        }
+        android::base::KernelLogger(log_buffer_id, severity, tag, file, line, message);
+    }
 }
