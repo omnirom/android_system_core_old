@@ -19,7 +19,6 @@
 #include "VoldNativeService.h"
 
 #include <android-base/logging.h>
-#include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <fs_mgr.h>
 #include <fscrypt/fscrypt.h>
@@ -39,15 +38,12 @@
 #include "Keystore.h"
 #include "MetadataCrypt.h"
 #include "MoveStorage.h"
-#include "Process.h"
 #include "VoldNativeServiceValidation.h"
 #include "VoldUtil.h"
 #include "VolumeManager.h"
 #include "cryptfs.h"
 #include "incfs.h"
 
-using android::base::StringPrintf;
-using std::endl;
 using namespace std::literals;
 
 namespace android {
@@ -524,130 +520,107 @@ binder::Status VoldNativeService::openAppFuseFile(int32_t uid, int32_t mountId, 
     return Ok();
 }
 
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::fdeCheckPassword(const std::string& password) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    return translate(cryptfs_check_passwd(password.c_str()));
+    SLOGE("fdeCheckPassword is no longer supported");
+    return translate(-1);
 }
 
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::fdeRestart() {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    // Spawn as thread so init can issue commands back to vold without
-    // causing deadlock, usually as a result of prep_data_fs.
-    std::thread(&cryptfs_restart).detach();
+    SLOGE("fdeRestart is no longer supported");
     return Ok();
 }
 
+// TODO(b/191796797) remove this once caller is removed
+#define CRYPTO_COMPLETE_NOT_ENCRYPTED 1
 binder::Status VoldNativeService::fdeComplete(int32_t* _aidl_return) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    *_aidl_return = cryptfs_crypto_complete();
+    SLOGE("fdeComplete is no longer supported");
+    *_aidl_return = CRYPTO_COMPLETE_NOT_ENCRYPTED;
     return Ok();
 }
 
-static int fdeEnableInternal(int32_t passwordType, const std::string& password,
-                             int32_t encryptionFlags) {
-    bool noUi = (encryptionFlags & VoldNativeService::ENCRYPTION_FLAG_NO_UI) != 0;
-
-    for (int tries = 0; tries < 2; ++tries) {
-        int rc;
-        if (passwordType == VoldNativeService::PASSWORD_TYPE_DEFAULT) {
-            rc = cryptfs_enable_default(noUi);
-        } else {
-            rc = cryptfs_enable(passwordType, password.c_str(), noUi);
-        }
-
-        if (rc == 0) {
-            return 0;
-        } else if (tries == 0) {
-            KillProcessesWithOpenFiles(DATA_MNT_POINT, SIGKILL);
-        }
-    }
-
-    return -1;
-}
-
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::fdeEnable(int32_t passwordType, const std::string& password,
                                             int32_t encryptionFlags) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    LOG(DEBUG) << "fdeEnable(" << passwordType << ", *, " << encryptionFlags << ")";
-    if (fscrypt_is_native()) {
-        LOG(ERROR) << "fscrypt_is_native, fdeEnable invalid";
-        return error("fscrypt_is_native, fdeEnable invalid");
-    }
-    LOG(DEBUG) << "!fscrypt_is_native, spawning fdeEnableInternal";
-
-    // Spawn as thread so init can issue commands back to vold without
-    // causing deadlock, usually as a result of prep_data_fs.
-    std::thread(&fdeEnableInternal, passwordType, password, encryptionFlags).detach();
-    return Ok();
+    SLOGE("fdeEnable is no longer supported");
+    return translate(-1);
 }
 
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::fdeChangePassword(int32_t passwordType,
                                                     const std::string& password) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    return translate(cryptfs_changepw(passwordType, password.c_str()));
+    SLOGE("fdeChangePassword is no longer supported");
+    return translate(-1);
 }
 
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::fdeVerifyPassword(const std::string& password) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    return translate(cryptfs_verify_passwd(password.c_str()));
+    SLOGE("fdeVerifyPassword is no longer supported");
+    return translate(-1);
 }
 
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::fdeGetField(const std::string& key, std::string* _aidl_return) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    char buf[PROPERTY_VALUE_MAX];
-    if (cryptfs_getfield(key.c_str(), buf, sizeof(buf)) != CRYPTO_GETFIELD_OK) {
-        return error(StringPrintf("Failed to read field %s", key.c_str()));
-    } else {
-        *_aidl_return = buf;
-        return Ok();
-    }
+    SLOGE("fdeGetField is no longer supported");
+    return translate(-1);
 }
 
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::fdeSetField(const std::string& key, const std::string& value) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    return translate(cryptfs_setfield(key.c_str(), value.c_str()));
+    SLOGE("fdeSetField is no longer supported");
+    return translate(-1);
 }
 
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::fdeGetPasswordType(int32_t* _aidl_return) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    *_aidl_return = cryptfs_get_password_type();
+    SLOGE("fdeGetPasswordType is no longer supported");
+    *_aidl_return = -1;
     return Ok();
 }
 
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::fdeGetPassword(std::string* _aidl_return) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    const char* res = cryptfs_get_password();
-    if (res != nullptr) {
-        *_aidl_return = res;
-    }
+    SLOGE("fdeGetPassword is no longer supported");
     return Ok();
 }
 
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::fdeClearPassword() {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    cryptfs_clear_password();
+    SLOGE("fdeClearPassword is no longer supported");
     return Ok();
 }
 
@@ -658,15 +631,12 @@ binder::Status VoldNativeService::fbeEnable() {
     return translateBool(fscrypt_initialize_systemwide_keys());
 }
 
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::mountDefaultEncrypted() {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    if (!fscrypt_is_native()) {
-        // Spawn as thread so init can issue commands back to vold without
-        // causing deadlock, usually as a result of prep_data_fs.
-        std::thread(&cryptfs_mount_default_encrypted).detach();
-    }
+    SLOGE("mountDefaultEncrypted is no longer supported");
     return Ok();
 }
 
@@ -677,11 +647,13 @@ binder::Status VoldNativeService::initUser0() {
     return translateBool(fscrypt_init_user0());
 }
 
+// TODO(b/191796797) remove this once caller is removed
 binder::Status VoldNativeService::isConvertibleToFbe(bool* _aidl_return) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    *_aidl_return = cryptfs_isConvertibleToFBE() != 0;
+    SLOGE("isConvertibleToFbe is no longer supported");
+    *_aidl_return = false;
     return Ok();
 }
 

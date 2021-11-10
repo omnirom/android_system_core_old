@@ -12,7 +12,6 @@ cc_test {
     srcs: [
         "Utils_test.cpp",
         "VoldNativeServiceValidation_test.cpp",
-        "cryptfs_test.cpp",
     ],
     static_libs: ["libvold"],
     shared_libs: ["libbinder"]
