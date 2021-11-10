@@ -18,7 +18,6 @@
 
 #include "Checkpoint.h"
 #include "Keystore.h"
-#include "ScryptParameters.h"
 #include "Utils.h"
 
 #include <algorithm>
@@ -44,11 +43,6 @@
 #include <android-base/unique_fd.h>
 
 #include <cutils/properties.h>
-
-extern "C" {
-
-#include "crypto_scrypt.h"
-}
 
 namespace android {
 namespace vold {
