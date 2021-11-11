@@ -246,7 +246,7 @@ status_t EmulatedVolume::unmountSdcardFs() {
 
 status_t EmulatedVolume::doMount() {
     std::string label = getLabel();
-    bool isVisible = getMountFlags() & MountFlags::kVisible;
+    bool isVisible = isVisibleForWrite();
 
     mSdcardFsDefault = StringPrintf("/mnt/runtime/default/%s", label.c_str());
     mSdcardFsRead = StringPrintf("/mnt/runtime/read/%s", label.c_str());
