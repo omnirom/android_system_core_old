@@ -22,10 +22,6 @@
 #include "KeyBuffer.h"
 #include "KeyUtil.h"
 
-// TODO(b/191796797): remove this once it is no longer referenced by system/core
-// and bootable/recovery.
-#define CRYPT_FOOTER_OFFSET 0x4000
-
 int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
                              const android::vold::KeyBuffer& key, std::string* out_crypto_blkdev);
 const android::vold::KeyGeneration cryptfs_get_keygen();
