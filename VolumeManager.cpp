@@ -1002,8 +1002,8 @@ int VolumeManager::setupAppDir(const std::string& path, int32_t appUid, bool fix
             // The volume must be mounted
             return false;
         }
-        if ((vol.getMountFlags() & VolumeBase::MountFlags::kVisible) == 0) {
-            // and visible
+        if (!vol.isVisibleForWrite()) {
+            // App dirs should only be created for writable volumes.
             return false;
         }
         if (vol.getInternalPath().empty()) {
@@ -1077,8 +1077,8 @@ int VolumeManager::createObb(const std::string& sourcePath, const std::string& s
                 // The volume must be mounted
                 return false;
             }
-            if ((vol.getMountFlags() & VolumeBase::MountFlags::kVisible) == 0) {
-                // and visible
+            if (!vol.isVisibleForWrite()) {
+                // Obb volume should only be created for writable volumes.
                 return false;
             }
             if (vol.getInternalPath().empty()) {
