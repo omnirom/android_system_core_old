@@ -208,7 +208,7 @@ static bool read_and_fixate_user_ce_key(userid_t user_id,
     return false;
 }
 
-static bool IsEmmcStorage(const std::string& blk_device) {
+static bool MightBeEmmcStorage(const std::string& blk_device) {
     // Handle symlinks.
     std::string real_path;
     if (!Realpath(blk_device, &real_path)) {
@@ -224,8 +224,15 @@ static bool IsEmmcStorage(const std::string& blk_device) {
     }
 
     // Now we should have the "real" block device.
-    LOG(DEBUG) << "IsEmmcStorage(): blk_device = " << blk_device << ", real_path=" << real_path;
-    return StartsWith(Basename(real_path), "mmcblk");
+    LOG(DEBUG) << "MightBeEmmcStorage(): blk_device = " << blk_device
+               << ", real_path=" << real_path;
+    std::string name = Basename(real_path);
+    return StartsWith(name, "mmcblk") ||
+           // virtio devices may provide inline encryption support that is
+           // backed by eMMC inline encryption on the host, thus inheriting the
+           // DUN size limitation.  So virtio devices must be allowed here too.
+           // TODO(b/207390665): check the maximum DUN size directly instead.
+           StartsWith(name, "vd");
 }
 
 // Retrieve the options to use for encryption policies on the /data filesystem.
@@ -241,7 +248,7 @@ static bool get_data_file_encryption_options(EncryptionOptions* options) {
         return false;
     }
     if ((options->flags & FSCRYPT_POLICY_FLAG_IV_INO_LBLK_32) &&
-        !IsEmmcStorage(entry->blk_device)) {
+        !MightBeEmmcStorage(entry->blk_device)) {
         LOG(ERROR) << "The emmc_optimized encryption flag is only allowed on eMMC storage.  Remove "
                       "this flag from the device's fstab";
         return false;
