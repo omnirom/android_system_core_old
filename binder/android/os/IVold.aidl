@@ -159,7 +159,8 @@ interface IVold {
     const int FSTRIM_FLAG_DEEP_TRIM = 1;
 
     const int MOUNT_FLAG_PRIMARY = 1;
-    const int MOUNT_FLAG_VISIBLE = 2;
+    const int MOUNT_FLAG_VISIBLE_FOR_READ = 2;
+    const int MOUNT_FLAG_VISIBLE_FOR_WRITE = 4;
 
     const int PARTITION_TYPE_PUBLIC = 0;
     const int PARTITION_TYPE_PRIVATE = 1;
