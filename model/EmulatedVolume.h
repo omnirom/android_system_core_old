@@ -64,6 +64,9 @@ class EmulatedVolume : public VolumeBase {
     /* Whether we mounted FUSE for this volume */
     bool mFuseMounted;
 
+    /* Whether the FUSE BPF feature is enabled */
+    bool mFuseBpfEnabled;
+
     /* Whether to use sdcardfs for this volume */
     bool mUseSdcardFs;
 
