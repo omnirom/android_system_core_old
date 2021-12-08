@@ -899,10 +899,21 @@ int VolumeManager::reset() {
     }
     mInternalEmulatedVolumes.clear();
 
+    // Destroy and recreate all disks except that StubVolume disks are just
+    // destroyed and removed from both mDisks and mPendingDisks.
+    // StubVolumes are managed from outside Android (e.g. from Chrome OS) and
+    // their disk recreation on reset events should be handled from outside by
+    // calling createStubVolume() again.
     for (const auto& disk : mDisks) {
         disk->destroy();
-        disk->create();
+        if (!disk->isStub()) {
+            disk->create();
+        }
     }
+    const auto isStub = [](const auto& disk) { return disk->isStub(); };
+    mDisks.remove_if(isStub);
+    mPendingDisks.remove_if(isStub);
+
     updateVirtualDisk();
     mAddedUsers.clear();
     mStartedUsers.clear();
