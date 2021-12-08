@@ -70,6 +70,8 @@ class Disk {
     const std::string& getLabel() const { return mLabel; }
     int getFlags() const { return mFlags; }
 
+    bool isStub() const { return (mFlags & kStubInvisible) || (mFlags & kStubVisible); }
+
     std::shared_ptr<VolumeBase> findVolume(const std::string& id);
 
     void listVolumes(VolumeBase::Type type, std::list<std::string>& list) const;
@@ -122,8 +124,6 @@ class Disk {
     void destroyAllVolumes();
 
     int getMaxMinors();
-
-    bool isStub() { return (mFlags & kStubInvisible) || (mFlags & kStubVisible); }
 
     DISALLOW_COPY_AND_ASSIGN(Disk);
 };
