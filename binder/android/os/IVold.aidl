@@ -65,8 +65,13 @@ interface IVold {
     void destroyObb(@utf8InCpp String volId);
 
     void fstrim(int fstrimFlags, IVoldTaskListener listener);
-    void runIdleMaint(IVoldTaskListener listener);
+    void runIdleMaint(boolean needGC, IVoldTaskListener listener);
     void abortIdleMaint(IVoldTaskListener listener);
+    int getStorageLifeTime();
+    void setGCUrgentPace(int neededSegments, int minSegmentThreshold,
+                         float dirtyReclaimRate, float reclaimWeight);
+    void refreshLatestWrite();
+    int getWriteAmount();
 
     FileDescriptor mountAppFuse(int uid, int mountId);
     void unmountAppFuse(int uid, int mountId);
