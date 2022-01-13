@@ -470,11 +470,11 @@ binder::Status VoldNativeService::fstrim(
 }
 
 binder::Status VoldNativeService::runIdleMaint(
-        const android::sp<android::os::IVoldTaskListener>& listener) {
+        bool needGC, const android::sp<android::os::IVoldTaskListener>& listener) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_LOCK;
 
-    std::thread([=]() { android::vold::RunIdleMaint(listener); }).detach();
+    std::thread([=]() { android::vold::RunIdleMaint(needGC, listener); }).detach();
     return Ok();
 }
 
@@ -484,6 +484,40 @@ binder::Status VoldNativeService::abortIdleMaint(
     ACQUIRE_LOCK;
 
     std::thread([=]() { android::vold::AbortIdleMaint(listener); }).detach();
+    return Ok();
+}
+
+binder::Status VoldNativeService::getStorageLifeTime(int32_t* _aidl_return) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    *_aidl_return = GetStorageLifeTime();
+    return Ok();
+}
+
+binder::Status VoldNativeService::setGCUrgentPace(int32_t neededSegments,
+                                                  int32_t minSegmentThreshold,
+                                                  float dirtyReclaimRate, float reclaimWeight) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    SetGCUrgentPace(neededSegments, minSegmentThreshold, dirtyReclaimRate, reclaimWeight);
+    return Ok();
+}
+
+binder::Status VoldNativeService::refreshLatestWrite() {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    RefreshLatestWrite();
+    return Ok();
+}
+
+binder::Status VoldNativeService::getWriteAmount(int32_t* _aidl_return) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    *_aidl_return = GetWriteAmount();
     return Ok();
 }
 
