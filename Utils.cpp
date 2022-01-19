@@ -1442,6 +1442,17 @@ status_t AbortFuseConnections() {
     namespace fs = std::filesystem;
 
     for (const auto& itEntry : fs::directory_iterator("/sys/fs/fuse/connections")) {
+        std::string fsPath = itEntry.path().string() + "/filesystem";
+        std::string fs;
+
+        // Virtiofs is on top of fuse and there isn't any user space daemon.
+        // Android user space doesn't manage it.
+        if (android::base::ReadFileToString(fsPath, &fs, false) &&
+            android::base::Trim(fs) == "virtiofs") {
+            LOG(INFO) << "Ignore virtiofs connection entry " << itEntry.path().string();
+            continue;
+        }
+
         std::string abortPath = itEntry.path().string() + "/abort";
         LOG(DEBUG) << "Aborting fuse connection entry " << abortPath;
         bool ret = writeStringToFile("1", abortPath);
