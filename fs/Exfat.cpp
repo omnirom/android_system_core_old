@@ -44,7 +44,7 @@ status_t Check(const std::string& source) {
     cmd.push_back("-y");
     cmd.push_back(source);
 
-    int rc = ForkExecvp(cmd, nullptr, sFsckUntrustedContext);
+    int rc = ForkExecvpTimeout(cmd, kUntrustedFsckSleepTime, sFsckUntrustedContext);
     if (rc == 0) {
         LOG(INFO) << "Check OK";
         return 0;
