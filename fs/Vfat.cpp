@@ -68,10 +68,9 @@ status_t Check(const std::string& source) {
         cmd.push_back(source);
 
         // Fat devices are currently always untrusted
-        rc = ForkExecvp(cmd, nullptr, sFsckUntrustedContext);
-
+        rc = ForkExecvpTimeout(cmd, kUntrustedFsckSleepTime, sFsckUntrustedContext);
         if (rc < 0) {
-            LOG(ERROR) << "Filesystem check failed due to logwrap error";
+            LOG(ERROR) << "Filesystem check failed due to fork error";
             errno = EIO;
             return -1;
         }
@@ -80,6 +79,10 @@ status_t Check(const std::string& source) {
             case 0:
                 LOG(INFO) << "Filesystem check completed OK";
                 return 0;
+
+            case 1:
+                LOG(INFO) << "Failed to check filesystem";
+                return -1;
 
             case 2:
                 LOG(ERROR) << "Filesystem check failed (not a FAT filesystem)";
@@ -98,6 +101,11 @@ status_t Check(const std::string& source) {
             case 8:
                 LOG(ERROR) << "Filesystem check failed (no filesystem)";
                 errno = ENODATA;
+                return -1;
+
+            case ETIMEDOUT:
+                LOG(ERROR) << "Filesystem check timed out";
+                errno = ETIMEDOUT;
                 return -1;
 
             default:
