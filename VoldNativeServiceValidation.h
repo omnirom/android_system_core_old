@@ -34,4 +34,9 @@ binder::Status CheckArgumentId(const std::string& id);
 binder::Status CheckArgumentPath(const std::string& path);
 binder::Status CheckArgumentHex(const std::string& hex);
 
+// Incremental service is only allowed to touch its own directory, and the installed apps dir.
+// This function ensures the caller isn't doing anything tricky.
+enum class IncrementalPathKind { MountSource, MountTarget, Bind, Any };
+binder::Status CheckIncrementalPath(IncrementalPathKind kind, const std::string& path);
+
 }  // namespace android::vold

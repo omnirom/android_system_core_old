@@ -105,4 +105,31 @@ binder::Status CheckArgumentHex(const std::string& hex) {
     return Ok();
 }
 
+binder::Status CheckIncrementalPath(IncrementalPathKind kind, const std::string& path) {
+    if (auto status = CheckArgumentPath(path); !status.isOk()) {
+        return status;
+    }
+    if (kind == IncrementalPathKind::MountSource || kind == IncrementalPathKind::MountTarget ||
+        kind == IncrementalPathKind::Any) {
+        if (android::base::StartsWith(path, "/data/incremental/MT_")) {
+            if (kind != IncrementalPathKind::MountSource &&
+                (android::base::EndsWith(path, "/mount") || path.find("/mount/") != path.npos)) {
+                return Ok();
+            }
+            if (kind != IncrementalPathKind::MountTarget &&
+                (android::base::EndsWith(path, "/backing_store") ||
+                 path.find("/backing_store/") != path.npos)) {
+                return Ok();
+            }
+        }
+    }
+    if (kind == IncrementalPathKind::Bind || kind == IncrementalPathKind::Any) {
+        if (android::base::StartsWith(path, "/data/app/")) {
+            return Ok();
+        }
+    }
+    return Exception(binder::Status::EX_ILLEGAL_ARGUMENT,
+                     StringPrintf("Path '%s' is not allowed", path.c_str()));
+}
+
 }  // namespace android::vold
