@@ -78,30 +78,18 @@ status_t Format(const std::string& source) {
     cmd.emplace_back("-f");
     cmd.emplace_back("-d1");
 
-    if (android::base::GetBoolProperty("vold.has_quota", false)) {
-        cmd.emplace_back("-O");
-        cmd.emplace_back("quota");
-    }
-    if (fscrypt_is_native()) {
-        cmd.emplace_back("-O");
-        cmd.emplace_back("encrypt");
-    }
+    cmd.emplace_back("-g");
+    cmd.emplace_back("android");
+
     if (android::base::GetBoolProperty("vold.has_compress", false)) {
         cmd.emplace_back("-O");
         cmd.emplace_back("compression");
         cmd.emplace_back("-O");
         cmd.emplace_back("extra_attr");
     }
-    cmd.emplace_back("-O");
-    cmd.emplace_back("verity");
 
     const bool needs_casefold =
             android::base::GetBoolProperty("external_storage.casefold.enabled", false);
-    const bool needs_projid = true;
-    if (needs_projid) {
-        cmd.emplace_back("-O");
-        cmd.emplace_back("project_quota,extra_attr");
-    }
     if (needs_casefold) {
         cmd.emplace_back("-O");
         cmd.emplace_back("casefold");
