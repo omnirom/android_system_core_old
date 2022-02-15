@@ -85,8 +85,14 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
 
     binder::Status fstrim(int32_t fstrimFlags,
                           const android::sp<android::os::IVoldTaskListener>& listener);
-    binder::Status runIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
+    binder::Status runIdleMaint(bool needGC,
+                                const android::sp<android::os::IVoldTaskListener>& listener);
     binder::Status abortIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
+    binder::Status getStorageLifeTime(int32_t* _aidl_return);
+    binder::Status setGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold,
+                                   float dirtyReclaimRate, float reclaimWeight);
+    binder::Status refreshLatestWrite();
+    binder::Status getWriteAmount(int32_t* _aidl_return);
 
     binder::Status mountAppFuse(int32_t uid, int32_t mountId,
                                 android::base::unique_fd* _aidl_return);
@@ -121,15 +127,12 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status createUserKey(int32_t userId, int32_t userSerial, bool ephemeral);
     binder::Status destroyUserKey(int32_t userId);
 
-    binder::Status addUserKeyAuth(int32_t userId, int32_t userSerial, const std::string& token,
-                                  const std::string& secret);
-    binder::Status clearUserKeyAuth(int32_t userId, int32_t userSerial, const std::string& token,
-                                    const std::string& secret);
+    binder::Status addUserKeyAuth(int32_t userId, int32_t userSerial, const std::string& secret);
+    binder::Status clearUserKeyAuth(int32_t userId, int32_t userSerial, const std::string& secret);
     binder::Status fixateNewestUserKeyAuth(int32_t userId);
 
     binder::Status getUnlockedUsers(std::vector<int>* _aidl_return);
-    binder::Status unlockUserKey(int32_t userId, int32_t userSerial, const std::string& token,
-                                 const std::string& secret);
+    binder::Status unlockUserKey(int32_t userId, int32_t userSerial, const std::string& secret);
     binder::Status lockUserKey(int32_t userId);
 
     binder::Status prepareUserStorage(const std::optional<std::string>& uuid, int32_t userId,

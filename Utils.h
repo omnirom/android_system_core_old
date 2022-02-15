@@ -39,6 +39,8 @@ static const char* kVoldAppDataIsolationEnabled = "persist.sys.vold_app_data_iso
 static const char* kExternalStorageSdcardfs = "external_storage.sdcardfs.enabled";
 static const char* kFuseBpfEnabled = "persist.sys.fuse.bpf.enable";
 
+static constexpr std::chrono::seconds kUntrustedFsckSleepTime(45);
+
 /* SELinux contexts used depending on the block device type */
 extern char* sBlkidContext;
 extern char* sBlkidUntrustedContext;
@@ -108,8 +110,10 @@ status_t ReadMetadataUntrusted(const std::string& path, std::string* fsType, std
 /* Returns either WEXITSTATUS() status, or a negative errno */
 status_t ForkExecvp(const std::vector<std::string>& args,
                     std::vector<std::string>* output = nullptr, char* context = nullptr);
+status_t ForkExecvpTimeout(const std::vector<std::string>& args, std::chrono::seconds timeout,
+                           char* context = nullptr);
 
-pid_t ForkExecvpAsync(const std::vector<std::string>& args);
+pid_t ForkExecvpAsync(const std::vector<std::string>& args, char* context = nullptr);
 
 /* Gets block device size in bytes */
 status_t GetBlockDevSize(int fd, uint64_t* size);

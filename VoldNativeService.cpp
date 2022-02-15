@@ -470,11 +470,11 @@ binder::Status VoldNativeService::fstrim(
 }
 
 binder::Status VoldNativeService::runIdleMaint(
-        const android::sp<android::os::IVoldTaskListener>& listener) {
+        bool needGC, const android::sp<android::os::IVoldTaskListener>& listener) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_LOCK;
 
-    std::thread([=]() { android::vold::RunIdleMaint(listener); }).detach();
+    std::thread([=]() { android::vold::RunIdleMaint(needGC, listener); }).detach();
     return Ok();
 }
 
@@ -484,6 +484,40 @@ binder::Status VoldNativeService::abortIdleMaint(
     ACQUIRE_LOCK;
 
     std::thread([=]() { android::vold::AbortIdleMaint(listener); }).detach();
+    return Ok();
+}
+
+binder::Status VoldNativeService::getStorageLifeTime(int32_t* _aidl_return) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    *_aidl_return = GetStorageLifeTime();
+    return Ok();
+}
+
+binder::Status VoldNativeService::setGCUrgentPace(int32_t neededSegments,
+                                                  int32_t minSegmentThreshold,
+                                                  float dirtyReclaimRate, float reclaimWeight) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    SetGCUrgentPace(neededSegments, minSegmentThreshold, dirtyReclaimRate, reclaimWeight);
+    return Ok();
+}
+
+binder::Status VoldNativeService::refreshLatestWrite() {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    RefreshLatestWrite();
+    return Ok();
+}
+
+binder::Status VoldNativeService::getWriteAmount(int32_t* _aidl_return) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    ACQUIRE_LOCK;
+
+    *_aidl_return = GetWriteAmount();
     return Ok();
 }
 
@@ -697,35 +731,18 @@ binder::Status VoldNativeService::destroyUserKey(int32_t userId) {
     return translateBool(fscrypt_destroy_user_key(userId));
 }
 
-static bool token_empty(const std::string& token) {
-    return token.size() == 0 || token == "!";
-}
-
 binder::Status VoldNativeService::addUserKeyAuth(int32_t userId, int32_t userSerial,
-                                                 const std::string& token,
                                                  const std::string& secret) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
-
-    if (!token_empty(token)) {
-        LOG(ERROR) << "Vold doesn't use auth tokens, but non-empty token passed to addUserKeyAuth.";
-        return binder::Status::fromServiceSpecificError(-EINVAL);
-    }
 
     return translateBool(fscrypt_add_user_key_auth(userId, userSerial, secret));
 }
 
 binder::Status VoldNativeService::clearUserKeyAuth(int32_t userId, int32_t userSerial,
-                                                   const std::string& token,
                                                    const std::string& secret) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
-
-    if (!token_empty(token)) {
-        LOG(ERROR)
-                << "Vold doesn't use auth tokens, but non-empty token passed to clearUserKeyAuth.";
-        return binder::Status::fromServiceSpecificError(-EINVAL);
-    }
 
     return translateBool(fscrypt_clear_user_key_auth(userId, userSerial, secret));
 }
@@ -746,15 +763,9 @@ binder::Status VoldNativeService::getUnlockedUsers(std::vector<int>* _aidl_retur
 }
 
 binder::Status VoldNativeService::unlockUserKey(int32_t userId, int32_t userSerial,
-                                                const std::string& token,
                                                 const std::string& secret) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
-
-    if (!token_empty(token)) {
-        LOG(ERROR) << "Vold doesn't use auth tokens, but non-empty token passed to unlockUserKey.";
-        return binder::Status::fromServiceSpecificError(-EINVAL);
-    }
 
     return translateBool(fscrypt_unlock_user_key(userId, userSerial, secret));
 }

@@ -23,8 +23,13 @@ namespace android {
 namespace vold {
 
 void Trim(const android::sp<android::os::IVoldTaskListener>& listener);
-int RunIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
+int RunIdleMaint(bool needGC, const android::sp<android::os::IVoldTaskListener>& listener);
 int AbortIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
+int32_t GetStorageLifeTime();
+void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float dirtyReclaimRate,
+                     float reclaimWeight);
+void RefreshLatestWrite();
+int32_t GetWriteAmount();
 
 }  // namespace vold
 }  // namespace android

@@ -187,13 +187,12 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const std::string&
     auto& dm = DeviceMapper::Instance();
     if (dm_name == kDmNameUserdata && dm.GetState(dm_name) == DmDeviceState::SUSPENDED) {
         // The device was created in advance, populate it now.
-        std::string path;
-        if (!dm.WaitForDevice(dm_name, 5s, crypto_blkdev)) {
-            LOG(ERROR) << "Failed to wait for default-key device " << dm_name;
-            return false;
-        }
         if (!dm.LoadTableAndActivate(dm_name, table)) {
             LOG(ERROR) << "Failed to populate default-key device " << dm_name;
+            return false;
+        }
+        if (!dm.WaitForDevice(dm_name, 5s, crypto_blkdev)) {
+            LOG(ERROR) << "Failed to wait for default-key device " << dm_name;
             return false;
         }
     } else if (!dm.CreateDevice(dm_name, table, crypto_blkdev, 5s)) {
