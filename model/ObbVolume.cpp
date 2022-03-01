@@ -15,7 +15,6 @@
  */
 
 #include "ObbVolume.h"
-#include "Devmapper.h"
 #include "Loop.h"
 #include "Utils.h"
 #include "VoldUtil.h"
@@ -39,12 +38,10 @@ using android::base::StringPrintf;
 namespace android {
 namespace vold {
 
-ObbVolume::ObbVolume(int id, const std::string& sourcePath, const std::string& sourceKey,
-                     gid_t ownerGid)
+ObbVolume::ObbVolume(int id, const std::string& sourcePath, gid_t ownerGid)
     : VolumeBase(Type::kObb) {
     setId(StringPrintf("obb:%d", id));
     mSourcePath = sourcePath;
-    mSourceKey = sourceKey;
     mOwnerGid = ownerGid;
 }
 
@@ -55,36 +52,13 @@ status_t ObbVolume::doCreate() {
         PLOG(ERROR) << getId() << " failed to create loop";
         return -1;
     }
-
-    if (!mSourceKey.empty()) {
-        uint64_t nr_sec = 0;
-        if (GetBlockDev512Sectors(mLoopPath, &nr_sec) != OK) {
-            PLOG(ERROR) << getId() << " failed to get loop size";
-            return -1;
-        }
-
-        char tmp[PATH_MAX];
-        if (Devmapper::create(getId().c_str(), mLoopPath.c_str(), mSourceKey.c_str(), nr_sec, tmp,
-                              PATH_MAX)) {
-            PLOG(ERROR) << getId() << " failed to create dm";
-            return -1;
-        }
-        mDmPath = tmp;
-        mMountPath = mDmPath;
-    } else {
-        mMountPath = mLoopPath;
-    }
     return OK;
 }
 
 status_t ObbVolume::doDestroy() {
-    if (!mDmPath.empty() && Devmapper::destroy(getId().c_str())) {
-        PLOG(WARNING) << getId() << " failed to destroy dm";
-    }
     if (!mLoopPath.empty() && Loop::destroyByDevice(mLoopPath.c_str())) {
         PLOG(WARNING) << getId() << " failed to destroy loop";
     }
-    mDmPath.clear();
     mLoopPath.clear();
     return OK;
 }
@@ -98,7 +72,7 @@ status_t ObbVolume::doMount() {
         return -1;
     }
     // clang-format off
-    if (android::vold::vfat::Mount(mMountPath, path, true, false, true,
+    if (android::vold::vfat::Mount(mLoopPath, path, true, false, true,
                                    0, mOwnerGid, 0227, false)) {
         // clang-format on
         PLOG(ERROR) << getId() << " failed to mount";

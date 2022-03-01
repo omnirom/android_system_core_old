@@ -60,8 +60,7 @@ interface IVold {
     void fixupAppDir(@utf8InCpp String path, int appUid);
     void ensureAppDirsCreated(in @utf8InCpp String[] paths, int appUid);
 
-    @utf8InCpp String createObb(@utf8InCpp String sourcePath, @utf8InCpp String sourceKey,
-                                int ownerGid);
+    @utf8InCpp String createObb(@utf8InCpp String sourcePath, int ownerGid);
     void destroyObb(@utf8InCpp String volId);
 
     void fstrim(int fstrimFlags, IVoldTaskListener listener);
