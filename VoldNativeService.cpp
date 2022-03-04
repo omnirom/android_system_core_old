@@ -414,16 +414,13 @@ binder::Status VoldNativeService::fixupAppDir(const std::string& path, int32_t a
     return translate(VolumeManager::Instance()->fixupAppDir(path, appUid));
 }
 
-binder::Status VoldNativeService::createObb(const std::string& sourcePath,
-                                            const std::string& sourceKey, int32_t ownerGid,
+binder::Status VoldNativeService::createObb(const std::string& sourcePath, int32_t ownerGid,
                                             std::string* _aidl_return) {
     ENFORCE_SYSTEM_OR_ROOT;
     CHECK_ARGUMENT_PATH(sourcePath);
-    CHECK_ARGUMENT_HEX(sourceKey);
     ACQUIRE_LOCK;
 
-    return translate(
-            VolumeManager::Instance()->createObb(sourcePath, sourceKey, ownerGid, _aidl_return));
+    return translate(VolumeManager::Instance()->createObb(sourcePath, ownerGid, _aidl_return));
 }
 
 binder::Status VoldNativeService::destroyObb(const std::string& volId) {
