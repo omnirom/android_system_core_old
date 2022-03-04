@@ -29,7 +29,7 @@ namespace vold {
  */
 class ObbVolume : public VolumeBase {
   public:
-    ObbVolume(int id, const std::string& sourcePath, const std::string& sourceKey, gid_t ownerGid);
+    ObbVolume(int id, const std::string& sourcePath, gid_t ownerGid);
     virtual ~ObbVolume();
 
   protected:
@@ -40,12 +40,9 @@ class ObbVolume : public VolumeBase {
 
   private:
     std::string mSourcePath;
-    std::string mSourceKey;
     gid_t mOwnerGid;
 
     std::string mLoopPath;
-    std::string mDmPath;
-    std::string mMountPath;
 
     DISALLOW_COPY_AND_ASSIGN(ObbVolume);
 };
