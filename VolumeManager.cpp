@@ -55,7 +55,6 @@
 #include <fscrypt/fscrypt.h>
 
 #include "AppFuseUtil.h"
-#include "Devmapper.h"
 #include "FsCrypt.h"
 #include "Loop.h"
 #include "NetlinkManager.h"
@@ -179,7 +178,6 @@ int VolumeManager::start() {
     // directories that we own, in case we crashed.
     unmountAll();
 
-    Devmapper::destroyAll();
     Loop::destroyAll();
 
     // Assume that we always have an emulated volume on internal
@@ -1075,8 +1073,8 @@ int VolumeManager::fixupAppDir(const std::string& path, int32_t appUid) {
     return setupAppDir(path, appUid, true /* fixupExistingOnly */);
 }
 
-int VolumeManager::createObb(const std::string& sourcePath, const std::string& sourceKey,
-                             int32_t ownerGid, std::string* outVolId) {
+int VolumeManager::createObb(const std::string& sourcePath, int32_t ownerGid,
+                             std::string* outVolId) {
     int id = mNextObbId++;
 
     std::string lowerSourcePath;
@@ -1114,7 +1112,7 @@ int VolumeManager::createObb(const std::string& sourcePath, const std::string& s
     }
 
     auto vol = std::shared_ptr<android::vold::VolumeBase>(
-            new android::vold::ObbVolume(id, lowerSourcePath, sourceKey, ownerGid));
+            new android::vold::ObbVolume(id, lowerSourcePath, ownerGid));
     vol->create();
 
     mObbVolumes.push_back(vol);

@@ -73,8 +73,8 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status setupAppDir(const std::string& path, int32_t appUid);
     binder::Status fixupAppDir(const std::string& path, int32_t appUid);
 
-    binder::Status createObb(const std::string& sourcePath, const std::string& sourceKey,
-                             int32_t ownerGid, std::string* _aidl_return);
+    binder::Status createObb(const std::string& sourcePath, int32_t ownerGid,
+                             std::string* _aidl_return);
     binder::Status destroyObb(const std::string& volId);
 
     binder::Status createStubVolume(const std::string& sourcePath, const std::string& mountPath,
