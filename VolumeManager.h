@@ -186,8 +186,7 @@ class VolumeManager {
     // Called before zygote starts to ensure dir exists so zygote can bind mount them.
     int ensureAppDirsCreated(const std::vector<std::string>& paths, int32_t appUid);
 
-    int createObb(const std::string& path, const std::string& key, int32_t ownerGid,
-                  std::string* outVolId);
+    int createObb(const std::string& path, int32_t ownerGid, std::string* outVolId);
     int destroyObb(const std::string& volId);
 
     int createStubVolume(const std::string& sourcePath, const std::string& mountPath,
