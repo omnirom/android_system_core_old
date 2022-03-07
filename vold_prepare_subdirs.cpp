@@ -174,7 +174,7 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
 
         auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
         if (!prepare_dir_for_user(sehandle, 0771, AID_SYSTEM, AID_SYSTEM,
-                                  misc_de_path + "/supplemental", user_id)) {
+                                  misc_de_path + "/sdksandbox", user_id)) {
             return false;
         }
 
@@ -210,7 +210,7 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
 
         auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
         if (!prepare_dir_for_user(sehandle, 0771, AID_SYSTEM, AID_SYSTEM,
-                                  misc_ce_path + "/supplemental", user_id)) {
+                                  misc_ce_path + "/sdksandbox", user_id)) {
             return false;
         }
 
