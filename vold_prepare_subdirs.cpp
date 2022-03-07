@@ -172,8 +172,13 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             return false;
         }
 
+        auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
+        if (!prepare_dir_for_user(sehandle, 0771, AID_SYSTEM, AID_SYSTEM,
+                                  misc_de_path + "/supplemental", user_id)) {
+            return false;
+        }
+
         if (volume_uuid.empty()) {
-            auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/vold")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/storaged")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_de_path + "/rollback")) return false;
@@ -203,8 +208,13 @@ static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int fla
             return false;
         }
 
+        auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
+        if (!prepare_dir_for_user(sehandle, 0771, AID_SYSTEM, AID_SYSTEM,
+                                  misc_ce_path + "/supplemental", user_id)) {
+            return false;
+        }
+
         if (volume_uuid.empty()) {
-            auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/vold")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/storaged")) return false;
             if (!prepare_dir(sehandle, 0700, 0, 0, misc_ce_path + "/rollback")) return false;
