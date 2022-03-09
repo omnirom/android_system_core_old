@@ -314,7 +314,7 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
             }
             LOG(DEBUG) << "Format of " << crypto_blkdev << " for " << mount_point << " succeeded.";
         } else {
-            if (!encrypt_inplace(crypto_blkdev, blk_device, nr_sec, false)) {
+            if (!encrypt_inplace(crypto_blkdev, blk_device, nr_sec)) {
                 LOG(ERROR) << "encrypt_inplace failed in mountFstab";
                 return false;
             }
