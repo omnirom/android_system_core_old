@@ -173,6 +173,8 @@ status_t PrivateVolume::doMount() {
     if (PrepareDir(mPath + "/app", 0771, AID_SYSTEM, AID_SYSTEM) ||
         PrepareDir(mPath + "/user", 0711, AID_SYSTEM, AID_SYSTEM) ||
         PrepareDir(mPath + "/user_de", 0711, AID_SYSTEM, AID_SYSTEM) ||
+        PrepareDir(mPath + "/misc_ce", 0711, AID_SYSTEM, AID_SYSTEM) ||
+        PrepareDir(mPath + "/misc_de", 0711, AID_SYSTEM, AID_SYSTEM) ||
         PrepareDir(mPath + "/media", 0770, AID_MEDIA_RW, AID_MEDIA_RW, attrs) ||
         PrepareDir(mPath + "/media/0", 0770, AID_MEDIA_RW, AID_MEDIA_RW) ||
         PrepareDir(mPath + "/local", 0751, AID_ROOT, AID_ROOT) ||

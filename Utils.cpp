@@ -1120,14 +1120,6 @@ std::string BuildDataMiscLegacyPath(userid_t userId) {
     return StringPrintf("%s/misc/user/%u", BuildDataPath("").c_str(), userId);
 }
 
-std::string BuildDataMiscCePath(userid_t userId) {
-    return StringPrintf("%s/misc_ce/%u", BuildDataPath("").c_str(), userId);
-}
-
-std::string BuildDataMiscDePath(userid_t userId) {
-    return StringPrintf("%s/misc_de/%u", BuildDataPath("").c_str(), userId);
-}
-
 // Keep in sync with installd (frameworks/native/cmds/installd/utils.h)
 std::string BuildDataProfilesDePath(userid_t userId) {
     return StringPrintf("%s/misc/profiles/cur/%u", BuildDataPath("").c_str(), userId);
@@ -1155,6 +1147,14 @@ std::string BuildDataMediaCePath(const std::string& volumeUuid, userid_t userId)
     // TODO: unify with installd path generation logic
     std::string data(BuildDataPath(volumeUuid));
     return StringPrintf("%s/media/%u", data.c_str(), userId);
+}
+
+std::string BuildDataMiscCePath(const std::string& volumeUuid, userid_t userId) {
+    return StringPrintf("%s/misc_ce/%u", BuildDataPath(volumeUuid).c_str(), userId);
+}
+
+std::string BuildDataMiscDePath(const std::string& volumeUuid, userid_t userId) {
+    return StringPrintf("%s/misc_de/%u", BuildDataPath(volumeUuid).c_str(), userId);
 }
 
 std::string BuildDataUserCePath(const std::string& volumeUuid, userid_t userId) {
