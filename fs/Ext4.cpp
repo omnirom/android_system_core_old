@@ -66,8 +66,6 @@ status_t Check(const std::string& source, const std::string& target) {
 
     const char* c_source = source.c_str();
     const char* c_target = target.c_str();
-
-    int status;
     int ret;
     long tmpmnt_flags = MS_NOATIME | MS_NOEXEC | MS_NOSUID;
     char* tmpmnt_opts = (char*)"nomblk_io_submit,errors=remount-ro";
