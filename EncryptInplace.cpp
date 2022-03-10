@@ -20,13 +20,11 @@
 #include <ext4_utils/ext4_utils.h>
 #include <f2fs_sparseblock.h>
 #include <fcntl.h>
-#include <time.h>
 
 #include <algorithm>
 #include <vector>
 
 #include <android-base/logging.h>
-#include <android-base/properties.h>
 #include <android-base/unique_fd.h>
 
 enum EncryptInPlaceError {
@@ -43,7 +41,7 @@ static uint64_t round_up(uint64_t val, size_t amount) {
 class InPlaceEncrypter {
   public:
     bool EncryptInPlace(const std::string& crypto_blkdev, const std::string& real_blkdev,
-                        uint64_t nr_sec, bool set_progress_properties);
+                        uint64_t nr_sec);
     bool ProcessUsedBlock(uint64_t block_num);
 
   private:
@@ -75,19 +73,14 @@ class InPlaceEncrypter {
     std::string real_blkdev_;
     std::string crypto_blkdev_;
     uint64_t nr_sec_;
-    bool set_progress_properties_;
 
     android::base::unique_fd realfd_;
     android::base::unique_fd cryptofd_;
-
-    time_t time_started_;
-    int remaining_time_;
 
     std::string fs_type_;
     uint64_t blocks_done_;
     uint64_t blocks_to_encrypt_;
     unsigned int block_size_;
-    unsigned int cur_pct_;
 
     std::vector<uint8_t> io_buffer_;
     uint64_t first_pending_block_;
@@ -108,7 +101,6 @@ void InPlaceEncrypter::InitFs(const std::string& fs_type, uint64_t blocks_to_enc
     blocks_done_ = 0;
     blocks_to_encrypt_ = blocks_to_encrypt;
     block_size_ = block_size;
-    cur_pct_ = 0;
 
     // Allocate the I/O buffer.  kIOBufferSize should always be a multiple of
     // the filesystem block size, but round it up just in case.
@@ -136,46 +128,6 @@ void InPlaceEncrypter::UpdateProgress(size_t blocks, bool done) {
 
     if (blocks_done_ >= blocks_next_msg)
         LOG(DEBUG) << "Encrypted " << blocks_next_msg << " of " << blocks_to_encrypt_ << " blocks";
-
-    if (!set_progress_properties_) return;
-
-    uint64_t new_pct;
-    if (done) {
-        new_pct = 100;
-    } else {
-        new_pct = (blocks_done_ * 100) / std::max<uint64_t>(blocks_to_encrypt_, 1);
-        new_pct = std::min<uint64_t>(new_pct, 99);
-    }
-    if (new_pct > cur_pct_) {
-        cur_pct_ = new_pct;
-        android::base::SetProperty("vold.encrypt_progress", std::to_string(new_pct));
-    }
-
-    if (cur_pct_ >= 5) {
-        struct timespec time_now;
-        if (clock_gettime(CLOCK_MONOTONIC, &time_now)) {
-            PLOG(WARNING) << "Error getting time while updating encryption progress";
-        } else {
-            double elapsed_time = difftime(time_now.tv_sec, time_started_);
-
-            uint64_t remaining_blocks = 0;
-            if (blocks_done_ < blocks_to_encrypt_)
-                remaining_blocks = blocks_to_encrypt_ - blocks_done_;
-
-            int remaining_time = 0;
-            if (blocks_done_ != 0)
-                remaining_time = (int)(elapsed_time * remaining_blocks / blocks_done_);
-
-            // Change time only if not yet set, lower, or a lot higher for
-            // best user experience
-            if (remaining_time_ == -1 || remaining_time < remaining_time_ ||
-                remaining_time > remaining_time_ + 60) {
-                remaining_time_ = remaining_time;
-                android::base::SetProperty("vold.encrypt_time_remaining",
-                                           std::to_string(remaining_time));
-            }
-        }
-    }
 }
 
 bool InPlaceEncrypter::EncryptPendingData() {
@@ -313,14 +265,10 @@ bool InPlaceEncrypter::DoEncryptInPlace() {
 }
 
 bool InPlaceEncrypter::EncryptInPlace(const std::string& crypto_blkdev,
-                                      const std::string& real_blkdev, uint64_t nr_sec,
-                                      bool set_progress_properties) {
-    struct timespec time_started = {0};
-
+                                      const std::string& real_blkdev, uint64_t nr_sec) {
     real_blkdev_ = real_blkdev;
     crypto_blkdev_ = crypto_blkdev;
     nr_sec_ = nr_sec;
-    set_progress_properties_ = set_progress_properties;
 
     realfd_.reset(open64(real_blkdev.c_str(), O_RDONLY | O_CLOEXEC));
     if (realfd_ < 0) {
@@ -333,13 +281,6 @@ bool InPlaceEncrypter::EncryptInPlace(const std::string& crypto_blkdev,
         PLOG(ERROR) << "Error opening crypto_blkdev " << crypto_blkdev << " for inplace encrypt";
         return false;
     }
-
-    if (clock_gettime(CLOCK_MONOTONIC, &time_started)) {
-        PLOG(WARNING) << "Error getting time at start of in-place encryption";
-        // Note - continue anyway - we'll run with 0
-    }
-    time_started_ = time_started.tv_sec;
-    remaining_time_ = -1;
 
     bool success = DoEncryptInPlace();
 
@@ -359,8 +300,11 @@ bool InPlaceEncrypter::EncryptInPlace(const std::string& crypto_blkdev,
                      << ") was incorrect; we actually encrypted " << blocks_done_
                      << " blocks.  Encryption progress was inaccurate";
     }
-    // Make sure vold.encrypt_progress gets set to 100.
+    // Ensure that the final progress message is printed, so the series of log
+    // messages ends with e.g. "Encrypted 50327 of 50327 blocks" rather than
+    // "Encrypted 50000 of 50327 blocks".
     UpdateProgress(0, true);
+
     LOG(INFO) << "Successfully encrypted " << DescribeFilesystem();
     return true;
 }
@@ -371,10 +315,10 @@ bool InPlaceEncrypter::EncryptInPlace(const std::string& crypto_blkdev,
 // sectors; however, if a filesystem is detected, then its size will be used
 // instead, and only the in-use blocks of the filesystem will be encrypted.
 bool encrypt_inplace(const std::string& crypto_blkdev, const std::string& real_blkdev,
-                     uint64_t nr_sec, bool set_progress_properties) {
+                     uint64_t nr_sec) {
     LOG(DEBUG) << "encrypt_inplace(" << crypto_blkdev << ", " << real_blkdev << ", " << nr_sec
-               << ", " << (set_progress_properties ? "true" : "false") << ")";
+               << ")";
 
     InPlaceEncrypter encrypter;
-    return encrypter.EncryptInPlace(crypto_blkdev, real_blkdev, nr_sec, set_progress_properties);
+    return encrypter.EncryptInPlace(crypto_blkdev, real_blkdev, nr_sec);
 }

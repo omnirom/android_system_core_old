@@ -21,6 +21,6 @@
 #include <string>
 
 bool encrypt_inplace(const std::string& crypto_blkdev, const std::string& real_blkdev,
-                     uint64_t nr_sec, bool set_progress_properties);
+                     uint64_t nr_sec);
 
 #endif
