@@ -1266,49 +1266,6 @@ bool IsVirtioBlkDevice(unsigned int major) {
     return kMajorBlockVirtioBlk && major == kMajorBlockVirtioBlk;
 }
 
-static status_t findMountPointsWithPrefix(const std::string& prefix,
-                                          std::list<std::string>& mountPoints) {
-    // Add a trailing slash if the client didn't provide one so that we don't match /foo/barbaz
-    // when the prefix is /foo/bar
-    std::string prefixWithSlash(prefix);
-    if (prefix.back() != '/') {
-        android::base::StringAppendF(&prefixWithSlash, "/");
-    }
-
-    std::unique_ptr<FILE, int (*)(FILE*)> mnts(setmntent("/proc/mounts", "re"), endmntent);
-    if (!mnts) {
-        PLOG(ERROR) << "Unable to open /proc/mounts";
-        return -errno;
-    }
-
-    // Some volumes can be stacked on each other, so force unmount in
-    // reverse order to give us the best chance of success.
-    struct mntent* mnt;  // getmntent returns a thread local, so it's safe.
-    while ((mnt = getmntent(mnts.get())) != nullptr) {
-        auto mountPoint = std::string(mnt->mnt_dir) + "/";
-        if (android::base::StartsWith(mountPoint, prefixWithSlash)) {
-            mountPoints.push_front(mountPoint);
-        }
-    }
-    return OK;
-}
-
-// Unmount all mountpoints that start with prefix. prefix itself doesn't need to be a mountpoint.
-status_t UnmountTreeWithPrefix(const std::string& prefix) {
-    std::list<std::string> toUnmount;
-    status_t result = findMountPointsWithPrefix(prefix, toUnmount);
-    if (result < 0) {
-        return result;
-    }
-    for (const auto& path : toUnmount) {
-        if (umount2(path.c_str(), MNT_DETACH)) {
-            PLOG(ERROR) << "Failed to unmount " << path;
-            result = -errno;
-        }
-    }
-    return result;
-}
-
 status_t UnmountTree(const std::string& mountPoint) {
     if (TEMP_FAILURE_RETRY(umount2(mountPoint.c_str(), MNT_DETACH)) < 0 && errno != EINVAL &&
         errno != ENOENT) {
