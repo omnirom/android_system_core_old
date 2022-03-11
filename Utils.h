@@ -37,7 +37,7 @@ namespace vold {
 
 static const char* kVoldAppDataIsolationEnabled = "persist.sys.vold_app_data_isolation_enabled";
 static const char* kExternalStorageSdcardfs = "external_storage.sdcardfs.enabled";
-static const char* kFuseBpfEnabled = "persist.sys.fuse.bpf.enable";
+static const char* kFuseBpfEnabled = "persist.sys.fuse.bpf.override";
 
 static constexpr std::chrono::seconds kUntrustedFsckSleepTime(45);
 
