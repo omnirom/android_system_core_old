@@ -9,9 +9,7 @@ cc_defaults {
         "-Wall",
         "-Werror",
         "-Wextra",
-        "-Wno-missing-field-initializers",
         "-Wno-unused-parameter",
-        "-Wno-unused-variable",
     ],
 
     clang: true,

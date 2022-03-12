@@ -93,7 +93,6 @@ using android::vold::UnmountTree;
 using android::vold::VoldNativeService;
 using android::vold::VolumeBase;
 
-static const char* kPathUserMount = "/mnt/user";
 static const char* kPathVirtualDisk = "/data/misc/vold/virtual_disk";
 
 static const char* kPropVirtualDisk = "persist.sys.virtual_disk";
