@@ -728,35 +728,18 @@ binder::Status VoldNativeService::destroyUserKey(int32_t userId) {
     return translateBool(fscrypt_destroy_user_key(userId));
 }
 
-static bool token_empty(const std::string& token) {
-    return token.size() == 0 || token == "!";
-}
-
 binder::Status VoldNativeService::addUserKeyAuth(int32_t userId, int32_t userSerial,
-                                                 const std::string& token,
                                                  const std::string& secret) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
-
-    if (!token_empty(token)) {
-        LOG(ERROR) << "Vold doesn't use auth tokens, but non-empty token passed to addUserKeyAuth.";
-        return binder::Status::fromServiceSpecificError(-EINVAL);
-    }
 
     return translateBool(fscrypt_add_user_key_auth(userId, userSerial, secret));
 }
 
 binder::Status VoldNativeService::clearUserKeyAuth(int32_t userId, int32_t userSerial,
-                                                   const std::string& token,
                                                    const std::string& secret) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
-
-    if (!token_empty(token)) {
-        LOG(ERROR)
-                << "Vold doesn't use auth tokens, but non-empty token passed to clearUserKeyAuth.";
-        return binder::Status::fromServiceSpecificError(-EINVAL);
-    }
 
     return translateBool(fscrypt_clear_user_key_auth(userId, userSerial, secret));
 }
@@ -777,15 +760,9 @@ binder::Status VoldNativeService::getUnlockedUsers(std::vector<int>* _aidl_retur
 }
 
 binder::Status VoldNativeService::unlockUserKey(int32_t userId, int32_t userSerial,
-                                                const std::string& token,
                                                 const std::string& secret) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
-
-    if (!token_empty(token)) {
-        LOG(ERROR) << "Vold doesn't use auth tokens, but non-empty token passed to unlockUserKey.";
-        return binder::Status::fromServiceSpecificError(-EINVAL);
-    }
 
     return translateBool(fscrypt_unlock_user_key(userId, userSerial, secret));
 }
