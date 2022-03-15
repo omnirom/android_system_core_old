@@ -100,15 +100,12 @@ interface IVold {
     void createUserKey(int userId, int userSerial, boolean ephemeral);
     void destroyUserKey(int userId);
 
-    void addUserKeyAuth(int userId, int userSerial, @utf8InCpp String token,
-                        @utf8InCpp String secret);
-    void clearUserKeyAuth(int userId, int userSerial, @utf8InCpp String token,
-                        @utf8InCpp String secret);
+    void addUserKeyAuth(int userId, int userSerial, @utf8InCpp String secret);
+    void clearUserKeyAuth(int userId, int userSerial, @utf8InCpp String secret);
     void fixateNewestUserKeyAuth(int userId);
 
     int[] getUnlockedUsers();
-    void unlockUserKey(int userId, int userSerial, @utf8InCpp String token,
-                       @utf8InCpp String secret);
+    void unlockUserKey(int userId, int userSerial, @utf8InCpp String secret);
     void lockUserKey(int userId);
 
     void prepareUserStorage(@nullable @utf8InCpp String uuid, int userId, int userSerial,
