@@ -89,7 +89,7 @@ static const int KBYTES_IN_SEGMENT = 2048;
 static const int MIN_GC_URGENT_SLEEP_TIME = 500;
 static const int ONE_HOUR_IN_MS = 3600000;
 static const int GC_NORMAL_MODE = 0;
-static const int GC_URGENT_HIGH_MODE = 1;
+static const int GC_URGENT_MID_MODE = 3;
 
 static int32_t previousSegmentWrite = 0;
 
@@ -596,7 +596,7 @@ void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float 
         return;
     }
 
-    if (!WriteStringToFile(std::to_string(GC_URGENT_HIGH_MODE), gcUrgentModePath)) {
+    if (!WriteStringToFile(std::to_string(GC_URGENT_MID_MODE), gcUrgentModePath)) {
         PLOG(WARNING) << "Writing failed in " << gcUrgentModePath;
         return;
     }
