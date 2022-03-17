@@ -261,7 +261,7 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
 
     CryptoOptions options;
     if (options_format_version == 1) {
-        if (!data_rec->metadata_encryption.empty()) {
+        if (!data_rec->metadata_encryption_options.empty()) {
             LOG(ERROR) << "metadata_encryption options cannot be set in legacy mode";
             return false;
         }
@@ -274,7 +274,7 @@ bool fscrypt_mount_metadata_encrypted(const std::string& blk_device, const std::
             return false;
         }
     } else if (options_format_version == 2) {
-        if (!parse_options(data_rec->metadata_encryption, &options)) return false;
+        if (!parse_options(data_rec->metadata_encryption_options, &options)) return false;
     } else {
         LOG(ERROR) << "Unknown options_format_version: " << options_format_version;
         return false;
