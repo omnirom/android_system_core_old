@@ -166,7 +166,13 @@ bool Keystore::exportKey(const KeyBuffer& ksKey, std::string* key) {
         *key = std::string(ephemeral_key_response.ephemeralKey.begin(),
                            ephemeral_key_response.ephemeralKey.end());
 
-    // TODO b/185811713 store the upgraded key blob if provided and delete the old key blob.
+    // vold intentionally ignores ephemeral_key_response.upgradedBlob, since the
+    // concept of "upgrading" doesn't make sense for TAG_STORAGE_KEY keys
+    // (hardware-wrapped inline encryption keys).  These keys are only meant as
+    // a substitute for raw keys; they still go through vold's usual layer of
+    // key wrapping, which already handles version binding.  So, vold just keeps
+    // using the original blobs for TAG_STORAGE_KEY keys.  If KeyMint "upgrades"
+    // them anyway, then they'll just get re-upgraded before each use.
 
     ret = true;
 out:
