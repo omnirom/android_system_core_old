@@ -251,7 +251,7 @@ static int process_config(VolumeManager* vm, VoldConfigs* configs) {
             PLOG(FATAL) << "could not find logical partition " << entry.blk_device;
         }
 
-        if (entry.mount_point == "/data" && !entry.metadata_encryption.empty()) {
+        if (entry.mount_point == "/data" && !entry.metadata_key_dir.empty()) {
             // Pre-populate userdata dm-devices since the uevents are asynchronous (b/198405417).
             android::vold::defaultkey_precreate_dm_device();
         }
