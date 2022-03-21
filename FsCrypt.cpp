@@ -764,7 +764,7 @@ bool fscrypt_unlock_user_key(userid_t user_id, int serial, const std::string& se
         // unlock directories when not in emulation mode, to bring devices
         // back into a known-good state.
         if (!emulated_unlock(android::vold::BuildDataSystemCePath(user_id), 0771) ||
-            !emulated_unlock(android::vold::BuildDataMiscCePath(user_id), 01771) ||
+            !emulated_unlock(android::vold::BuildDataMiscCePath("", user_id), 01771) ||
             !emulated_unlock(android::vold::BuildDataMediaCePath("", user_id), 0770) ||
             !emulated_unlock(android::vold::BuildDataUserCePath("", user_id), 0771)) {
             LOG(ERROR) << "Failed to unlock user " << user_id;
@@ -782,7 +782,7 @@ bool fscrypt_lock_user_key(userid_t user_id) {
     } else if (fscrypt_is_emulated()) {
         // When in emulation mode, we just use chmod
         if (!emulated_lock(android::vold::BuildDataSystemCePath(user_id)) ||
-            !emulated_lock(android::vold::BuildDataMiscCePath(user_id)) ||
+            !emulated_lock(android::vold::BuildDataMiscCePath("", user_id)) ||
             !emulated_lock(android::vold::BuildDataMediaCePath("", user_id)) ||
             !emulated_lock(android::vold::BuildDataUserCePath("", user_id))) {
             LOG(ERROR) << "Failed to lock user " << user_id;
@@ -817,7 +817,7 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
 
         // DE_n key
         auto system_de_path = android::vold::BuildDataSystemDePath(user_id);
-        auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
+        auto misc_de_path = android::vold::BuildDataMiscDePath(volume_uuid, user_id);
         auto vendor_de_path = android::vold::BuildDataVendorDePath(user_id);
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
 
@@ -831,9 +831,10 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             if (!prepare_dir(profiles_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
             if (!prepare_dir(system_de_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
-            if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return false;
             if (!prepare_dir(vendor_de_path, 0771, AID_ROOT, AID_ROOT)) return false;
         }
+
+        if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return false;
         if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
         if (fscrypt_is_native()) {
@@ -841,11 +842,14 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             if (volume_uuid.empty()) {
                 if (!lookup_policy(s_de_policies, user_id, &de_policy)) return false;
                 if (!EnsurePolicy(de_policy, system_de_path)) return false;
-                if (!EnsurePolicy(de_policy, misc_de_path)) return false;
                 if (!EnsurePolicy(de_policy, vendor_de_path)) return false;
             } else {
-                if (!read_or_create_volkey(misc_de_path, volume_uuid, &de_policy)) return false;
+                auto misc_de_empty_volume_path = android::vold::BuildDataMiscDePath("", user_id);
+                if (!read_or_create_volkey(misc_de_empty_volume_path, volume_uuid, &de_policy)) {
+                    return false;
+                }
             }
+            if (!EnsurePolicy(de_policy, misc_de_path)) return false;
             if (!EnsurePolicy(de_policy, user_de_path)) return false;
         }
     }
@@ -853,14 +857,13 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
     if (flags & android::os::IVold::STORAGE_FLAG_CE) {
         // CE_n key
         auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
-        auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
+        auto misc_ce_path = android::vold::BuildDataMiscCePath(volume_uuid, user_id);
         auto vendor_ce_path = android::vold::BuildDataVendorCePath(user_id);
         auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
         auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
 
         if (volume_uuid.empty()) {
             if (!prepare_dir(system_ce_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
-            if (!prepare_dir(misc_ce_path, 01771, AID_SYSTEM, AID_MISC)) return false;
             if (!prepare_dir(vendor_ce_path, 0771, AID_ROOT, AID_ROOT)) return false;
         }
         if (!prepare_dir(media_ce_path, 02770, AID_MEDIA_RW, AID_MEDIA_RW)) return false;
@@ -873,6 +876,7 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             return false;
         }
 
+        if (!prepare_dir(misc_ce_path, 01771, AID_SYSTEM, AID_MISC)) return false;
         if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
         if (fscrypt_is_native()) {
@@ -880,12 +884,15 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
             if (volume_uuid.empty()) {
                 if (!lookup_policy(s_ce_policies, user_id, &ce_policy)) return false;
                 if (!EnsurePolicy(ce_policy, system_ce_path)) return false;
-                if (!EnsurePolicy(ce_policy, misc_ce_path)) return false;
                 if (!EnsurePolicy(ce_policy, vendor_ce_path)) return false;
             } else {
-                if (!read_or_create_volkey(misc_ce_path, volume_uuid, &ce_policy)) return false;
+                auto misc_ce_empty_volume_path = android::vold::BuildDataMiscCePath("", user_id);
+                if (!read_or_create_volkey(misc_ce_empty_volume_path, volume_uuid, &ce_policy)) {
+                    return false;
+                }
             }
             if (!EnsurePolicy(ce_policy, media_ce_path)) return false;
+            if (!EnsurePolicy(ce_policy, misc_ce_path)) return false;
             if (!EnsurePolicy(ce_policy, user_ce_path)) return false;
         }
 
@@ -913,20 +920,21 @@ bool fscrypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
     if (flags & android::os::IVold::STORAGE_FLAG_CE) {
         // CE_n key
         auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
-        auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
+        auto misc_ce_path = android::vold::BuildDataMiscCePath(volume_uuid, user_id);
         auto vendor_ce_path = android::vold::BuildDataVendorCePath(user_id);
         auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
         auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
 
         res &= destroy_dir(media_ce_path);
+        res &= destroy_dir(misc_ce_path);
         res &= destroy_dir(user_ce_path);
         if (volume_uuid.empty()) {
             res &= destroy_dir(system_ce_path);
-            res &= destroy_dir(misc_ce_path);
             res &= destroy_dir(vendor_ce_path);
         } else {
             if (fscrypt_is_native()) {
-                res &= destroy_volkey(misc_ce_path, volume_uuid);
+                auto misc_ce_empty_volume_path = android::vold::BuildDataMiscCePath("", user_id);
+                res &= destroy_volkey(misc_ce_empty_volume_path, volume_uuid);
             }
         }
     }
@@ -939,11 +947,12 @@ bool fscrypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
 
         // DE_n key
         auto system_de_path = android::vold::BuildDataSystemDePath(user_id);
-        auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
+        auto misc_de_path = android::vold::BuildDataMiscDePath(volume_uuid, user_id);
         auto vendor_de_path = android::vold::BuildDataVendorDePath(user_id);
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
 
         res &= destroy_dir(user_de_path);
+        res &= destroy_dir(misc_de_path);
         if (volume_uuid.empty()) {
             res &= destroy_dir(system_legacy_path);
 #if MANAGE_MISC_DIRS
@@ -951,11 +960,11 @@ bool fscrypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
 #endif
             res &= destroy_dir(profiles_de_path);
             res &= destroy_dir(system_de_path);
-            res &= destroy_dir(misc_de_path);
             res &= destroy_dir(vendor_de_path);
         } else {
             if (fscrypt_is_native()) {
-                res &= destroy_volkey(misc_de_path, volume_uuid);
+                auto misc_de_empty_volume_path = android::vold::BuildDataMiscDePath("", user_id);
+                res &= destroy_volkey(misc_de_empty_volume_path, volume_uuid);
             }
         }
     }
