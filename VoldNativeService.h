@@ -100,24 +100,9 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status openAppFuseFile(int32_t uid, int32_t mountId, int32_t fileId, int32_t flags,
                                    android::base::unique_fd* _aidl_return);
 
-    binder::Status fdeCheckPassword(const std::string& password);
-    binder::Status fdeRestart();
-    binder::Status fdeComplete(int32_t* _aidl_return);
-    binder::Status fdeEnable(int32_t passwordType, const std::string& password,
-                             int32_t encryptionFlags);
-    binder::Status fdeChangePassword(int32_t passwordType, const std::string& password);
-    binder::Status fdeVerifyPassword(const std::string& password);
-    binder::Status fdeGetField(const std::string& key, std::string* _aidl_return);
-    binder::Status fdeSetField(const std::string& key, const std::string& value);
-    binder::Status fdeGetPasswordType(int32_t* _aidl_return);
-    binder::Status fdeGetPassword(std::string* _aidl_return);
-    binder::Status fdeClearPassword();
-
     binder::Status fbeEnable();
 
-    binder::Status mountDefaultEncrypted();
     binder::Status initUser0();
-    binder::Status isConvertibleToFbe(bool* _aidl_return);
     binder::Status mountFstab(const std::string& blkDevice, const std::string& mountPoint);
     binder::Status encryptFstab(const std::string& blkDevice, const std::string& mountPoint,
                                 bool shouldFormat, const std::string& fsType);
