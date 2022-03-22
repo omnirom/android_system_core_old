@@ -470,6 +470,8 @@ bool fscrypt_initialize_systemwide_keys() {
     return true;
 }
 
+bool fscrypt_init_user0_done;
+
 bool fscrypt_init_user0() {
     LOG(DEBUG) << "fscrypt_init_user0";
     if (fscrypt_is_native()) {
@@ -504,6 +506,7 @@ bool fscrypt_init_user0() {
         if (!try_reload_ce_keys()) return false;
     }
 
+    fscrypt_init_user0_done = true;
     return true;
 }
 
