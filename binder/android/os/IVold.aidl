@@ -75,23 +75,9 @@ interface IVold {
     FileDescriptor mountAppFuse(int uid, int mountId);
     void unmountAppFuse(int uid, int mountId);
 
-    void fdeCheckPassword(@utf8InCpp String password);
-    void fdeRestart();
-    int fdeComplete();
-    void fdeEnable(int passwordType, @utf8InCpp String password, int encryptionFlags);
-    void fdeChangePassword(int passwordType, @utf8InCpp String password);
-    void fdeVerifyPassword(@utf8InCpp String password);
-    @utf8InCpp String fdeGetField(@utf8InCpp String key);
-    void fdeSetField(@utf8InCpp String key, @utf8InCpp String value);
-    int fdeGetPasswordType();
-    @utf8InCpp String fdeGetPassword();
-    void fdeClearPassword();
-
     void fbeEnable();
 
-    void mountDefaultEncrypted();
     void initUser0();
-    boolean isConvertibleToFbe();
     void mountFstab(@utf8InCpp String blkDevice, @utf8InCpp String mountPoint);
     void encryptFstab(@utf8InCpp String blkDevice, @utf8InCpp String mountPoint, boolean shouldFormat, @utf8InCpp String fsType);
 
@@ -148,15 +134,6 @@ interface IVold {
 
     void destroyDsuMetadataKey(@utf8InCpp String dsuSlot);
 
-    const int ENCRYPTION_FLAG_NO_UI = 4;
-
-    const int ENCRYPTION_STATE_NONE = 1;
-    const int ENCRYPTION_STATE_OK = 0;
-    const int ENCRYPTION_STATE_ERROR_UNKNOWN = -1;
-    const int ENCRYPTION_STATE_ERROR_INCOMPLETE = -2;
-    const int ENCRYPTION_STATE_ERROR_INCONSISTENT = -3;
-    const int ENCRYPTION_STATE_ERROR_CORRUPT = -4;
-
     const int FSTRIM_FLAG_DEEP_TRIM = 1;
 
     const int MOUNT_FLAG_PRIMARY = 1;
@@ -166,11 +143,6 @@ interface IVold {
     const int PARTITION_TYPE_PUBLIC = 0;
     const int PARTITION_TYPE_PRIVATE = 1;
     const int PARTITION_TYPE_MIXED = 2;
-
-    const int PASSWORD_TYPE_PASSWORD = 0;
-    const int PASSWORD_TYPE_DEFAULT = 1;
-    const int PASSWORD_TYPE_PATTERN = 2;
-    const int PASSWORD_TYPE_PIN = 3;
 
     const int STORAGE_FLAG_DE = 1;
     const int STORAGE_FLAG_CE = 2;
