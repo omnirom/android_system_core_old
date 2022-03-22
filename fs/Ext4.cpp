@@ -171,7 +171,7 @@ status_t Format(const std::string& source, unsigned long numSectors, const std::
 
     bool needs_casefold =
             android::base::GetBoolProperty("external_storage.casefold.enabled", false);
-    bool needs_projid = android::base::GetBoolProperty("external_storage.projid.enabled", false);
+    bool needs_projid = true;
 
     if (needs_projid) {
         cmd.push_back("-I");
