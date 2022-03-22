@@ -550,110 +550,6 @@ binder::Status VoldNativeService::openAppFuseFile(int32_t uid, int32_t mountId, 
     return Ok();
 }
 
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::fdeCheckPassword(const std::string& password) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("fdeCheckPassword is no longer supported");
-    return translate(-1);
-}
-
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::fdeRestart() {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("fdeRestart is no longer supported");
-    return Ok();
-}
-
-// TODO(b/191796797) remove this once caller is removed
-#define CRYPTO_COMPLETE_NOT_ENCRYPTED 1
-binder::Status VoldNativeService::fdeComplete(int32_t* _aidl_return) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("fdeComplete is no longer supported");
-    *_aidl_return = CRYPTO_COMPLETE_NOT_ENCRYPTED;
-    return Ok();
-}
-
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::fdeEnable(int32_t passwordType, const std::string& password,
-                                            int32_t encryptionFlags) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("fdeEnable is no longer supported");
-    return translate(-1);
-}
-
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::fdeChangePassword(int32_t passwordType,
-                                                    const std::string& password) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("fdeChangePassword is no longer supported");
-    return translate(-1);
-}
-
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::fdeVerifyPassword(const std::string& password) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("fdeVerifyPassword is no longer supported");
-    return translate(-1);
-}
-
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::fdeGetField(const std::string& key, std::string* _aidl_return) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("fdeGetField is no longer supported");
-    return translate(-1);
-}
-
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::fdeSetField(const std::string& key, const std::string& value) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("fdeSetField is no longer supported");
-    return translate(-1);
-}
-
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::fdeGetPasswordType(int32_t* _aidl_return) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("fdeGetPasswordType is no longer supported");
-    *_aidl_return = -1;
-    return Ok();
-}
-
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::fdeGetPassword(std::string* _aidl_return) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("fdeGetPassword is no longer supported");
-    return Ok();
-}
-
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::fdeClearPassword() {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("fdeClearPassword is no longer supported");
-    return Ok();
-}
-
 binder::Status VoldNativeService::fbeEnable() {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
@@ -661,30 +557,11 @@ binder::Status VoldNativeService::fbeEnable() {
     return translateBool(fscrypt_initialize_systemwide_keys());
 }
 
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::mountDefaultEncrypted() {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("mountDefaultEncrypted is no longer supported");
-    return Ok();
-}
-
 binder::Status VoldNativeService::initUser0() {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
     return translateBool(fscrypt_init_user0());
-}
-
-// TODO(b/191796797) remove this once caller is removed
-binder::Status VoldNativeService::isConvertibleToFbe(bool* _aidl_return) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    SLOGE("isConvertibleToFbe is no longer supported");
-    *_aidl_return = false;
-    return Ok();
 }
 
 binder::Status VoldNativeService::mountFstab(const std::string& blkDevice,
