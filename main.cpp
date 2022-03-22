@@ -16,6 +16,7 @@
 
 #define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
 
+#include "FsCrypt.h"
 #include "MetadataCrypt.h"
 #include "NetlinkManager.h"
 #include "VoldNativeService.h"
@@ -286,18 +287,24 @@ static void VoldLogger(android::base::LogId log_buffer_id, android::base::LogSev
                        const char* tag, const char* file, unsigned int line, const char* message) {
     logd_logger(log_buffer_id, severity, tag, file, line, message);
 
-    if (severity >= android::base::ERROR) {
-        static bool is_data_mounted = false;
+    if (severity >= android::base::WARNING) {
+        static bool early_boot_done = false;
 
-        // When /data fails to mount, we don't have adb to get logcat. So until /data is
-        // mounted we log errors to the kernel. This allows us to get failures via serial logs
-        // and via last dmesg/"fastboot oem dmesg" on devices that support it.
+        // If metadata encryption setup (fscrypt_mount_metadata_encrypted) or
+        // basic FBE setup (fscrypt_init_user0) fails, then the boot will fail
+        // before adb can be started, so logcat won't be available.  To allow
+        // debugging these early boot failures, log early errors and warnings to
+        // the kernel log.  This allows diagnosing failures via the serial log,
+        // or via last dmesg/"fastboot oem dmesg" on devices that support it.
         //
-        // As a very quick-and-dirty test for /data, we check whether /data/misc/vold exists.
-        if (is_data_mounted || access("/data/misc/vold", F_OK) == 0) {
-            is_data_mounted = true;
-            return;
+        // As a very quick-and-dirty test for whether /data has been mounted,
+        // check whether /data/misc/vold exists.
+        if (!early_boot_done) {
+            if (access("/data/misc/vold", F_OK) == 0 && fscrypt_init_user0_done) {
+                early_boot_done = true;
+                return;
+            }
+            android::base::KernelLogger(log_buffer_id, severity, tag, file, line, message);
         }
-        android::base::KernelLogger(log_buffer_id, severity, tag, file, line, message);
     }
 }
