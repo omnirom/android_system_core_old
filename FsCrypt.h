@@ -22,6 +22,7 @@
 bool fscrypt_initialize_systemwide_keys();
 
 bool fscrypt_init_user0();
+extern bool fscrypt_init_user0_done;
 bool fscrypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral);
 bool fscrypt_destroy_user_key(userid_t user_id);
 bool fscrypt_add_user_key_auth(userid_t user_id, int serial, const std::string& secret);
