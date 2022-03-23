@@ -37,7 +37,6 @@ namespace vold {
 
 static const char* kVoldAppDataIsolationEnabled = "persist.sys.vold_app_data_isolation_enabled";
 static const char* kExternalStorageSdcardfs = "external_storage.sdcardfs.enabled";
-static const char* kFuseBpfEnabled = "persist.sys.fuse.bpf.override";
 
 static constexpr std::chrono::seconds kUntrustedFsckSleepTime(45);
 
@@ -205,6 +204,8 @@ status_t UnmountUserFuse(userid_t userId, const std::string& absolute_lower_path
                          const std::string& relative_upper_path);
 
 status_t PrepareAndroidDirs(const std::string& volumeRoot);
+
+bool IsFuseBpfEnabled();
 
 // Open a given directory as an FD, and return that and the corresponding procfs virtual
 // symlink path that can be used in any API that accepts a path string. Path stays valid until
