@@ -12,5 +12,19 @@
     {
       "name": "AdoptableHostTest"
     }
+  ],
+  "hwasan-postsubmit": [
+    {
+      "name": "CtsScopedStorageCoreHostTest"
+    },
+    {
+      "name": "CtsScopedStorageHostTest"
+    },
+    {
+      "name": "CtsScopedStorageDeviceOnlyTest"
+    },
+    {
+      "name": "AdoptableHostTest"
+    }
   ]
 }
