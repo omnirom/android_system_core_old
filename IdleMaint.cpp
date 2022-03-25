@@ -547,7 +547,9 @@ void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float 
     std::string dirtySegmentsPath = f2fsSysfsPath + "/dirty_segments";
     std::string gcSleepTimePath = f2fsSysfsPath + "/gc_urgent_sleep_time";
     std::string gcUrgentModePath = f2fsSysfsPath + "/gc_urgent";
-    std::string freeSegmentsStr, dirtySegmentsStr;
+    std::string ovpSegmentsPath = f2fsSysfsPath + "/ovp_segments";
+    std::string reservedBlocksPath = f2fsSysfsPath + "/reserved_blocks";
+    std::string freeSegmentsStr, dirtySegmentsStr, ovpSegmentsStr, reservedBlocksStr;
 
     if (!ReadFileToString(freeSegmentsPath, &freeSegmentsStr)) {
         PLOG(WARNING) << "Reading failed in " << freeSegmentsPath;
@@ -559,9 +561,21 @@ void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float 
         return;
     }
 
+    if (!ReadFileToString(ovpSegmentsPath, &ovpSegmentsStr)) {
+            PLOG(WARNING) << "Reading failed in " << ovpSegmentsPath;
+            return;
+        }
+
+    if (!ReadFileToString(reservedBlocksPath, &reservedBlocksStr)) {
+            PLOG(WARNING) << "Reading failed in " << reservedBlocksPath;
+            return;
+        }
+
     int32_t freeSegments = std::stoi(freeSegmentsStr);
     int32_t dirtySegments = std::stoi(dirtySegmentsStr);
+    int32_t reservedBlocks = std::stoi(ovpSegmentsStr) + std::stoi(reservedBlocksStr);
 
+    freeSegments = freeSegments > reservedBlocks ? freeSegments - reservedBlocks : 0;
     neededSegments *= reclaimWeight;
     if (freeSegments >= neededSegments) {
         LOG(INFO) << "Enough free segments: " << freeSegments
