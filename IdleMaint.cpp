@@ -87,7 +87,7 @@ static const int GC_TIMEOUT_SEC = 420;
 static const int DEVGC_TIMEOUT_SEC = 120;
 static const int KBYTES_IN_SEGMENT = 2048;
 static const int MIN_GC_URGENT_SLEEP_TIME = 500;
-static const int ONE_HOUR_IN_MS = 3600000;
+static const int ONE_MINUTE_IN_MS = 60000;
 static const int GC_NORMAL_MODE = 0;
 static const int GC_URGENT_MID_MODE = 3;
 
@@ -531,7 +531,7 @@ int32_t GetStorageLifeTime() {
 }
 
 void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float dirtyReclaimRate,
-                     float reclaimWeight) {
+                     float reclaimWeight, int32_t gcPeriod) {
     std::list<std::string> paths;
     bool needGC = true;
 
@@ -586,7 +586,7 @@ void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float 
     if (neededSegments == 0) {
         sleepTime = MIN_GC_URGENT_SLEEP_TIME;
     } else {
-        sleepTime = ONE_HOUR_IN_MS / neededSegments;
+        sleepTime = gcPeriod * ONE_MINUTE_IN_MS / neededSegments;
         if (sleepTime < MIN_GC_URGENT_SLEEP_TIME) {
             sleepTime = MIN_GC_URGENT_SLEEP_TIME;
         }
