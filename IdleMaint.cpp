@@ -87,7 +87,7 @@ static const int GC_TIMEOUT_SEC = 420;
 static const int DEVGC_TIMEOUT_SEC = 120;
 static const int KBYTES_IN_SEGMENT = 2048;
 static const int MIN_GC_URGENT_SLEEP_TIME = 500;
-static const int ONE_HOUR_IN_MS = 3600000;
+static const int ONE_MINUTE_IN_MS = 60000;
 static const int GC_NORMAL_MODE = 0;
 static const int GC_URGENT_MID_MODE = 3;
 
@@ -531,9 +531,10 @@ int32_t GetStorageLifeTime() {
 }
 
 void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float dirtyReclaimRate,
-                     float reclaimWeight) {
+                     float reclaimWeight, int32_t gcPeriod) {
     std::list<std::string> paths;
     bool needGC = true;
+    int32_t sleepTime;
 
     addFromFstab(&paths, PathTypes::kBlkDevice, true);
     if (paths.empty()) {
@@ -546,7 +547,9 @@ void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float 
     std::string dirtySegmentsPath = f2fsSysfsPath + "/dirty_segments";
     std::string gcSleepTimePath = f2fsSysfsPath + "/gc_urgent_sleep_time";
     std::string gcUrgentModePath = f2fsSysfsPath + "/gc_urgent";
-    std::string freeSegmentsStr, dirtySegmentsStr;
+    std::string ovpSegmentsPath = f2fsSysfsPath + "/ovp_segments";
+    std::string reservedBlocksPath = f2fsSysfsPath + "/reserved_blocks";
+    std::string freeSegmentsStr, dirtySegmentsStr, ovpSegmentsStr, reservedBlocksStr;
 
     if (!ReadFileToString(freeSegmentsPath, &freeSegmentsStr)) {
         PLOG(WARNING) << "Reading failed in " << freeSegmentsPath;
@@ -558,9 +561,21 @@ void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float 
         return;
     }
 
+    if (!ReadFileToString(ovpSegmentsPath, &ovpSegmentsStr)) {
+            PLOG(WARNING) << "Reading failed in " << ovpSegmentsPath;
+            return;
+        }
+
+    if (!ReadFileToString(reservedBlocksPath, &reservedBlocksStr)) {
+            PLOG(WARNING) << "Reading failed in " << reservedBlocksPath;
+            return;
+        }
+
     int32_t freeSegments = std::stoi(freeSegmentsStr);
     int32_t dirtySegments = std::stoi(dirtySegmentsStr);
+    int32_t reservedBlocks = std::stoi(ovpSegmentsStr) + std::stoi(reservedBlocksStr);
 
+    freeSegments = freeSegments > reservedBlocks ? freeSegments - reservedBlocks : 0;
     neededSegments *= reclaimWeight;
     if (freeSegments >= neededSegments) {
         LOG(INFO) << "Enough free segments: " << freeSegments
@@ -570,6 +585,18 @@ void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float 
         LOG(INFO) << "The sum of free segments: " << freeSegments
                    << ", dirty segments: " << dirtySegments << " is under " << minSegmentThreshold;
         needGC = false;
+    } else {
+        neededSegments -= freeSegments;
+        neededSegments = std::min(neededSegments, (int32_t)(dirtySegments * dirtyReclaimRate));
+        if (neededSegments == 0) {
+            LOG(INFO) << "Low dirty segments: " << dirtySegments;
+            needGC = false;
+        } else {
+            sleepTime = gcPeriod * ONE_MINUTE_IN_MS / neededSegments;
+            if (sleepTime < MIN_GC_URGENT_SLEEP_TIME) {
+                sleepTime = MIN_GC_URGENT_SLEEP_TIME;
+            }
+        }
     }
 
     if (!needGC) {
@@ -579,18 +606,6 @@ void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float 
         return;
     }
 
-    int32_t sleepTime;
-
-    neededSegments -= freeSegments;
-    neededSegments = std::min(neededSegments, (int32_t)(dirtySegments * dirtyReclaimRate));
-    if (neededSegments == 0) {
-        sleepTime = MIN_GC_URGENT_SLEEP_TIME;
-    } else {
-        sleepTime = ONE_HOUR_IN_MS / neededSegments;
-        if (sleepTime < MIN_GC_URGENT_SLEEP_TIME) {
-            sleepTime = MIN_GC_URGENT_SLEEP_TIME;
-        }
-    }
     if (!WriteStringToFile(std::to_string(sleepTime), gcSleepTimePath)) {
         PLOG(WARNING) << "Writing failed in " << gcSleepTimePath;
         return;
