@@ -49,7 +49,7 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, int userId)
     mRawPath = rawPath;
     mLabel = "emulated";
     mFuseMounted = false;
-    mFuseBpfEnabled = base::GetBoolProperty(kFuseBpfEnabled, false);
+    mFuseBpfEnabled = IsFuseBpfEnabled();
     mUseSdcardFs = IsSdcardfsUsed();
     mAppDataIsolationEnabled = base::GetBoolProperty(kVoldAppDataIsolationEnabled, false);
 }
@@ -61,7 +61,7 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const s
     mRawPath = rawPath;
     mLabel = fsUuid;
     mFuseMounted = false;
-    mFuseBpfEnabled = base::GetBoolProperty(kFuseBpfEnabled, false);
+    mFuseBpfEnabled = IsFuseBpfEnabled();
     mUseSdcardFs = IsSdcardfsUsed();
     mAppDataIsolationEnabled = base::GetBoolProperty(kVoldAppDataIsolationEnabled, false);
 }
