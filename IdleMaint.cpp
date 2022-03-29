@@ -534,6 +534,7 @@ void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float 
                      float reclaimWeight, int32_t gcPeriod) {
     std::list<std::string> paths;
     bool needGC = true;
+    int32_t sleepTime;
 
     addFromFstab(&paths, PathTypes::kBlkDevice, true);
     if (paths.empty()) {
@@ -570,6 +571,18 @@ void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float 
         LOG(INFO) << "The sum of free segments: " << freeSegments
                    << ", dirty segments: " << dirtySegments << " is under " << minSegmentThreshold;
         needGC = false;
+    } else {
+        neededSegments -= freeSegments;
+        neededSegments = std::min(neededSegments, (int32_t)(dirtySegments * dirtyReclaimRate));
+        if (neededSegments == 0) {
+            LOG(INFO) << "Low dirty segments: " << dirtySegments;
+            needGC = false;
+        } else {
+            sleepTime = gcPeriod * ONE_MINUTE_IN_MS / neededSegments;
+            if (sleepTime < MIN_GC_URGENT_SLEEP_TIME) {
+                sleepTime = MIN_GC_URGENT_SLEEP_TIME;
+            }
+        }
     }
 
     if (!needGC) {
@@ -579,18 +592,6 @@ void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float 
         return;
     }
 
-    int32_t sleepTime;
-
-    neededSegments -= freeSegments;
-    neededSegments = std::min(neededSegments, (int32_t)(dirtySegments * dirtyReclaimRate));
-    if (neededSegments == 0) {
-        sleepTime = MIN_GC_URGENT_SLEEP_TIME;
-    } else {
-        sleepTime = gcPeriod * ONE_MINUTE_IN_MS / neededSegments;
-        if (sleepTime < MIN_GC_URGENT_SLEEP_TIME) {
-            sleepTime = MIN_GC_URGENT_SLEEP_TIME;
-        }
-    }
     if (!WriteStringToFile(std::to_string(sleepTime), gcSleepTimePath)) {
         PLOG(WARNING) << "Writing failed in " << gcSleepTimePath;
         return;
