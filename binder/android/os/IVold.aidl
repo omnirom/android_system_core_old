@@ -68,7 +68,8 @@ interface IVold {
     void abortIdleMaint(IVoldTaskListener listener);
     int getStorageLifeTime();
     void setGCUrgentPace(int neededSegments, int minSegmentThreshold,
-                         float dirtyReclaimRate, float reclaimWeight);
+                         float dirtyReclaimRate, float reclaimWeight,
+                         int gcPeriod);
     void refreshLatestWrite();
     int getWriteAmount();
 

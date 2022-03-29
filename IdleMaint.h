@@ -27,7 +27,7 @@ int RunIdleMaint(bool needGC, const android::sp<android::os::IVoldTaskListener>&
 int AbortIdleMaint(const android::sp<android::os::IVoldTaskListener>& listener);
 int32_t GetStorageLifeTime();
 void SetGCUrgentPace(int32_t neededSegments, int32_t minSegmentThreshold, float dirtyReclaimRate,
-                     float reclaimWeight);
+                     float reclaimWeight, int32_t gcPeriod);
 void RefreshLatestWrite();
 int32_t GetWriteAmount();
 
