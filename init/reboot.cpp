@@ -1036,16 +1036,18 @@ void HandlePowerctlMessage(const std::string& command) {
                 }
             } else if (reboot_target == "recovery") {
                 bootloader_message boot = {};
-                if (std::string err; !read_bootloader_message(&boot, &err)) {
-                    LOG(ERROR) << "Failed to read bootloader message: " << err;
-                }
-                // Update the boot command field if it's empty, and preserve
-                // the other arguments in the bootloader message.
-                if (!CommandIsPresent(&boot)) {
-                    strlcpy(boot.command, "boot-recovery", sizeof(boot.command));
-                    if (std::string err; !write_bootloader_message(boot, &err)) {
-                        LOG(ERROR) << "Failed to set bootloader message: " << err;
-                        return;
+                if (std::string err; !get_misc_blk_device(&err).empty()) {
+                    if (std::string err; !read_bootloader_message(&boot, &err)) {
+                        LOG(ERROR) << "Failed to read bootloader message: " << err;
+                    }
+                    // Update the boot command field if it's empty, and preserve
+                    // the other arguments in the bootloader message.
+                    if (!CommandIsPresent(&boot)) {
+                        strlcpy(boot.command, "boot-recovery", sizeof(boot.command));
+                        if (std::string err; !write_bootloader_message(boot, &err)) {
+                            LOG(ERROR) << "Failed to set bootloader message: " << err;
+                            return;
+                        }
                     }
                 }
             } else if (reboot_target == "quiescent") {
