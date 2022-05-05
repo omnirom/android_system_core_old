@@ -812,6 +812,23 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
     LOG(DEBUG) << "fscrypt_prepare_user_storage for volume " << escape_empty(volume_uuid)
                << ", user " << user_id << ", serial " << serial << ", flags " << flags;
 
+    // Internal storage must be prepared before adoptable storage, since the
+    // user's volume keys are stored in their internal storage.
+    if (!volume_uuid.empty()) {
+        if ((flags & android::os::IVold::STORAGE_FLAG_DE) &&
+            !android::vold::pathExists(android::vold::BuildDataMiscDePath("", user_id))) {
+            LOG(ERROR) << "Cannot prepare DE storage for user " << user_id << " on volume "
+                       << volume_uuid << " before internal storage";
+            return false;
+        }
+        if ((flags & android::os::IVold::STORAGE_FLAG_CE) &&
+            !android::vold::pathExists(android::vold::BuildDataMiscCePath("", user_id))) {
+            LOG(ERROR) << "Cannot prepare CE storage for user " << user_id << " on volume "
+                       << volume_uuid << " before internal storage";
+            return false;
+        }
+    }
+
     if (flags & android::os::IVold::STORAGE_FLAG_DE) {
         // DE_sys key
         auto system_legacy_path = android::vold::BuildDataSystemLegacyPath(user_id);
