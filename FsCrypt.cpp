@@ -309,7 +309,7 @@ static bool read_and_install_user_ce_key(userid_t user_id,
 
 static bool prepare_dir(const std::string& dir, mode_t mode, uid_t uid, gid_t gid) {
     LOG(DEBUG) << "Preparing: " << dir;
-    if (fs_prepare_dir(dir.c_str(), mode, uid, gid) != 0) {
+    if (android::vold::PrepareDir(dir, mode, uid, gid, 0) != 0) {
         PLOG(ERROR) << "Failed to prepare " << dir;
         return false;
     }
