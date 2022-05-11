@@ -1179,6 +1179,12 @@ dev_t GetDevice(const std::string& path) {
     }
 }
 
+// Returns true if |path| exists and is a symlink.
+bool IsSymlink(const std::string& path) {
+    struct stat stbuf;
+    return lstat(path.c_str(), &stbuf) == 0 && S_ISLNK(stbuf.st_mode);
+}
+
 // Returns true if |path1| names the same existing file or directory as |path2|.
 bool IsSameFile(const std::string& path1, const std::string& path2) {
     struct stat stbuf1, stbuf2;
