@@ -163,6 +163,8 @@ std::string BuildDataUserDePath(const std::string& volumeUuid, userid_t userid);
 
 dev_t GetDevice(const std::string& path);
 
+bool IsSymlink(const std::string& path);
+
 bool IsSameFile(const std::string& path1, const std::string& path2);
 
 status_t EnsureDirExists(const std::string& path, mode_t mode, uid_t uid, gid_t gid);
