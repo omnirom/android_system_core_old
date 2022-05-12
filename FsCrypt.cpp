@@ -94,8 +94,15 @@ const std::string prepare_subdirs_path = "/system/bin/vold_prepare_subdirs";
 const std::string systemwide_volume_key_dir =
     std::string() + DATA_MNT_POINT + "/misc/vold/volume_keys";
 
+const std::string data_data_dir = std::string() + DATA_MNT_POINT + "/data";
+const std::string data_user_0_dir = std::string() + DATA_MNT_POINT + "/user/0";
+const std::string media_obb_dir = std::string() + DATA_MNT_POINT + "/media/obb";
+
 // Some users are ephemeral, don't try to wipe their keys from disk
 std::set<userid_t> s_ephemeral_users;
+
+// The system DE encryption policy
+EncryptionPolicy s_device_policy;
 
 // Map user ids to encryption policies
 std::map<userid_t, EncryptionPolicy> s_de_policies;
@@ -443,11 +450,12 @@ bool fscrypt_initialize_systemwide_keys() {
                                makeGen(options), &device_key))
         return false;
 
-    EncryptionPolicy device_policy;
-    if (!install_storage_key(DATA_MNT_POINT, options, device_key, &device_policy)) return false;
+    // This initializes s_device_policy, which is a global variable so that
+    // fscrypt_init_user0() can access it later.
+    if (!install_storage_key(DATA_MNT_POINT, options, device_key, &s_device_policy)) return false;
 
     std::string options_string;
-    if (!OptionsToString(device_policy.options, &options_string)) {
+    if (!OptionsToString(s_device_policy.options, &options_string)) {
         LOG(ERROR) << "Unable to serialize options";
         return false;
     }
@@ -455,7 +463,7 @@ bool fscrypt_initialize_systemwide_keys() {
     if (!android::vold::writeStringToFile(options_string, options_filename)) return false;
 
     std::string ref_filename = std::string(DATA_MNT_POINT) + fscrypt_key_ref;
-    if (!android::vold::writeStringToFile(device_policy.key_raw_ref, ref_filename)) return false;
+    if (!android::vold::writeStringToFile(s_device_policy.key_raw_ref, ref_filename)) return false;
     LOG(INFO) << "Wrote system DE key reference to:" << ref_filename;
 
     KeyBuffer per_boot_key;
@@ -470,24 +478,63 @@ bool fscrypt_initialize_systemwide_keys() {
     return true;
 }
 
+static bool prepare_special_dirs() {
+    // Create /data/user/0 and its bind-mount alias /data/data.  This *should*
+    // happen in fscrypt_prepare_user_storage().  However, it actually must be
+    // done early, before the rest of user 0's CE storage is prepared.  This is
+    // because zygote may need to set up app data isolation before then, which
+    // requires mounting a tmpfs over /data/data to ensure it remains hidden.
+    // This issue arises due to /data/data being in the top-level directory.
+    //
+    // /data/user/0 used to be a symlink to /data/data, so we must first delete
+    // the old symlink if present.
+    if (android::vold::IsSymlink(data_user_0_dir) && android::vold::Unlink(data_user_0_dir) != 0)
+        return false;
+    if (!prepare_dir(data_data_dir, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
+    if (!prepare_dir(data_user_0_dir, 0700, AID_SYSTEM, AID_SYSTEM)) return false;
+    if (android::vold::BindMount(data_data_dir, data_user_0_dir) != 0) return false;
+
+    // If /data/media/obb doesn't exist, create it and encrypt it with the
+    // device policy.  Normally, device-policy-encrypted directories are created
+    // and encrypted by init; /data/media/obb is special because it is located
+    // in /data/media.  Since /data/media also contains per-user encrypted
+    // directories, by design only vold can write to it.  As a side effect of
+    // that, vold must create /data/media/obb.
+    //
+    // We must tolerate /data/media/obb being unencrypted if it already exists
+    // on-disk, since it used to be unencrypted (b/64566063).
+    bool encrypt_obb = !android::vold::pathExists(media_obb_dir) && fscrypt_is_native();
+    if (!prepare_dir(media_obb_dir, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return false;
+    if (encrypt_obb && !EnsurePolicy(s_device_policy, media_obb_dir)) return false;
+    return true;
+}
+
 bool fscrypt_init_user0_done;
 
 bool fscrypt_init_user0() {
     LOG(DEBUG) << "fscrypt_init_user0";
+
+    if (!prepare_special_dirs()) return false;
+
     if (fscrypt_is_native()) {
         if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return false;
         if (!prepare_dir(user_key_dir + "/ce", 0700, AID_ROOT, AID_ROOT)) return false;
         if (!prepare_dir(user_key_dir + "/de", 0700, AID_ROOT, AID_ROOT)) return false;
         if (!android::vold::pathExists(get_de_key_path(0))) {
             if (!create_and_install_user_keys(0, false)) return false;
+            // Since /data/user/0 was created already, and directory creation
+            // and encryption should always happen together, encrypt
+            // /data/user/0 right away without waiting for the request to
+            // prepare user 0's CE storage.
+            if (!EnsurePolicy(s_ce_policies[0], data_user_0_dir)) return false;
         }
         // TODO: switch to loading only DE_0 here once framework makes
         // explicit calls to install DE keys for secondary users
         if (!load_all_de_keys()) return false;
     }
-    // We can only safely prepare DE storage here, since CE keys are probably
-    // entangled with user credentials.  The framework will always prepare CE
-    // storage once CE keys are installed.
+    // We only prepare DE storage here, since user 0's CE key won't be installed
+    // yet unless it was just created.  The framework will prepare the user's CE
+    // storage later, once their CE key is installed.
     if (!fscrypt_prepare_user_storage("", 0, 0, android::os::IVold::STORAGE_FLAG_DE)) {
         LOG(ERROR) << "Failed to prepare user 0 storage";
         return false;
