@@ -1160,14 +1160,6 @@ std::string BuildDataMiscDePath(const std::string& volumeUuid, userid_t userId) 
 std::string BuildDataUserCePath(const std::string& volumeUuid, userid_t userId) {
     // TODO: unify with installd path generation logic
     std::string data(BuildDataPath(volumeUuid));
-    if (volumeUuid.empty() && userId == 0) {
-        std::string legacy = StringPrintf("%s/data", data.c_str());
-        struct stat sb;
-        if (lstat(legacy.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode)) {
-            /* /data/data is dir, return /data/data for legacy system */
-            return legacy;
-        }
-    }
     return StringPrintf("%s/user/%u", data.c_str(), userId);
 }
 
