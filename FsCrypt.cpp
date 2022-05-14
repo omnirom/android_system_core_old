@@ -94,8 +94,15 @@ const std::string prepare_subdirs_path = "/system/bin/vold_prepare_subdirs";
 const std::string systemwide_volume_key_dir =
     std::string() + DATA_MNT_POINT + "/misc/vold/volume_keys";
 
+const std::string data_data_dir = std::string() + DATA_MNT_POINT + "/data";
+const std::string data_user_0_dir = std::string() + DATA_MNT_POINT + "/user/0";
+const std::string media_obb_dir = std::string() + DATA_MNT_POINT + "/media/obb";
+
 // Some users are ephemeral, don't try to wipe their keys from disk
 std::set<userid_t> s_ephemeral_users;
+
+// The system DE encryption policy
+EncryptionPolicy s_device_policy;
 
 // Map user ids to encryption policies
 std::map<userid_t, EncryptionPolicy> s_de_policies;
@@ -307,12 +314,23 @@ static bool read_and_install_user_ce_key(userid_t user_id,
     return true;
 }
 
+// Prepare a directory without assigning it an encryption policy.  The directory
+// will inherit the encryption policy of its parent directory, or will be
+// unencrypted if the parent directory is unencrypted.
 static bool prepare_dir(const std::string& dir, mode_t mode, uid_t uid, gid_t gid) {
     LOG(DEBUG) << "Preparing: " << dir;
     if (android::vold::PrepareDir(dir, mode, uid, gid, 0) != 0) {
         PLOG(ERROR) << "Failed to prepare " << dir;
         return false;
     }
+    return true;
+}
+
+// Prepare a directory and assign it the given encryption policy.
+static bool prepare_dir_with_policy(const std::string& dir, mode_t mode, uid_t uid, gid_t gid,
+                                    const EncryptionPolicy& policy) {
+    if (!prepare_dir(dir, mode, uid, gid)) return false;
+    if (fscrypt_is_native() && !EnsurePolicy(policy, dir)) return false;
     return true;
 }
 
@@ -365,7 +383,6 @@ static bool lookup_policy(const std::map<userid_t, EncryptionPolicy>& key_map, u
                           EncryptionPolicy* policy) {
     auto refi = key_map.find(user_id);
     if (refi == key_map.end()) {
-        LOG(DEBUG) << "Cannot find key for " << user_id;
         return false;
     }
     *policy = refi->second;
@@ -443,11 +460,12 @@ bool fscrypt_initialize_systemwide_keys() {
                                makeGen(options), &device_key))
         return false;
 
-    EncryptionPolicy device_policy;
-    if (!install_storage_key(DATA_MNT_POINT, options, device_key, &device_policy)) return false;
+    // This initializes s_device_policy, which is a global variable so that
+    // fscrypt_init_user0() can access it later.
+    if (!install_storage_key(DATA_MNT_POINT, options, device_key, &s_device_policy)) return false;
 
     std::string options_string;
-    if (!OptionsToString(device_policy.options, &options_string)) {
+    if (!OptionsToString(s_device_policy.options, &options_string)) {
         LOG(ERROR) << "Unable to serialize options";
         return false;
     }
@@ -455,7 +473,7 @@ bool fscrypt_initialize_systemwide_keys() {
     if (!android::vold::writeStringToFile(options_string, options_filename)) return false;
 
     std::string ref_filename = std::string(DATA_MNT_POINT) + fscrypt_key_ref;
-    if (!android::vold::writeStringToFile(device_policy.key_raw_ref, ref_filename)) return false;
+    if (!android::vold::writeStringToFile(s_device_policy.key_raw_ref, ref_filename)) return false;
     LOG(INFO) << "Wrote system DE key reference to:" << ref_filename;
 
     KeyBuffer per_boot_key;
@@ -470,10 +488,57 @@ bool fscrypt_initialize_systemwide_keys() {
     return true;
 }
 
+static bool prepare_special_dirs() {
+    // Ensure that /data/data and its "alias" /data/user/0 exist, and create the
+    // bind mount of /data/data onto /data/user/0.  This *should* happen in
+    // fscrypt_prepare_user_storage().  However, it actually must be done early,
+    // before the rest of user 0's CE storage is prepared.  This is because
+    // zygote may need to set up app data isolation before then, which requires
+    // mounting a tmpfs over /data/data to ensure it remains hidden.  This issue
+    // arises due to /data/data being in the top-level directory.
+
+    // /data/user/0 used to be a symlink to /data/data, so we must first delete
+    // the old symlink if present.
+    if (android::vold::IsSymlink(data_user_0_dir) && android::vold::Unlink(data_user_0_dir) != 0)
+        return false;
+    // On first boot, we'll be creating /data/data for the first time, and user
+    // 0's CE key will be installed already since it was just created.  Take the
+    // opportunity to also set the encryption policy of /data/data right away.
+    EncryptionPolicy ce_policy;
+    if (lookup_policy(s_ce_policies, 0, &ce_policy)) {
+        if (!prepare_dir_with_policy(data_data_dir, 0771, AID_SYSTEM, AID_SYSTEM, ce_policy))
+            return false;
+    } else {
+        if (!prepare_dir(data_data_dir, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
+        // EnsurePolicy() will have to happen later, in fscrypt_prepare_user_storage().
+    }
+    if (!prepare_dir(data_user_0_dir, 0700, AID_SYSTEM, AID_SYSTEM)) return false;
+    if (android::vold::BindMount(data_data_dir, data_user_0_dir) != 0) return false;
+
+    // If /data/media/obb doesn't exist, create it and encrypt it with the
+    // device policy.  Normally, device-policy-encrypted directories are created
+    // and encrypted by init; /data/media/obb is special because it is located
+    // in /data/media.  Since /data/media also contains per-user encrypted
+    // directories, by design only vold can write to it.  As a side effect of
+    // that, vold must create /data/media/obb.
+    //
+    // We must tolerate /data/media/obb being unencrypted if it already exists
+    // on-disk, since it used to be unencrypted (b/64566063).
+    if (android::vold::pathExists(media_obb_dir)) {
+        if (!prepare_dir(media_obb_dir, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return false;
+    } else {
+        if (!prepare_dir_with_policy(media_obb_dir, 0770, AID_MEDIA_RW, AID_MEDIA_RW,
+                                     s_device_policy))
+            return false;
+    }
+    return true;
+}
+
 bool fscrypt_init_user0_done;
 
 bool fscrypt_init_user0() {
     LOG(DEBUG) << "fscrypt_init_user0";
+
     if (fscrypt_is_native()) {
         if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return false;
         if (!prepare_dir(user_key_dir + "/ce", 0700, AID_ROOT, AID_ROOT)) return false;
@@ -485,9 +550,14 @@ bool fscrypt_init_user0() {
         // explicit calls to install DE keys for secondary users
         if (!load_all_de_keys()) return false;
     }
-    // We can only safely prepare DE storage here, since CE keys are probably
-    // entangled with user credentials.  The framework will always prepare CE
-    // storage once CE keys are installed.
+
+    // Now that user 0's CE key has been created, we can prepare /data/data.
+    if (!prepare_special_dirs()) return false;
+
+    // With the exception of what is done by prepare_special_dirs() above, we
+    // only prepare DE storage here, since user 0's CE key won't be installed
+    // yet unless it was just created.  The framework will prepare the user's CE
+    // storage later, once their CE key is installed.
     if (!fscrypt_prepare_user_storage("", 0, 0, android::os::IVold::STORAGE_FLAG_DE)) {
         LOG(ERROR) << "Failed to prepare user 0 storage";
         return false;
@@ -836,10 +906,25 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
         auto profiles_de_path = android::vold::BuildDataProfilesDePath(user_id);
 
         // DE_n key
+        EncryptionPolicy de_policy;
         auto system_de_path = android::vold::BuildDataSystemDePath(user_id);
         auto misc_de_path = android::vold::BuildDataMiscDePath(volume_uuid, user_id);
         auto vendor_de_path = android::vold::BuildDataVendorDePath(user_id);
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
+
+        if (fscrypt_is_native()) {
+            if (volume_uuid.empty()) {
+                if (!lookup_policy(s_de_policies, user_id, &de_policy)) {
+                    LOG(ERROR) << "Cannot find DE policy for user " << user_id;
+                    return false;
+                }
+            } else {
+                auto misc_de_empty_volume_path = android::vold::BuildDataMiscDePath("", user_id);
+                if (!read_or_create_volkey(misc_de_empty_volume_path, volume_uuid, &de_policy)) {
+                    return false;
+                }
+            }
+        }
 
         if (volume_uuid.empty()) {
             if (!prepare_dir(system_legacy_path, 0700, AID_SYSTEM, AID_SYSTEM)) return false;
@@ -850,43 +935,49 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
 #endif
             if (!prepare_dir(profiles_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
-            if (!prepare_dir(system_de_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
-            if (!prepare_dir(vendor_de_path, 0771, AID_ROOT, AID_ROOT)) return false;
+            if (!prepare_dir_with_policy(system_de_path, 0770, AID_SYSTEM, AID_SYSTEM, de_policy))
+                return false;
+            if (!prepare_dir_with_policy(vendor_de_path, 0771, AID_ROOT, AID_ROOT, de_policy))
+                return false;
         }
 
-        if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return false;
-        if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
-
-        if (fscrypt_is_native()) {
-            EncryptionPolicy de_policy;
-            if (volume_uuid.empty()) {
-                if (!lookup_policy(s_de_policies, user_id, &de_policy)) return false;
-                if (!EnsurePolicy(de_policy, system_de_path)) return false;
-                if (!EnsurePolicy(de_policy, vendor_de_path)) return false;
-            } else {
-                auto misc_de_empty_volume_path = android::vold::BuildDataMiscDePath("", user_id);
-                if (!read_or_create_volkey(misc_de_empty_volume_path, volume_uuid, &de_policy)) {
-                    return false;
-                }
-            }
-            if (!EnsurePolicy(de_policy, misc_de_path)) return false;
-            if (!EnsurePolicy(de_policy, user_de_path)) return false;
-        }
+        if (!prepare_dir_with_policy(misc_de_path, 01771, AID_SYSTEM, AID_MISC, de_policy))
+            return false;
+        if (!prepare_dir_with_policy(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM, de_policy))
+            return false;
     }
 
     if (flags & android::os::IVold::STORAGE_FLAG_CE) {
         // CE_n key
+        EncryptionPolicy ce_policy;
         auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
         auto misc_ce_path = android::vold::BuildDataMiscCePath(volume_uuid, user_id);
         auto vendor_ce_path = android::vold::BuildDataVendorCePath(user_id);
         auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
         auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
 
-        if (volume_uuid.empty()) {
-            if (!prepare_dir(system_ce_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
-            if (!prepare_dir(vendor_ce_path, 0771, AID_ROOT, AID_ROOT)) return false;
+        if (fscrypt_is_native()) {
+            if (volume_uuid.empty()) {
+                if (!lookup_policy(s_ce_policies, user_id, &ce_policy)) {
+                    LOG(ERROR) << "Cannot find CE policy for user " << user_id;
+                    return false;
+                }
+            } else {
+                auto misc_ce_empty_volume_path = android::vold::BuildDataMiscCePath("", user_id);
+                if (!read_or_create_volkey(misc_ce_empty_volume_path, volume_uuid, &ce_policy)) {
+                    return false;
+                }
+            }
         }
-        if (!prepare_dir(media_ce_path, 02770, AID_MEDIA_RW, AID_MEDIA_RW)) return false;
+
+        if (volume_uuid.empty()) {
+            if (!prepare_dir_with_policy(system_ce_path, 0770, AID_SYSTEM, AID_SYSTEM, ce_policy))
+                return false;
+            if (!prepare_dir_with_policy(vendor_ce_path, 0771, AID_ROOT, AID_ROOT, ce_policy))
+                return false;
+        }
+        if (!prepare_dir_with_policy(media_ce_path, 02770, AID_MEDIA_RW, AID_MEDIA_RW, ce_policy))
+            return false;
         // On devices without sdcardfs (kernel 5.4+), the path permissions aren't fixed
         // up automatically; therefore, use a default ACL, to ensure apps with MEDIA_RW
         // can keep reading external storage; in particular, this allows app cloning
@@ -895,26 +986,10 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
         if (ret != android::OK) {
             return false;
         }
-
-        if (!prepare_dir(misc_ce_path, 01771, AID_SYSTEM, AID_MISC)) return false;
-        if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
-
-        if (fscrypt_is_native()) {
-            EncryptionPolicy ce_policy;
-            if (volume_uuid.empty()) {
-                if (!lookup_policy(s_ce_policies, user_id, &ce_policy)) return false;
-                if (!EnsurePolicy(ce_policy, system_ce_path)) return false;
-                if (!EnsurePolicy(ce_policy, vendor_ce_path)) return false;
-            } else {
-                auto misc_ce_empty_volume_path = android::vold::BuildDataMiscCePath("", user_id);
-                if (!read_or_create_volkey(misc_ce_empty_volume_path, volume_uuid, &ce_policy)) {
-                    return false;
-                }
-            }
-            if (!EnsurePolicy(ce_policy, media_ce_path)) return false;
-            if (!EnsurePolicy(ce_policy, misc_ce_path)) return false;
-            if (!EnsurePolicy(ce_policy, user_ce_path)) return false;
-        }
+        if (!prepare_dir_with_policy(misc_ce_path, 01771, AID_SYSTEM, AID_MISC, ce_policy))
+            return false;
+        if (!prepare_dir_with_policy(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM, ce_policy))
+            return false;
 
         if (volume_uuid.empty()) {
             // Now that credentials have been installed, we can run restorecon

@@ -1160,14 +1160,6 @@ std::string BuildDataMiscDePath(const std::string& volumeUuid, userid_t userId) 
 std::string BuildDataUserCePath(const std::string& volumeUuid, userid_t userId) {
     // TODO: unify with installd path generation logic
     std::string data(BuildDataPath(volumeUuid));
-    if (volumeUuid.empty() && userId == 0) {
-        std::string legacy = StringPrintf("%s/data", data.c_str());
-        struct stat sb;
-        if (lstat(legacy.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode)) {
-            /* /data/data is dir, return /data/data for legacy system */
-            return legacy;
-        }
-    }
     return StringPrintf("%s/user/%u", data.c_str(), userId);
 }
 
@@ -1185,6 +1177,12 @@ dev_t GetDevice(const std::string& path) {
     } else {
         return sb.st_dev;
     }
+}
+
+// Returns true if |path| exists and is a symlink.
+bool IsSymlink(const std::string& path) {
+    struct stat stbuf;
+    return lstat(path.c_str(), &stbuf) == 0 && S_ISLNK(stbuf.st_mode);
 }
 
 // Returns true if |path1| names the same existing file or directory as |path2|.
