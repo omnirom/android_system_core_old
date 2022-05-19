@@ -33,7 +33,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <selinux/android.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -44,7 +43,6 @@
 
 #include "android/os/IVold.h"
 
-#define EMULATED_USES_SELINUX 0
 #define MANAGE_MISC_DIRS 0
 
 #include <cutils/fs.h>
@@ -113,10 +111,6 @@ std::map<userid_t, EncryptionPolicy> s_ce_policies;
 // Returns KeyGeneration suitable for key as described in EncryptionOptions
 static KeyGeneration makeGen(const EncryptionOptions& options) {
     return KeyGeneration{FSCRYPT_MAX_KEY_SIZE, true, options.use_hw_wrapped_key};
-}
-
-static bool fscrypt_is_emulated() {
-    return property_get_bool("persist.sys.emulate_fbe", false);
 }
 
 static const char* escape_empty(const std::string& value) {
@@ -563,12 +557,6 @@ bool fscrypt_init_user0() {
         return false;
     }
 
-    // If this is a non-FBE device that recently left an emulated mode,
-    // restore user data directories to known-good state.
-    if (!fscrypt_is_native() && !fscrypt_is_emulated()) {
-        fscrypt_unlock_user_key(0, 0, "!");
-    }
-
     // In some scenarios (e.g. userspace reboot) we might unmount userdata
     // without doing a hard reboot. If CE keys were stored in fs keyring then
     // they will be lost after unmount. Attempt to re-install them.
@@ -660,36 +648,6 @@ bool fscrypt_destroy_user_key(userid_t user_id) {
         }
     }
     return success;
-}
-
-static bool emulated_lock(const std::string& path) {
-    if (chmod(path.c_str(), 0000) != 0) {
-        PLOG(ERROR) << "Failed to chmod " << path;
-        return false;
-    }
-#if EMULATED_USES_SELINUX
-    if (setfilecon(path.c_str(), "u:object_r:storage_stub_file:s0") != 0) {
-        PLOG(WARNING) << "Failed to setfilecon " << path;
-        return false;
-    }
-#endif
-    return true;
-}
-
-static bool emulated_unlock(const std::string& path, mode_t mode) {
-    if (chmod(path.c_str(), mode) != 0) {
-        PLOG(ERROR) << "Failed to chmod " << path;
-        // FIXME temporary workaround for b/26713622
-        if (fscrypt_is_emulated()) return false;
-    }
-#if EMULATED_USES_SELINUX
-    if (selinux_android_restorecon(path.c_str(), SELINUX_ANDROID_RESTORECON_FORCE) != 0) {
-        PLOG(WARNING) << "Failed to restorecon " << path;
-        // FIXME temporary workaround for b/26713622
-        if (fscrypt_is_emulated()) return false;
-    }
-#endif
-    return true;
 }
 
 static bool parse_hex(const std::string& hex, std::string* result) {
@@ -832,17 +790,6 @@ bool fscrypt_unlock_user_key(userid_t user_id, int serial, const std::string& se
             LOG(ERROR) << "Couldn't read key for " << user_id;
             return false;
         }
-    } else {
-        // When in emulation mode, we just use chmod. However, we also
-        // unlock directories when not in emulation mode, to bring devices
-        // back into a known-good state.
-        if (!emulated_unlock(android::vold::BuildDataSystemCePath(user_id), 0771) ||
-            !emulated_unlock(android::vold::BuildDataMiscCePath("", user_id), 01771) ||
-            !emulated_unlock(android::vold::BuildDataMediaCePath("", user_id), 0770) ||
-            !emulated_unlock(android::vold::BuildDataUserCePath("", user_id), 0771)) {
-            LOG(ERROR) << "Failed to unlock user " << user_id;
-            return false;
-        }
     }
     return true;
 }
@@ -852,17 +799,7 @@ bool fscrypt_lock_user_key(userid_t user_id) {
     LOG(DEBUG) << "fscrypt_lock_user_key " << user_id;
     if (fscrypt_is_native()) {
         return evict_ce_key(user_id);
-    } else if (fscrypt_is_emulated()) {
-        // When in emulation mode, we just use chmod
-        if (!emulated_lock(android::vold::BuildDataSystemCePath(user_id)) ||
-            !emulated_lock(android::vold::BuildDataMiscCePath("", user_id)) ||
-            !emulated_lock(android::vold::BuildDataMediaCePath("", user_id)) ||
-            !emulated_lock(android::vold::BuildDataUserCePath("", user_id))) {
-            LOG(ERROR) << "Failed to lock user " << user_id;
-            return false;
-        }
     }
-
     return true;
 }
 
