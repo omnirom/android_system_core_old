@@ -914,6 +914,10 @@ int VolumeManager::reset() {
     updateVirtualDisk();
     mAddedUsers.clear();
     mStartedUsers.clear();
+
+    // Abort all FUSE connections to avoid deadlocks if the FUSE daemon was killed
+    // with FUSE fds open.
+    abortFuse();
     return 0;
 }
 
