@@ -103,9 +103,11 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status fbeEnable();
 
     binder::Status initUser0();
-    binder::Status mountFstab(const std::string& blkDevice, const std::string& mountPoint);
+    binder::Status mountFstab(const std::string& blkDevice, const std::string& mountPoint,
+                              const std::string& zonedDevice);
     binder::Status encryptFstab(const std::string& blkDevice, const std::string& mountPoint,
-                                bool shouldFormat, const std::string& fsType);
+                                bool shouldFormat, const std::string& fsType,
+                                const std::string& zonedDevice);
 
     binder::Status setStorageBindingSeed(const std::vector<uint8_t>& seed);
 
