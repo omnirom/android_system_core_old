@@ -79,8 +79,8 @@ interface IVold {
     void fbeEnable();
 
     void initUser0();
-    void mountFstab(@utf8InCpp String blkDevice, @utf8InCpp String mountPoint);
-    void encryptFstab(@utf8InCpp String blkDevice, @utf8InCpp String mountPoint, boolean shouldFormat, @utf8InCpp String fsType);
+    void mountFstab(@utf8InCpp String blkDevice, @utf8InCpp String mountPoint, @utf8InCpp String zonedDevice);
+    void encryptFstab(@utf8InCpp String blkDevice, @utf8InCpp String mountPoint, boolean shouldFormat, @utf8InCpp String fsType, @utf8InCpp String zonedDevice);
 
     void setStorageBindingSeed(in byte[] seed);
 
