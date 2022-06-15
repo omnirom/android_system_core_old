@@ -182,7 +182,7 @@ status_t Format(const std::string& source, unsigned long numSectors, const std::
     if (android::base::GetBoolProperty("vold.has_quota", false)) {
         options += ",quota";
     }
-    if (fscrypt_is_native()) {
+    if (IsFbeEnabled()) {
         options += ",encrypt";
     }
     if (needs_casefold) {
