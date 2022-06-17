@@ -205,7 +205,7 @@ void HealthdDraw::draw_percent(const animation* anim) {
     int x, y;
     determine_xy(field, str.size(), &x, &y);
 
-  int batt_height = 0;
+    int batt_height = 0;
   // get height of battery image to draw text below
   const animation::frame& frame = anim->frames[anim->cur_frame];
   if (anim->num_frames != 0) {

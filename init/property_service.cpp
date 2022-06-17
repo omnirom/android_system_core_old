@@ -73,6 +73,7 @@
 #include "subcontext.h"
 #include "system/core/init/property_service.pb.h"
 #include "util.h"
+
 #include "vendor_init.h"
 
 using namespace std::literals;
