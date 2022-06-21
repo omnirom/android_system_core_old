@@ -391,28 +391,6 @@ static void runDevGcOnHal(Service service, GcCallbackImpl cb, GetDescription get
 }
 
 static void runDevGc(void) {
-    auto aidl_service_name = AStorage::descriptor + "/default"s;
-    if (AServiceManager_isDeclared(aidl_service_name.c_str())) {
-        ndk::SpAIBinder binder(AServiceManager_waitForService(aidl_service_name.c_str()));
-        if (binder.get() != nullptr) {
-            std::shared_ptr<AStorage> aidl_service = AStorage::fromBinder(binder);
-            if (aidl_service != nullptr) {
-                runDevGcOnHal<IDL::AIDL>(aidl_service, ndk::SharedRefBase::make<AGcCallbackImpl>(),
-                                         &ndk::ScopedAStatus::getDescription);
-                return;
-            }
-        }
-        LOG(WARNING) << "Device declares " << aidl_service_name
-                     << " but it is not running, skip dev GC on AIDL HAL";
-        return;
-    }
-    auto hidl_service = HStorage::getService();
-    if (hidl_service != nullptr) {
-        runDevGcOnHal<IDL::HIDL>(hidl_service, sp<HGcCallbackImpl>(new HGcCallbackImpl()),
-                                 &Return<void>::description);
-        return;
-    }
-    // fallback to legacy code path
     runDevGcFstab();
 }
 
