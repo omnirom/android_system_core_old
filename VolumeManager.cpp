@@ -358,7 +358,7 @@ int VolumeManager::forgetPartition(const std::string& partGuid, const std::strin
         LOG(ERROR) << "Failed to unlink " << keyPath;
         success = false;
     }
-    if (fscrypt_is_native()) {
+    if (IsFbeEnabled()) {
         if (!fscrypt_destroy_volume_keys(fsUuid)) {
             success = false;
         }
