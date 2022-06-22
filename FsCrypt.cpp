@@ -324,7 +324,7 @@ static bool prepare_dir(const std::string& dir, mode_t mode, uid_t uid, gid_t gi
 static bool prepare_dir_with_policy(const std::string& dir, mode_t mode, uid_t uid, gid_t gid,
                                     const EncryptionPolicy& policy) {
     if (!prepare_dir(dir, mode, uid, gid)) return false;
-    if (fscrypt_is_native() && !EnsurePolicy(policy, dir)) return false;
+    if (IsFbeEnabled() && !EnsurePolicy(policy, dir)) return false;
     return true;
 }
 
@@ -533,7 +533,7 @@ bool fscrypt_init_user0_done;
 bool fscrypt_init_user0() {
     LOG(DEBUG) << "fscrypt_init_user0";
 
-    if (fscrypt_is_native()) {
+    if (IsFbeEnabled()) {
         if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return false;
         if (!prepare_dir(user_key_dir + "/ce", 0700, AID_ROOT, AID_ROOT)) return false;
         if (!prepare_dir(user_key_dir + "/de", 0700, AID_ROOT, AID_ROOT)) return false;
@@ -560,7 +560,7 @@ bool fscrypt_init_user0() {
     // In some scenarios (e.g. userspace reboot) we might unmount userdata
     // without doing a hard reboot. If CE keys were stored in fs keyring then
     // they will be lost after unmount. Attempt to re-install them.
-    if (fscrypt_is_native() && android::vold::isFsKeyringSupported()) {
+    if (IsFbeEnabled() && android::vold::isFsKeyringSupported()) {
         if (!try_reload_ce_keys()) return false;
     }
 
@@ -570,7 +570,7 @@ bool fscrypt_init_user0() {
 
 bool fscrypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) {
     LOG(DEBUG) << "fscrypt_vold_create_user_key for " << user_id << " serial " << serial;
-    if (!fscrypt_is_native()) {
+    if (!IsFbeEnabled()) {
         return true;
     }
     // FIXME test for existence of key that is not loaded yet
@@ -621,7 +621,7 @@ static bool evict_ce_key(userid_t user_id) {
 
 bool fscrypt_destroy_user_key(userid_t user_id) {
     LOG(DEBUG) << "fscrypt_destroy_user_key(" << user_id << ")";
-    if (!fscrypt_is_native()) {
+    if (!IsFbeEnabled()) {
         return true;
     }
     bool success = true;
@@ -740,7 +740,7 @@ static bool fscrypt_rewrap_user_key(userid_t user_id, int serial,
 
 bool fscrypt_add_user_key_auth(userid_t user_id, int serial, const std::string& secret_hex) {
     LOG(DEBUG) << "fscrypt_add_user_key_auth " << user_id << " serial=" << serial;
-    if (!fscrypt_is_native()) return true;
+    if (!IsFbeEnabled()) return true;
     auto auth = authentication_from_hex(secret_hex);
     if (!auth) return false;
     return fscrypt_rewrap_user_key(user_id, serial, kEmptyAuthentication, *auth);
@@ -748,7 +748,7 @@ bool fscrypt_add_user_key_auth(userid_t user_id, int serial, const std::string& 
 
 bool fscrypt_clear_user_key_auth(userid_t user_id, int serial, const std::string& secret_hex) {
     LOG(DEBUG) << "fscrypt_clear_user_key_auth " << user_id << " serial=" << serial;
-    if (!fscrypt_is_native()) return true;
+    if (!IsFbeEnabled()) return true;
     auto auth = authentication_from_hex(secret_hex);
     if (!auth) return false;
     return fscrypt_rewrap_user_key(user_id, serial, *auth, kEmptyAuthentication);
@@ -756,7 +756,7 @@ bool fscrypt_clear_user_key_auth(userid_t user_id, int serial, const std::string
 
 bool fscrypt_fixate_newest_user_key_auth(userid_t user_id) {
     LOG(DEBUG) << "fscrypt_fixate_newest_user_key_auth " << user_id;
-    if (!fscrypt_is_native()) return true;
+    if (!IsFbeEnabled()) return true;
     if (s_ephemeral_users.count(user_id) != 0) return true;
     auto const directory_path = get_ce_key_directory_path(user_id);
     auto const paths = get_ce_key_paths(directory_path);
@@ -779,7 +779,7 @@ std::vector<int> fscrypt_get_unlocked_users() {
 // TODO: rename to 'install' for consistency, and take flags to know which keys to install
 bool fscrypt_unlock_user_key(userid_t user_id, int serial, const std::string& secret_hex) {
     LOG(DEBUG) << "fscrypt_unlock_user_key " << user_id << " serial=" << serial;
-    if (fscrypt_is_native()) {
+    if (IsFbeEnabled()) {
         if (s_ce_policies.count(user_id) != 0) {
             LOG(WARNING) << "Tried to unlock already-unlocked key for user " << user_id;
             return true;
@@ -797,7 +797,7 @@ bool fscrypt_unlock_user_key(userid_t user_id, int serial, const std::string& se
 // TODO: rename to 'evict' for consistency
 bool fscrypt_lock_user_key(userid_t user_id) {
     LOG(DEBUG) << "fscrypt_lock_user_key " << user_id;
-    if (fscrypt_is_native()) {
+    if (IsFbeEnabled()) {
         return evict_ce_key(user_id);
     }
     return true;
@@ -849,7 +849,7 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
         auto vendor_de_path = android::vold::BuildDataVendorDePath(user_id);
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
 
-        if (fscrypt_is_native()) {
+        if (IsFbeEnabled()) {
             if (volume_uuid.empty()) {
                 if (!lookup_policy(s_de_policies, user_id, &de_policy)) {
                     LOG(ERROR) << "Cannot find DE policy for user " << user_id;
@@ -893,7 +893,7 @@ bool fscrypt_prepare_user_storage(const std::string& volume_uuid, userid_t user_
         auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
         auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
 
-        if (fscrypt_is_native()) {
+        if (IsFbeEnabled()) {
             if (volume_uuid.empty()) {
                 if (!lookup_policy(s_ce_policies, user_id, &ce_policy)) {
                     LOG(ERROR) << "Cannot find CE policy for user " << user_id;
@@ -964,7 +964,7 @@ bool fscrypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
             res &= destroy_dir(system_ce_path);
             res &= destroy_dir(vendor_ce_path);
         } else {
-            if (fscrypt_is_native()) {
+            if (IsFbeEnabled()) {
                 auto misc_ce_empty_volume_path = android::vold::BuildDataMiscCePath("", user_id);
                 res &= destroy_volkey(misc_ce_empty_volume_path, volume_uuid);
             }
@@ -994,7 +994,7 @@ bool fscrypt_destroy_user_storage(const std::string& volume_uuid, userid_t user_
             res &= destroy_dir(system_de_path);
             res &= destroy_dir(vendor_de_path);
         } else {
-            if (fscrypt_is_native()) {
+            if (IsFbeEnabled()) {
                 auto misc_de_empty_volume_path = android::vold::BuildDataMiscDePath("", user_id);
                 res &= destroy_volkey(misc_de_empty_volume_path, volume_uuid);
             }
