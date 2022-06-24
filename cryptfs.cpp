@@ -156,7 +156,7 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const K
                                                   key_ascii, 0, real_blkdev, 0);
     target->AllowDiscards();
 
-    if (fscrypt_is_native() &&
+    if (IsFbeEnabled() &&
         android::base::GetBoolProperty("ro.crypto.allow_encrypt_override", false)) {
         target->AllowEncryptOverride();
     }
