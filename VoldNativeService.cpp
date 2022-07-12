@@ -182,11 +182,13 @@ binder::Status VoldNativeService::abortFuse() {
     return translate(VolumeManager::Instance()->abortFuse());
 }
 
-binder::Status VoldNativeService::onUserAdded(int32_t userId, int32_t userSerial) {
+binder::Status VoldNativeService::onUserAdded(int32_t userId, int32_t userSerial,
+                                              int32_t sharesStorageWithUserId) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_LOCK;
 
-    return translate(VolumeManager::Instance()->onUserAdded(userId, userSerial));
+    return translate(
+            VolumeManager::Instance()->onUserAdded(userId, userSerial, sharesStorageWithUserId));
 }
 
 binder::Status VoldNativeService::onUserRemoved(int32_t userId) {
