@@ -48,7 +48,7 @@ KeystoreOperation::~KeystoreOperation() {
 }
 
 static void zeroize_vector(std::vector<uint8_t>& vec) {
-    memset_s(vec.data(), 0, vec.size());
+    memset_explicit(vec.data(), 0, vec.size());
 }
 
 static bool logKeystore2ExceptionIfPresent(::ndk::ScopedAStatus& rc, const std::string& func_name) {
