@@ -1763,5 +1763,15 @@ std::pair<android::base::unique_fd, std::string> OpenDirInProcfs(std::string_vie
     return {std::move(fd), std::move(linkPath)};
 }
 
+bool IsFuseBpfEnabled() {
+    std::string bpf_override = android::base::GetProperty("persist.sys.fuse.bpf.override", "");
+    if (bpf_override == "true") {
+        return true;
+    } else if (bpf_override == "false") {
+        return false;
+    }
+    return base::GetBoolProperty("ro.fuse.bpf.enabled", false);
+}
+
 }  // namespace vold
 }  // namespace android
