@@ -251,6 +251,7 @@ cc_defaults {
 
 cc_library_static {
     name: "vendor_init",
+    ramdisk_available: true,
     recovery_available: true,
     srcs: [
         "vendor_init.cpp",
@@ -468,12 +469,18 @@ init_first_stage_cc_defaults {
 
 cc_binary {
     name: "init_first_stage",
-    defaults: ["init_first_stage_defaults"],
+    defaults: [
+        "init_first_stage_defaults",
+        "vendor_init_defaults",
+    ],
 }
 
 cc_binary {
     name: "init_first_stage.microdroid",
-    defaults: ["init_first_stage_defaults"],
+    defaults: [
+        "init_first_stage_defaults",
+        "vendor_init_defaults",
+    ],
     cflags: ["-DMICRODROID=1"],
     installable: false,
 }
