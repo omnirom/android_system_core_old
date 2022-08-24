@@ -216,6 +216,7 @@ cc_library_headers {
 cc_library_static {
     name: "vendor_init",
     recovery_available: true,
+    ramdisk_available: true,
     srcs: [
         "vendor_init.cpp",
     ],
@@ -340,8 +341,10 @@ init_first_stage_cc_defaults {
 cc_binary {
     name: "init_first_stage",
     stem: "init",
-    defaults: ["init_first_stage_defaults"],
-
+    defaults: [
+        "init_first_stage_defaults",
+        "vendor_init_defaults",
+    ],
     srcs: [
         "block_dev_initializer.cpp",
         "devices.cpp",
