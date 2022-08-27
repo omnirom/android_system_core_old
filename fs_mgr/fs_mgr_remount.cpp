@@ -435,14 +435,8 @@ static int do_remount(int argc, char* argv[]) {
             }
         }
         if (!found) {
-            // Find system-as-root mount point?
-            if ((mount_point == "/system") && !GetEntryForMountPoint(&mounts, mount_point) &&
-                    GetEntryForMountPoint(&mounts, "/")) {
-                mount_point = "/";
-            } else {
-                PLOG(INFO) << "skip unmounted partition dev:" << blk_device << " mnt:" << mount_point;
-                continue;
-            }
+            PLOG(INFO) << "skip unmounted partition dev:" << blk_device << " mnt:" << mount_point;
+            continue;
         }
         if (blk_device == "/dev/root") {
             auto from_fstab = GetEntryForMountPoint(&fstab, mount_point);
@@ -451,10 +445,10 @@ static int do_remount(int argc, char* argv[]) {
         fs_mgr_set_blk_ro(blk_device, false);
 
         // Find system-as-root mount point?
-        /*if ((mount_point == "/system") && !GetEntryForMountPoint(&mounts, mount_point) &&
+        if ((mount_point == "/system") && !GetEntryForMountPoint(&mounts, mount_point) &&
             GetEntryForMountPoint(&mounts, "/")) {
             mount_point = "/";
-        }*/
+        }
 
         // Now remount!
         if (::mount(blk_device.c_str(), mount_point.c_str(), entry.fs_type.c_str(), MS_REMOUNT,
