@@ -16,6 +16,24 @@
       "message": "i will build rog2 with wrapped key to test. \nZenfone 6 dont have it",
       "revId": "76ec0b18d93d17fc25af0b8ca3788c66d71d11d8",
       "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "6a18618f_2743ad66",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 2
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1002322
+      },
+      "writtenOn": "2022-08-27T11:03:54Z",
+      "side": 1,
+      "message": "\u003e i will build rog2 with wrapped key to test. \n\u003e Zenfone 6 dont have it\n\nAnd add related changes too ofc",
+      "parentUuid": "e32b7e26_8a701766",
+      "revId": "76ec0b18d93d17fc25af0b8ca3788c66d71d11d8",
+      "serverId": "56841c99-7c94-43d4-bf0b-cb4707e66d55"
     }
   ]
 }
