@@ -88,9 +88,7 @@ interface IVold {
     void createUserKey(int userId, int userSerial, boolean ephemeral);
     void destroyUserKey(int userId);
 
-    void addUserKeyAuth(int userId, int userSerial, @utf8InCpp String secret);
-    void clearUserKeyAuth(int userId, int userSerial, @utf8InCpp String secret);
-    void fixateNewestUserKeyAuth(int userId);
+    void setUserKeyProtection(int userId, @utf8InCpp String secret);
 
     int[] getUnlockedUsers();
     void unlockUserKey(int userId, int userSerial, @utf8InCpp String secret);

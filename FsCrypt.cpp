@@ -99,6 +99,9 @@ const std::string media_obb_dir = std::string() + DATA_MNT_POINT + "/media/obb";
 // Some users are ephemeral, don't try to wipe their keys from disk
 std::set<userid_t> s_ephemeral_users;
 
+// New CE keys that haven't been committed to disk yet
+std::map<userid_t, KeyBuffer> s_new_ce_keys;
+
 // The system DE encryption policy
 EncryptionPolicy s_device_policy;
 
@@ -176,8 +179,7 @@ static bool get_ce_key_new_path(const std::string& directory_path,
 }
 
 // Discard all keys but the named one; rename it to canonical name.
-// No point in acting on errors in this; ignore them.
-static void fixate_user_ce_key(const std::string& directory_path, const std::string& to_fix,
+static bool fixate_user_ce_key(const std::string& directory_path, const std::string& to_fix,
                                const std::vector<std::string>& paths) {
     for (auto const other_path : paths) {
         if (other_path != to_fix) {
@@ -187,9 +189,10 @@ static void fixate_user_ce_key(const std::string& directory_path, const std::str
     auto const current_path = get_ce_key_current_path(directory_path);
     if (to_fix != current_path) {
         LOG(DEBUG) << "Renaming " << to_fix << " to " << current_path;
-        if (!android::vold::RenameKeyDir(to_fix, current_path)) return;
+        if (!android::vold::RenameKeyDir(to_fix, current_path)) return false;
     }
-    android::vold::FsyncDirectory(directory_path);
+    if (!android::vold::FsyncDirectory(directory_path)) return false;
+    return true;
 }
 
 static bool read_and_fixate_user_ce_key(userid_t user_id,
@@ -351,14 +354,10 @@ static bool create_and_install_user_keys(userid_t user_id, bool create_ephemeral
     } else {
         auto const directory_path = get_ce_key_directory_path(user_id);
         if (!prepare_dir(directory_path, 0700, AID_ROOT, AID_ROOT)) return false;
-        auto const paths = get_ce_key_paths(directory_path);
-        std::string ce_key_path;
-        if (!get_ce_key_new_path(directory_path, paths, &ce_key_path)) return false;
-        if (!android::vold::storeKeyAtomically(ce_key_path, user_key_temp, kEmptyAuthentication,
-                                               ce_key))
-            return false;
-        fixate_user_ce_key(directory_path, ce_key_path, paths);
-        // Write DE key second; once this is written, all is good.
+        // Wait until fscrypt_set_user_key_protection() to persist the CE key,
+        // since here we don't have the secret needed to do so securely.
+        s_new_ce_keys.insert({user_id, ce_key});
+
         if (!android::vold::storeKeyAtomically(get_de_key_path(user_id), user_key_temp,
                                                kEmptyAuthentication, de_key))
             return false;
@@ -616,6 +615,7 @@ static bool evict_ce_key(userid_t user_id) {
         drop_caches_if_needed();
     }
     s_ce_policies.erase(user_id);
+    s_new_ce_keys.erase(user_id);
     return success;
 }
 
@@ -630,13 +630,12 @@ bool fscrypt_destroy_user_key(userid_t user_id) {
     success &= lookup_policy(s_de_policies, user_id, &de_policy) &&
                android::vold::evictKey(DATA_MNT_POINT, de_policy);
     s_de_policies.erase(user_id);
-    auto it = s_ephemeral_users.find(user_id);
-    if (it != s_ephemeral_users.end()) {
-        s_ephemeral_users.erase(it);
-    } else {
+    if (!s_ephemeral_users.erase(user_id)) {
         auto ce_path = get_ce_key_directory_path(user_id);
-        for (auto const path : get_ce_key_paths(ce_path)) {
-            success &= android::vold::destroyKey(path);
+        if (!s_new_ce_keys.erase(user_id)) {
+            for (auto const path : get_ce_key_paths(ce_path)) {
+                success &= android::vold::destroyKey(path);
+            }
         }
         success &= destroy_dir(ce_path);
 
@@ -712,59 +711,59 @@ static bool destroy_volkey(const std::string& misc_path, const std::string& volu
     return android::vold::destroyKey(path);
 }
 
-static bool fscrypt_rewrap_user_key(userid_t user_id, int serial,
-                                    const android::vold::KeyAuthentication& retrieve_auth,
-                                    const android::vold::KeyAuthentication& store_auth) {
-    if (s_ephemeral_users.count(user_id) != 0) return true;
+// (Re-)encrypts the user's CE key with the given secret.  The CE key must
+// either be (a) new (not yet committed), (b) protected by kEmptyAuthentication,
+// or (c) already protected by the given secret.  Cases (b) and (c) are needed
+// to support upgrades from Android versions where CE keys were stored with
+// kEmptyAuthentication when the user didn't have an LSKF.  Case (b) is the
+// normal upgrade case, while case (c) can theoretically happen if an upgrade is
+// requested for a user more than once due to a power-off or other interruption.
+bool fscrypt_set_user_key_protection(userid_t user_id, const std::string& secret_hex) {
+    LOG(DEBUG) << "fscrypt_set_user_key_protection " << user_id;
+    if (!IsFbeEnabled()) return true;
+    auto auth = authentication_from_hex(secret_hex);
+    if (!auth) return false;
+    if (auth->secret.empty()) {
+        LOG(ERROR) << "fscrypt_set_user_key_protection: secret must be nonempty";
+        return false;
+    }
+    if (s_ephemeral_users.count(user_id) != 0) {
+        LOG(DEBUG) << "Not storing key because user is ephemeral";
+        return true;
+    }
     auto const directory_path = get_ce_key_directory_path(user_id);
     KeyBuffer ce_key;
-    std::string ce_key_current_path = get_ce_key_current_path(directory_path);
-    if (retrieveKey(ce_key_current_path, retrieve_auth, &ce_key)) {
-        LOG(DEBUG) << "Successfully retrieved key";
-        // TODO(147732812): Remove this once Locksettingservice is fixed.
-        // Currently it calls fscrypt_clear_user_key_auth with a secret when lockscreen is
-        // changed from swipe to none or vice-versa
-    } else if (retrieveKey(ce_key_current_path, kEmptyAuthentication, &ce_key)) {
-        LOG(DEBUG) << "Successfully retrieved key with empty auth";
+    auto it = s_new_ce_keys.find(user_id);
+    if (it != s_new_ce_keys.end()) {
+        // Committing the key for a new user.  This happens when the user's
+        // synthetic password is created.
+        ce_key = it->second;
     } else {
-        LOG(ERROR) << "Failed to retrieve key for user " << user_id;
-        return false;
+        // Setting the protection on an existing key.  This happens at upgrade
+        // time, when CE keys that were previously protected by
+        // kEmptyAuthentication are encrypted by the user's synthetic password.
+        LOG(DEBUG) << "Key already exists; re-protecting it with the given secret";
+        if (!read_and_fixate_user_ce_key(user_id, kEmptyAuthentication, &ce_key)) {
+            LOG(ERROR) << "Failed to retrieve key for user " << user_id << " using empty auth";
+            // Before failing, also check whether the key is already protected
+            // with the given secret.  This isn't expected, but in theory it
+            // could happen if an upgrade is requested for a user more than once
+            // due to a power-off or other interruption.
+            if (read_and_fixate_user_ce_key(user_id, *auth, &ce_key)) {
+                LOG(WARNING) << "Key is already protected by given secret";
+                return true;
+            }
+            return false;
+        }
     }
     auto const paths = get_ce_key_paths(directory_path);
     std::string ce_key_path;
     if (!get_ce_key_new_path(directory_path, paths, &ce_key_path)) return false;
-    if (!android::vold::storeKeyAtomically(ce_key_path, user_key_temp, store_auth, ce_key))
-        return false;
-    return true;
-}
-
-bool fscrypt_add_user_key_auth(userid_t user_id, int serial, const std::string& secret_hex) {
-    LOG(DEBUG) << "fscrypt_add_user_key_auth " << user_id << " serial=" << serial;
-    if (!IsFbeEnabled()) return true;
-    auto auth = authentication_from_hex(secret_hex);
-    if (!auth) return false;
-    return fscrypt_rewrap_user_key(user_id, serial, kEmptyAuthentication, *auth);
-}
-
-bool fscrypt_clear_user_key_auth(userid_t user_id, int serial, const std::string& secret_hex) {
-    LOG(DEBUG) << "fscrypt_clear_user_key_auth " << user_id << " serial=" << serial;
-    if (!IsFbeEnabled()) return true;
-    auto auth = authentication_from_hex(secret_hex);
-    if (!auth) return false;
-    return fscrypt_rewrap_user_key(user_id, serial, *auth, kEmptyAuthentication);
-}
-
-bool fscrypt_fixate_newest_user_key_auth(userid_t user_id) {
-    LOG(DEBUG) << "fscrypt_fixate_newest_user_key_auth " << user_id;
-    if (!IsFbeEnabled()) return true;
-    if (s_ephemeral_users.count(user_id) != 0) return true;
-    auto const directory_path = get_ce_key_directory_path(user_id);
-    auto const paths = get_ce_key_paths(directory_path);
-    if (paths.empty()) {
-        LOG(ERROR) << "No ce keys present, cannot fixate for user " << user_id;
-        return false;
+    if (!android::vold::storeKeyAtomically(ce_key_path, user_key_temp, *auth, ce_key)) return false;
+    if (!fixate_user_ce_key(directory_path, ce_key_path, paths)) return false;
+    if (s_new_ce_keys.erase(user_id)) {
+        LOG(INFO) << "Stored CE key for new user " << user_id;
     }
-    fixate_user_ce_key(directory_path, paths[0], paths);
     return true;
 }
 

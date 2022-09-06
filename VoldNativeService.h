@@ -115,9 +115,7 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status createUserKey(int32_t userId, int32_t userSerial, bool ephemeral);
     binder::Status destroyUserKey(int32_t userId);
 
-    binder::Status addUserKeyAuth(int32_t userId, int32_t userSerial, const std::string& secret);
-    binder::Status clearUserKeyAuth(int32_t userId, int32_t userSerial, const std::string& secret);
-    binder::Status fixateNewestUserKeyAuth(int32_t userId);
+    binder::Status setUserKeyProtection(int32_t userId, const std::string& secret);
 
     binder::Status getUnlockedUsers(std::vector<int>* _aidl_return);
     binder::Status unlockUserKey(int32_t userId, int32_t userSerial, const std::string& secret);

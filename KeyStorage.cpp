@@ -616,7 +616,7 @@ bool storeKeyAtomically(const std::string& key_path, const std::string& tmp_path
     if (!RenameKeyDir(tmp_path, key_path)) return false;
 
     if (!FsyncParentDirectory(key_path)) return false;
-    LOG(DEBUG) << "Created key: " << key_path;
+    LOG(DEBUG) << "Stored key " << key_path;
     return true;
 }
 
