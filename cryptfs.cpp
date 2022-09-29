@@ -95,37 +95,6 @@ static void convert_key_to_hex_ascii(const KeyBuffer& key, char* key_ascii) {
 }
 
 /*
- * If the ro.crypto.fde_sector_size system property is set, append the
- * parameters to make dm-crypt use the specified crypto sector size and round
- * the crypto device size down to a crypto sector boundary.
- */
-static int add_sector_size_param(DmTargetCrypt* target, uint64_t* nr_sec) {
-    constexpr char DM_CRYPT_SECTOR_SIZE[] = "ro.crypto.fde_sector_size";
-    char value[PROPERTY_VALUE_MAX];
-
-    if (property_get(DM_CRYPT_SECTOR_SIZE, value, "") > 0) {
-        unsigned int sector_size;
-
-        if (!ParseUint(value, &sector_size) || sector_size < 512 || sector_size > 4096 ||
-            (sector_size & (sector_size - 1)) != 0) {
-            SLOGE("Invalid value for %s: %s.  Must be >= 512, <= 4096, and a power of 2\n",
-                  DM_CRYPT_SECTOR_SIZE, value);
-            return -1;
-        }
-
-        target->SetSectorSize(sector_size);
-
-        // With this option, IVs will match the sector numbering, instead
-        // of being hard-coded to being based on 512-byte sectors.
-        target->SetIvLargeSectors();
-
-        // Round the crypto device size down to a crypto sector boundary.
-        *nr_sec &= ~((sector_size / 512) - 1);
-    }
-    return 0;
-}
-
-/*
  * Called by vold when it's asked to mount an encrypted external
  * storage volume. The incoming partition has no crypto header/footer,
  * as any metadata is been stored in a separate, small partition.  We
@@ -145,8 +114,25 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const K
         return -1;
     }
 
-    auto& dm = DeviceMapper::Instance();
+    constexpr char DM_CRYPT_SECTOR_SIZE[] = "ro.crypto.fde_sector_size";
+    char value[PROPERTY_VALUE_MAX];
+    unsigned int sector_size = 0;
 
+    if (property_get(DM_CRYPT_SECTOR_SIZE, value, "") > 0) {
+        if (!ParseUint(value, &sector_size) || sector_size < 512 || sector_size > 4096 ||
+            (sector_size & (sector_size - 1)) != 0) {
+            SLOGE("Invalid value for %s: %s.  Must be >= 512, <= 4096, and a power of 2\n",
+                  DM_CRYPT_SECTOR_SIZE, value);
+            return -1;
+        }
+    }
+
+    // Round the crypto device size down to a crypto sector boundary.
+    if (sector_size > 0) {
+        nr_sec &= ~((sector_size / 512) - 1);
+    }
+
+    auto& dm = DeviceMapper::Instance();
     // We need two ASCII characters to represent each byte, and need space for
     // the '\0' terminator.
     char key_ascii[MAX_KEY_LEN * 2 + 1];
@@ -160,9 +146,13 @@ int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev, const K
         android::base::GetBoolProperty("ro.crypto.allow_encrypt_override", false)) {
         target->AllowEncryptOverride();
     }
-    if (add_sector_size_param(target.get(), &nr_sec)) {
-        SLOGE("Error processing dm-crypt sector size param\n");
-        return -1;
+
+    // Append the parameters to make dm-crypt use the specified crypto sector size.
+    if (sector_size > 0) {
+        target->SetSectorSize(sector_size);
+        // With this option, IVs will match the sector numbering, instead
+        // of being hard-coded to being based on 512-byte sectors.
+        target->SetIvLargeSectors();
     }
 
     DmTable table;
