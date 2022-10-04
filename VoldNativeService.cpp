@@ -610,27 +610,11 @@ binder::Status VoldNativeService::destroyUserKey(int32_t userId) {
     return translateBool(fscrypt_destroy_user_key(userId));
 }
 
-binder::Status VoldNativeService::addUserKeyAuth(int32_t userId, int32_t userSerial,
-                                                 const std::string& secret) {
+binder::Status VoldNativeService::setUserKeyProtection(int32_t userId, const std::string& secret) {
     ENFORCE_SYSTEM_OR_ROOT;
     ACQUIRE_CRYPT_LOCK;
 
-    return translateBool(fscrypt_add_user_key_auth(userId, userSerial, secret));
-}
-
-binder::Status VoldNativeService::clearUserKeyAuth(int32_t userId, int32_t userSerial,
-                                                   const std::string& secret) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    return translateBool(fscrypt_clear_user_key_auth(userId, userSerial, secret));
-}
-
-binder::Status VoldNativeService::fixateNewestUserKeyAuth(int32_t userId) {
-    ENFORCE_SYSTEM_OR_ROOT;
-    ACQUIRE_CRYPT_LOCK;
-
-    return translateBool(fscrypt_fixate_newest_user_key_auth(userId));
+    return translateBool(fscrypt_set_user_key_protection(userId, secret));
 }
 
 binder::Status VoldNativeService::getUnlockedUsers(std::vector<int>* _aidl_return) {
