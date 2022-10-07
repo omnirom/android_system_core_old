@@ -340,35 +340,74 @@ static bool destroy_dir(const std::string& dir) {
     return true;
 }
 
-// NB this assumes that there is only one thread listening for crypt commands, because
-// it creates keys in a fixed location.
+// Checks whether at least one CE key subdirectory exists.
+static bool ce_key_exists(const std::string& directory_path) {
+    // The common case is that "$dir/current" exists, so check for that first.
+    if (android::vold::pathExists(get_ce_key_current_path(directory_path))) return true;
+
+    // Else, there could still be another subdirectory of $dir (if a crash
+    // occurred during fixate_user_ce_key()), so check for one.
+    return android::vold::pathExists(directory_path) && !get_ce_key_paths(directory_path).empty();
+}
+
+// Creates and installs the CE and DE keys for the given user, as needed.
+//
+// We store the DE key right away.  We don't store the CE key yet, because the
+// secret needed to do so securely isn't available yet.  Instead, we cache the
+// CE key in memory and store it later in fscrypt_set_user_key_protection().
+//
+// For user 0, this function is called on every boot, so we need to create the
+// keys only if they weren't already stored.  In doing so, we must consider the
+// DE and CE keys independently, since the first boot might have been
+// interrupted between the DE key being stored and the CE key being stored.
+//
+// For other users, this is only called at user creation time, and neither key
+// directory should exist already.   |create_ephemeral| means that the user is
+// ephemeral; in that case the keys are generated and installed, but not stored.
 static bool create_and_install_user_keys(userid_t user_id, bool create_ephemeral) {
     EncryptionOptions options;
     if (!get_data_file_encryption_options(&options)) return false;
-    KeyBuffer de_key, ce_key;
-    if (!generateStorageKey(makeGen(options), &de_key)) return false;
-    if (!generateStorageKey(makeGen(options), &ce_key)) return false;
-    if (create_ephemeral) {
-        // If the key should be created as ephemeral, don't store it.
-        s_ephemeral_users.insert(user_id);
-    } else {
-        auto const directory_path = get_ce_key_directory_path(user_id);
-        if (!prepare_dir(directory_path, 0700, AID_ROOT, AID_ROOT)) return false;
-        // Wait until fscrypt_set_user_key_protection() to persist the CE key,
-        // since here we don't have the secret needed to do so securely.
-        s_new_ce_keys.insert({user_id, ce_key});
 
-        if (!android::vold::storeKeyAtomically(get_de_key_path(user_id), user_key_temp,
-                                               kEmptyAuthentication, de_key))
+    auto de_key_path = get_de_key_path(user_id);
+    if (create_ephemeral || !android::vold::pathExists(de_key_path)) {
+        KeyBuffer de_key;
+        if (!generateStorageKey(makeGen(options), &de_key)) return false;
+        if (!create_ephemeral && !android::vold::storeKeyAtomically(de_key_path, user_key_temp,
+                                                                    kEmptyAuthentication, de_key))
             return false;
+        EncryptionPolicy de_policy;
+        if (!install_storage_key(DATA_MNT_POINT, options, de_key, &de_policy)) return false;
+        s_de_policies[user_id] = de_policy;
+        LOG(INFO) << "Created DE key for user " << user_id;
+    } else {
+        if (user_id != 0) {
+            LOG(ERROR) << "DE key already exists on disk";
+            return false;
+        }
     }
-    EncryptionPolicy de_policy;
-    if (!install_storage_key(DATA_MNT_POINT, options, de_key, &de_policy)) return false;
-    s_de_policies[user_id] = de_policy;
-    EncryptionPolicy ce_policy;
-    if (!install_storage_key(DATA_MNT_POINT, options, ce_key, &ce_policy)) return false;
-    s_ce_policies[user_id] = ce_policy;
-    LOG(DEBUG) << "Created keys for user " << user_id;
+
+    auto ce_path = get_ce_key_directory_path(user_id);
+    if (create_ephemeral || !ce_key_exists(ce_path)) {
+        KeyBuffer ce_key;
+        if (!generateStorageKey(makeGen(options), &ce_key)) return false;
+        if (!create_ephemeral) {
+            if (!prepare_dir(ce_path, 0700, AID_ROOT, AID_ROOT)) return false;
+            s_new_ce_keys.insert({user_id, ce_key});
+        }
+        EncryptionPolicy ce_policy;
+        if (!install_storage_key(DATA_MNT_POINT, options, ce_key, &ce_policy)) return false;
+        s_ce_policies[user_id] = ce_policy;
+        LOG(INFO) << "Created CE key for user " << user_id;
+    } else {
+        if (user_id != 0) {
+            LOG(ERROR) << "CE key already exists on disk";
+            return false;
+        }
+    }
+
+    if (create_ephemeral) {
+        s_ephemeral_users.insert(user_id);
+    }
     return true;
 }
 
@@ -499,8 +538,17 @@ static bool prepare_special_dirs() {
     // opportunity to also set the encryption policy of /data/data right away.
     EncryptionPolicy ce_policy;
     if (lookup_policy(s_ce_policies, 0, &ce_policy)) {
-        if (!prepare_dir_with_policy(data_data_dir, 0771, AID_SYSTEM, AID_SYSTEM, ce_policy))
-            return false;
+        if (!prepare_dir_with_policy(data_data_dir, 0771, AID_SYSTEM, AID_SYSTEM, ce_policy)) {
+            // Preparing /data/data failed, yet we had just generated a new CE
+            // key because one wasn't stored.  Before erroring out, try deleting
+            // the directory and retrying, as it's possible that the directory
+            // exists with different CE policy from an interrupted first boot.
+            if (rmdir(data_data_dir.c_str()) != 0) {
+                PLOG(ERROR) << "rmdir " << data_data_dir << " failed";
+            }
+            if (!prepare_dir_with_policy(data_data_dir, 0771, AID_SYSTEM, AID_SYSTEM, ce_policy))
+                return false;
+        }
     } else {
         if (!prepare_dir(data_data_dir, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
         // EnsurePolicy() will have to happen later, in fscrypt_prepare_user_storage().
@@ -536,9 +584,7 @@ bool fscrypt_init_user0() {
         if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return false;
         if (!prepare_dir(user_key_dir + "/ce", 0700, AID_ROOT, AID_ROOT)) return false;
         if (!prepare_dir(user_key_dir + "/de", 0700, AID_ROOT, AID_ROOT)) return false;
-        if (!android::vold::pathExists(get_de_key_path(0))) {
-            if (!create_and_install_user_keys(0, false)) return false;
-        }
+        if (!create_and_install_user_keys(0, false)) return false;
         // TODO: switch to loading only DE_0 here once framework makes
         // explicit calls to install DE keys for secondary users
         if (!load_all_de_keys()) return false;
