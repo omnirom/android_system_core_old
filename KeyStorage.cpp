@@ -191,9 +191,13 @@ bool createSecdiscardable(const std::string& filename, std::string* hash) {
 }
 
 bool readSecdiscardable(const std::string& filename, std::string* hash) {
-    std::string secdiscardable;
-    if (!readFileToString(filename, &secdiscardable)) return false;
-    hashWithPrefix(kHashPrefix_secdiscardable, secdiscardable, hash);
+    if (pathExists(filename)) {
+        std::string secdiscardable;
+        if (!readFileToString(filename, &secdiscardable)) return false;
+        hashWithPrefix(kHashPrefix_secdiscardable, secdiscardable, hash);
+    } else {
+        *hash = "";
+    }
     return true;
 }
 
@@ -563,9 +567,12 @@ static bool decryptWithoutKeystore(const std::string& preKey, const std::string&
 
 // Creates a directory at the given path |dir| and stores |key| in it, in such a
 // way that it can only be retrieved via Keystore (if no secret is given in
-// |auth|) or with the given secret (if a secret is given in |auth|), and can be
-// securely deleted.  If a storage binding seed has been set, then the storage
-// binding seed will be required to retrieve the key as well.
+// |auth|) or with the given secret (if a secret is given in |auth|).  In the
+// former case, an attempt is made to make the key securely deletable.  In the
+// latter case, secure deletion is expected to be handled at a higher level.
+//
+// If a storage binding seed has been set, then the storage binding seed will be
+// required to retrieve the key as well.
 static bool storeKey(const std::string& dir, const KeyAuthentication& auth, const KeyBuffer& key) {
     if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), 0700)) == -1) {
         PLOG(ERROR) << "key mkdir " << dir;
@@ -573,7 +580,9 @@ static bool storeKey(const std::string& dir, const KeyAuthentication& auth, cons
     }
     if (!writeStringToFile(kCurrentVersion, dir + "/" + kFn_version)) return false;
     std::string secdiscardable_hash;
-    if (!createSecdiscardable(dir + "/" + kFn_secdiscardable, &secdiscardable_hash)) return false;
+    if (auth.usesKeystore() &&
+        !createSecdiscardable(dir + "/" + kFn_secdiscardable, &secdiscardable_hash))
+        return false;
     std::string stretching = getStretching(auth);
     if (!writeStringToFile(stretching, dir + "/" + kFn_stretching)) return false;
     std::string appId;
