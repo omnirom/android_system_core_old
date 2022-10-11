@@ -97,7 +97,7 @@ int main(int argc, const char* const argv[]) {
             TEMP_FAILURE_RETRY(open(target.c_str(), O_WRONLY | O_CLOEXEC, 0)));
         if (fd == -1) {
             LOG(ERROR) << "Secure discard open failed for: " << target;
-            return 0;
+            continue;
         }
         __u32 set = 1;
         ioctl(fd, F2FS_IOC_SET_PIN_FILE, &set);
