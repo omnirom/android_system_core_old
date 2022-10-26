@@ -96,6 +96,9 @@ const std::string data_data_dir = std::string() + DATA_MNT_POINT + "/data";
 const std::string data_user_0_dir = std::string() + DATA_MNT_POINT + "/user/0";
 const std::string media_obb_dir = std::string() + DATA_MNT_POINT + "/media/obb";
 
+// The file encryption options to use on the /data filesystem
+EncryptionOptions s_data_options;
+
 // Some users are ephemeral; don't try to store or wipe their keys on disk.
 std::set<userid_t> s_ephemeral_users;
 
@@ -113,6 +116,10 @@ std::map<userid_t, EncryptionPolicy> s_ce_policies;
 
 // Returns KeyGeneration suitable for key as described in EncryptionOptions
 static KeyGeneration makeGen(const EncryptionOptions& options) {
+    if (options.version == 0) {
+        LOG(ERROR) << "EncryptionOptions not initialized";
+        return android::vold::neverGen();
+    }
     return KeyGeneration{FSCRYPT_MAX_KEY_SIZE, true, options.use_hw_wrapped_key};
 }
 
@@ -242,19 +249,19 @@ static bool MightBeEmmcStorage(const std::string& blk_device) {
            StartsWith(name, "vd");
 }
 
-// Retrieve the options to use for encryption policies on the /data filesystem.
-static bool get_data_file_encryption_options(EncryptionOptions* options) {
+// Sets s_data_options to the file encryption options for the /data filesystem.
+static bool init_data_file_encryption_options() {
     auto entry = GetEntryForMountPoint(&fstab_default, DATA_MNT_POINT);
     if (entry == nullptr) {
         LOG(ERROR) << "No mount point entry for " << DATA_MNT_POINT;
         return false;
     }
-    if (!ParseOptions(entry->encryption_options, options)) {
+    if (!ParseOptions(entry->encryption_options, &s_data_options)) {
         LOG(ERROR) << "Unable to parse encryption options for " << DATA_MNT_POINT ": "
                    << entry->encryption_options;
         return false;
     }
-    if ((options->flags & FSCRYPT_POLICY_FLAG_IV_INO_LBLK_32) &&
+    if ((s_data_options.flags & FSCRYPT_POLICY_FLAG_IV_INO_LBLK_32) &&
         !MightBeEmmcStorage(entry->blk_device)) {
         LOG(ERROR) << "The emmc_optimized encryption flag is only allowed on eMMC storage.  Remove "
                       "this flag from the device's fstab";
@@ -265,6 +272,10 @@ static bool get_data_file_encryption_options(EncryptionOptions* options) {
 
 static bool install_storage_key(const std::string& mountpoint, const EncryptionOptions& options,
                                 const KeyBuffer& key, EncryptionPolicy* policy) {
+    if (options.version == 0) {
+        LOG(ERROR) << "EncryptionOptions not initialized";
+        return false;
+    }
     KeyBuffer ephemeral_wrapped_key;
     if (options.use_hw_wrapped_key) {
         if (!exportWrappedStorageKey(key, &ephemeral_wrapped_key)) {
@@ -303,12 +314,10 @@ static bool get_volume_file_encryption_options(EncryptionOptions* options) {
 static bool read_and_install_user_ce_key(userid_t user_id,
                                          const android::vold::KeyAuthentication& auth) {
     if (s_ce_policies.count(user_id) != 0) return true;
-    EncryptionOptions options;
-    if (!get_data_file_encryption_options(&options)) return false;
     KeyBuffer ce_key;
     if (!read_and_fixate_user_ce_key(user_id, auth, &ce_key)) return false;
     EncryptionPolicy ce_policy;
-    if (!install_storage_key(DATA_MNT_POINT, options, ce_key, &ce_policy)) return false;
+    if (!install_storage_key(DATA_MNT_POINT, s_data_options, ce_key, &ce_policy)) return false;
     s_ce_policies[user_id] = ce_policy;
     LOG(DEBUG) << "Installed ce key for user " << user_id;
     return true;
@@ -360,27 +369,21 @@ static bool ce_key_exists(userid_t user_id) {
 }
 
 static bool create_de_key(userid_t user_id, bool ephemeral) {
-    EncryptionOptions options;
-    if (!get_data_file_encryption_options(&options)) return false;
-
     KeyBuffer de_key;
-    if (!generateStorageKey(makeGen(options), &de_key)) return false;
+    if (!generateStorageKey(makeGen(s_data_options), &de_key)) return false;
     if (!ephemeral && !android::vold::storeKeyAtomically(get_de_key_path(user_id), user_key_temp,
                                                          kEmptyAuthentication, de_key))
         return false;
     EncryptionPolicy de_policy;
-    if (!install_storage_key(DATA_MNT_POINT, options, de_key, &de_policy)) return false;
+    if (!install_storage_key(DATA_MNT_POINT, s_data_options, de_key, &de_policy)) return false;
     s_de_policies[user_id] = de_policy;
     LOG(INFO) << "Created DE key for user " << user_id;
     return true;
 }
 
 static bool create_ce_key(userid_t user_id, bool ephemeral) {
-    EncryptionOptions options;
-    if (!get_data_file_encryption_options(&options)) return false;
-
     KeyBuffer ce_key;
-    if (!generateStorageKey(makeGen(options), &ce_key)) return false;
+    if (!generateStorageKey(makeGen(s_data_options), &ce_key)) return false;
     if (!ephemeral) {
         if (!prepare_dir(get_ce_key_directory_path(user_id), 0700, AID_ROOT, AID_ROOT))
             return false;
@@ -390,7 +393,7 @@ static bool create_ce_key(userid_t user_id, bool ephemeral) {
         s_new_ce_keys.insert({user_id, ce_key});
     }
     EncryptionPolicy ce_policy;
-    if (!install_storage_key(DATA_MNT_POINT, options, ce_key, &ce_policy)) return false;
+    if (!install_storage_key(DATA_MNT_POINT, s_data_options, ce_key, &ce_policy)) return false;
     s_ce_policies[user_id] = ce_policy;
     LOG(INFO) << "Created CE key for user " << user_id;
     return true;
@@ -414,8 +417,6 @@ static bool is_numeric(const char* name) {
 }
 
 static bool load_all_de_keys() {
-    EncryptionOptions options;
-    if (!get_data_file_encryption_options(&options)) return false;
     auto de_dir = user_key_dir + "/de";
     auto dirp = std::unique_ptr<DIR, int (*)(DIR*)>(opendir(de_dir.c_str()), closedir);
     if (!dirp) {
@@ -442,7 +443,7 @@ static bool load_all_de_keys() {
         KeyBuffer de_key;
         if (!retrieveKey(key_path, kEmptyAuthentication, &de_key)) return false;
         EncryptionPolicy de_policy;
-        if (!install_storage_key(DATA_MNT_POINT, options, de_key, &de_policy)) return false;
+        if (!install_storage_key(DATA_MNT_POINT, s_data_options, de_key, &de_policy)) return false;
         auto ret = s_de_policies.insert({user_id, de_policy});
         if (!ret.second && ret.first->second != de_policy) {
             LOG(ERROR) << "DE policy for user" << user_id << " changed";
@@ -469,17 +470,17 @@ static bool try_reload_ce_keys() {
 bool fscrypt_initialize_systemwide_keys() {
     LOG(INFO) << "fscrypt_initialize_systemwide_keys";
 
-    EncryptionOptions options;
-    if (!get_data_file_encryption_options(&options)) return false;
+    if (!init_data_file_encryption_options()) return false;
 
     KeyBuffer device_key;
     if (!retrieveOrGenerateKey(device_key_path, device_key_temp, kEmptyAuthentication,
-                               makeGen(options), &device_key))
+                               makeGen(s_data_options), &device_key))
         return false;
 
     // This initializes s_device_policy, which is a global variable so that
     // fscrypt_init_user0() can access it later.
-    if (!install_storage_key(DATA_MNT_POINT, options, device_key, &s_device_policy)) return false;
+    if (!install_storage_key(DATA_MNT_POINT, s_data_options, device_key, &s_device_policy))
+        return false;
 
     std::string options_string;
     if (!OptionsToString(s_device_policy.options, &options_string)) {
@@ -494,9 +495,10 @@ bool fscrypt_initialize_systemwide_keys() {
     LOG(INFO) << "Wrote system DE key reference to:" << ref_filename;
 
     KeyBuffer per_boot_key;
-    if (!generateStorageKey(makeGen(options), &per_boot_key)) return false;
+    if (!generateStorageKey(makeGen(s_data_options), &per_boot_key)) return false;
     EncryptionPolicy per_boot_policy;
-    if (!install_storage_key(DATA_MNT_POINT, options, per_boot_key, &per_boot_policy)) return false;
+    if (!install_storage_key(DATA_MNT_POINT, s_data_options, per_boot_key, &per_boot_policy))
+        return false;
     std::string per_boot_ref_filename = std::string("/data") + fscrypt_key_per_boot_ref;
     if (!android::vold::writeStringToFile(per_boot_policy.key_raw_ref, per_boot_ref_filename))
         return false;
