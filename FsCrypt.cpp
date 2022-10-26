@@ -181,17 +181,20 @@ static bool get_ce_key_new_path(const std::string& directory_path,
 // Discard all keys but the named one; rename it to canonical name.
 static bool fixate_user_ce_key(const std::string& directory_path, const std::string& to_fix,
                                const std::vector<std::string>& paths) {
+    bool need_sync = false;
     for (auto const other_path : paths) {
         if (other_path != to_fix) {
             android::vold::destroyKey(other_path);
+            need_sync = true;
         }
     }
     auto const current_path = get_ce_key_current_path(directory_path);
     if (to_fix != current_path) {
         LOG(DEBUG) << "Renaming " << to_fix << " to " << current_path;
         if (!android::vold::RenameKeyDir(to_fix, current_path)) return false;
+        need_sync = true;
     }
-    if (!android::vold::FsyncDirectory(directory_path)) return false;
+    if (need_sync && !android::vold::FsyncDirectory(directory_path)) return false;
     return true;
 }
 
