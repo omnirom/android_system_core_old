@@ -1448,7 +1448,10 @@ bool writeStringToFile(const std::string& payload, const std::string& filename) 
 status_t AbortFuseConnections() {
     namespace fs = std::filesystem;
 
-    for (const auto& itEntry : fs::directory_iterator("/sys/fs/fuse/connections")) {
+    static constexpr const char* kFuseConnections = "/sys/fs/fuse/connections";
+
+    std::error_code ec;
+    for (const auto& itEntry : fs::directory_iterator(kFuseConnections, ec)) {
         std::string fsPath = itEntry.path().string() + "/filesystem";
         std::string fs;
 
@@ -1466,6 +1469,11 @@ status_t AbortFuseConnections() {
         if (!ret) {
             LOG(WARNING) << "Failed to write to " << abortPath;
         }
+    }
+
+    if (ec) {
+        LOG(WARNING) << "Failed to iterate through " << kFuseConnections << ": "  << ec.message();
+        return -ec.value();
     }
 
     return OK;
