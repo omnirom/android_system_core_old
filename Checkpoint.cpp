@@ -16,6 +16,8 @@
 
 #define LOG_TAG "Checkpoint"
 #include "Checkpoint.h"
+#include "FsCrypt.h"
+#include "KeyStorage.h"
 #include "VoldUtil.h"
 #include "VolumeManager.h"
 
@@ -76,6 +78,18 @@ bool setBowState(std::string const& block_device, std::string const& state) {
     }
 
     return true;
+}
+
+// Do any work that was deferred until the userdata filesystem checkpoint was
+// committed.  This work involves the deletion of resources that aren't covered
+// by the userdata filesystem checkpoint, e.g. Keystore keys.
+void DoCheckpointCommittedWork() {
+    // Take the crypt lock to provide synchronization with the Binder calls that
+    // operate on key directories.
+    std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getCryptLock());
+
+    DeferredCommitKeystoreKeys();
+    fscrypt_deferred_fixate_ce_keys();
 }
 
 }  // namespace
@@ -205,6 +219,7 @@ Status cp_commitChanges() {
     if (!android::base::RemoveFileIfExists(kMetadataCPFile, &err_str))
         return error(err_str.c_str());
 
+    std::thread(DoCheckpointCommittedWork).detach();
     return Status::ok();
 }
 
