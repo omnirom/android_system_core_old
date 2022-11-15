@@ -26,6 +26,7 @@ extern bool fscrypt_init_user0_done;
 bool fscrypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral);
 bool fscrypt_destroy_user_key(userid_t user_id);
 bool fscrypt_set_user_key_protection(userid_t user_id, const std::string& secret);
+void fscrypt_deferred_fixate_ce_keys();
 
 std::vector<int> fscrypt_get_unlocked_users();
 bool fscrypt_unlock_user_key(userid_t user_id, int serial, const std::string& secret);
