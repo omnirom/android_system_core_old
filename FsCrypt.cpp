@@ -446,7 +446,11 @@ static bool load_all_de_keys() {
         userid_t user_id = std::stoi(entry->d_name);
         auto key_path = de_dir + "/" + entry->d_name;
         KeyBuffer de_key;
-        if (!retrieveKey(key_path, kEmptyAuthentication, &de_key)) return false;
+        if (!retrieveKey(key_path, kEmptyAuthentication, &de_key)) {
+            // This is probably a partially removed user, so ignore
+            if (user_id != 0) continue;
+            return false;
+        }
         EncryptionPolicy de_policy;
         if (!install_storage_key(DATA_MNT_POINT, s_data_options, de_key, &de_policy)) return false;
         auto ret = s_de_policies.insert({user_id, de_policy});
