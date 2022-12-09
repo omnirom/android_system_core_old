@@ -81,6 +81,7 @@ using android::vold::CreateDir;
 using android::vold::DeleteDirContents;
 using android::vold::DeleteDirContentsAndDir;
 using android::vold::EnsureDirExists;
+using android::vold::GetFuseMountPathForUser;
 using android::vold::IsFilesystemSupported;
 using android::vold::IsSdcardfsUsed;
 using android::vold::IsVirtioBlkDevice;
@@ -424,10 +425,21 @@ void VolumeManager::createEmulatedVolumesForUser(userid_t userId) {
     }
 }
 
-int VolumeManager::onUserAdded(userid_t userId, int userSerialNumber) {
+userid_t VolumeManager::getSharedStorageUser(userid_t userId) {
+    if (mSharedStorageUser.find(userId) == mSharedStorageUser.end()) {
+        return USER_UNKNOWN;
+    }
+    return mSharedStorageUser.at(userId);
+}
+
+int VolumeManager::onUserAdded(userid_t userId, int userSerialNumber,
+                               userid_t sharesStorageWithUserId) {
     LOG(INFO) << "onUserAdded: " << userId;
 
     mAddedUsers[userId] = userSerialNumber;
+    if (sharesStorageWithUserId != USER_UNKNOWN) {
+        mSharedStorageUser[userId] = sharesStorageWithUserId;
+    }
     return 0;
 }
 
@@ -436,6 +448,7 @@ int VolumeManager::onUserRemoved(userid_t userId) {
 
     onUserStopped(userId);
     mAddedUsers.erase(userId);
+    mSharedStorageUser.erase(userId);
     return 0;
 }
 
@@ -914,6 +927,7 @@ int VolumeManager::reset() {
     updateVirtualDisk();
     mAddedUsers.clear();
     mStartedUsers.clear();
+    mSharedStorageUser.clear();
 
     // Abort all FUSE connections to avoid deadlocks if the FUSE daemon was killed
     // with FUSE fds open.
