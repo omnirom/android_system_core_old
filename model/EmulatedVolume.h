@@ -52,7 +52,9 @@ class EmulatedVolume : public VolumeBase {
     status_t mountFuseBindMounts();
     status_t unmountFuseBindMounts();
 
-    std::string getLabel();
+    status_t bindMountVolume(const EmulatedVolume& vol, std::list<std::string>& pathsToUnmount);
+
+    std::string getLabel() const;
     std::string mRawPath;
     std::string mLabel;
 
@@ -72,6 +74,9 @@ class EmulatedVolume : public VolumeBase {
 
     /* Whether to use app data isolation is enabled tor this volume */
     bool mAppDataIsolationEnabled;
+
+    /* Location of bind mount for another profile that shares storage with us */
+    std::string mSharedStorageMountPath = "";
 
     DISALLOW_COPY_AND_ASSIGN(EmulatedVolume);
 };

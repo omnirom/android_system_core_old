@@ -18,6 +18,7 @@
 
 #include "AppFuseUtil.h"
 #include "Utils.h"
+#include "VolumeBase.h"
 #include "VolumeManager.h"
 
 #include <android-base/logging.h>
@@ -68,7 +69,7 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const s
 
 EmulatedVolume::~EmulatedVolume() {}
 
-std::string EmulatedVolume::getLabel() {
+std::string EmulatedVolume::getLabel() const {
     // We could have migrated storage to an adopted private volume, so always
     // call primary storage "emulated" to avoid media rescans.
     if (getMountFlags() & MountFlags::kPrimary) {
@@ -89,6 +90,29 @@ static status_t doFuseBindMount(const std::string& source, const std::string& ta
     LOG(INFO) << "Bind mounted " << source << " on " << target;
     pathsToUnmount.push_front(target);
     return OK;
+}
+
+// Bind mounts the volume 'volume' onto this volume.
+status_t EmulatedVolume::bindMountVolume(const EmulatedVolume& volume,
+                                         std::list<std::string>& pathsToUnmount) {
+    int myUserId = getMountUserId();
+    int volumeUserId = volume.getMountUserId();
+    std::string label = volume.getLabel();
+
+    // eg /mnt/user/10/emulated/10
+    std::string srcUserPath = GetFuseMountPathForUser(volumeUserId, label);
+    std::string srcPath = StringPrintf("%s/%d", srcUserPath.c_str(), volumeUserId);
+    // eg /mnt/user/0/emulated/10
+    std::string dstUserPath = GetFuseMountPathForUser(myUserId, label);
+    std::string dstPath = StringPrintf("%s/%d", dstUserPath.c_str(), volumeUserId);
+
+    auto status = doFuseBindMount(srcPath, dstPath, pathsToUnmount);
+    if (status == OK) {
+        // Store the mount path, so we can unmount it when this volume goes away
+        mSharedStorageMountPath = dstPath;
+    }
+
+    return status;
 }
 
 status_t EmulatedVolume::mountFuseBindMounts() {
@@ -152,6 +176,59 @@ status_t EmulatedVolume::mountFuseBindMounts() {
         }
     }
 
+    // For users that share their volume with another user (eg a clone
+    // profile), the current mount setup can cause page cache inconsistency
+    // issues.  Let's say this is user 10, and the user it shares storage with
+    // is user 0.
+    // Then:
+    // * The FUSE daemon for user 0 serves /mnt/user/0
+    // * The FUSE daemon for user 10 serves /mnt/user/10
+    // The emulated volume for user 10 would be located at two paths:
+    // /mnt/user/0/emulated/10
+    // /mnt/user/10/emulated/10
+    // Since these paths refer to the same files but are served by different FUSE
+    // daemons, this can result in page cache inconsistency issues. To prevent this,
+    // bind mount the relevant paths for the involved users:
+    // 1. /mnt/user/10/emulated/10 =B=> /mnt/user/0/emulated/10
+    // 2. /mnt/user/0/emulated/0 =B=> /mnt/user/10/emulated/0
+    //
+    // This will ensure that any access to the volume for a specific user always
+    // goes through a single FUSE daemon.
+    userid_t sharedStorageUserId = VolumeManager::Instance()->getSharedStorageUser(userId);
+    if (sharedStorageUserId != USER_UNKNOWN) {
+        auto filter_fn = [&](const VolumeBase& vol) {
+            if (vol.getState() != VolumeBase::State::kMounted) {
+                // The volume must be mounted
+                return false;
+            }
+            if (vol.getType() != VolumeBase::Type::kEmulated) {
+                return false;
+            }
+            if (vol.getMountUserId() != sharedStorageUserId) {
+                return false;
+            }
+            if ((vol.getMountFlags() & MountFlags::kPrimary) == 0) {
+                // We only care about the primary emulated volume, so not a private
+                // volume with an emulated volume stacked on top.
+                return false;
+            }
+            return true;
+        };
+        auto vol = VolumeManager::Instance()->findVolumeWithFilter(filter_fn);
+        if (vol != nullptr) {
+            auto sharedVol = static_cast<EmulatedVolume*>(vol.get());
+            // Bind mount this volume in the other user's primary volume
+            status = sharedVol->bindMountVolume(*this, pathsToUnmount);
+            if (status != OK) {
+                return status;
+            }
+            // And vice-versa
+            status = bindMountVolume(*sharedVol, pathsToUnmount);
+            if (status != OK) {
+                return status;
+            }
+        }
+    }
     unmount_guard.Disable();
     return OK;
 }
@@ -160,6 +237,14 @@ status_t EmulatedVolume::unmountFuseBindMounts() {
     std::string label = getLabel();
     int userId = getMountUserId();
 
+    if (!mSharedStorageMountPath.empty()) {
+        LOG(INFO) << "Unmounting " << mSharedStorageMountPath;
+        auto status = UnmountTree(mSharedStorageMountPath);
+        if (status != OK) {
+            LOG(ERROR) << "Failed to unmount " << mSharedStorageMountPath;
+        }
+        mSharedStorageMountPath = "";
+    }
     if (mUseSdcardFs || mAppDataIsolationEnabled) {
         std::string installerTarget(
                 StringPrintf("/mnt/installer/%d/%s/%d/Android/obb", userId, label.c_str(), userId));
