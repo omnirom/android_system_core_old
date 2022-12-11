@@ -104,9 +104,11 @@ class VolumeManager {
 
     const std::set<userid_t>& getStartedUsers() const { return mStartedUsers; }
 
+    userid_t getSharedStorageUser(userid_t userId);
+
     int forgetPartition(const std::string& partGuid, const std::string& fsUuid);
 
-    int onUserAdded(userid_t userId, int userSerialNumber);
+    int onUserAdded(userid_t userId, int userSerialNumber, userid_t cloneParentUserId);
     int onUserRemoved(userid_t userId);
     int onUserStarted(userid_t userId);
     int onUserStopped(userid_t userId);
@@ -225,6 +227,8 @@ class VolumeManager {
     std::list<std::shared_ptr<android::vold::VolumeBase>> mInternalEmulatedVolumes;
 
     std::unordered_map<userid_t, int> mAddedUsers;
+    // Map of users to a user with which they can share storage (eg clone profiles)
+    std::unordered_map<userid_t, userid_t> mSharedStorageUser;
     // This needs to be a regular set because we care about the ordering here;
     // user 0 should always go first, because it is responsible for sdcardfs.
     std::set<userid_t> mStartedUsers;

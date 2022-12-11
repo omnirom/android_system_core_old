@@ -30,7 +30,7 @@ interface IVold {
     void reset();
     void shutdown();
 
-    void onUserAdded(int userId, int userSerial);
+    void onUserAdded(int userId, int userSerial, int sharesStorageWithUserId);
     void onUserRemoved(int userId);
     void onUserStarted(int userId);
     void onUserStopped(int userId);
