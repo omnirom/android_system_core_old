@@ -90,15 +90,7 @@ void defaultkey_precreate_dm_device() {
         return;
     }
 
-    // On newer Linux kernels (5.15+), there is no uevent until DM_TABLE_LOAD,
-    // so we make sure the device is fully ready.
-    if (!dm.CreateEmptyDevice(kDmNameUserdata)) {
-        LOG(ERROR) << "Failed to pre-create userdata metadata encryption device";
-    }
-
-    DmTable table;
-    table.Emplace<DmTargetError>(0, 1);
-    if (!dm.LoadTable(kDmNameUserdata, table)) {
+    if (!dm.CreatePlaceholderDevice(kDmNameUserdata)) {
         LOG(ERROR) << "Failed to pre-create userdata metadata encryption device";
     }
 }
