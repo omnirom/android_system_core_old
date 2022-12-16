@@ -50,7 +50,6 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, int userId)
     mRawPath = rawPath;
     mLabel = "emulated";
     mFuseMounted = false;
-    mFuseBpfEnabled = IsFuseBpfEnabled();
     mUseSdcardFs = IsSdcardfsUsed();
     mAppDataIsolationEnabled = base::GetBoolProperty(kVoldAppDataIsolationEnabled, false);
 }
@@ -62,7 +61,6 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device, const s
     mRawPath = rawPath;
     mLabel = fsUuid;
     mFuseMounted = false;
-    mFuseBpfEnabled = IsFuseBpfEnabled();
     mUseSdcardFs = IsSdcardfsUsed();
     mAppDataIsolationEnabled = base::GetBoolProperty(kVoldAppDataIsolationEnabled, false);
 }
@@ -446,7 +444,7 @@ status_t EmulatedVolume::doMount() {
             }
         }
 
-        if (!mFuseBpfEnabled) {
+        if (!IsFuseBpfEnabled()) {
             // Only do the bind-mounts when we know for sure the FUSE daemon can resolve the path.
             res = mountFuseBindMounts();
             if (res != OK) {
@@ -505,7 +503,7 @@ status_t EmulatedVolume::doUnmount() {
     if (mFuseMounted) {
         std::string label = getLabel();
 
-        if (!mFuseBpfEnabled) {
+        if (!IsFuseBpfEnabled()) {
             // Ignoring unmount return status because we do want to try to
             // unmount the rest cleanly.
             unmountFuseBindMounts();
