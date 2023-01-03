@@ -7,3 +7,5 @@ service vold /system/bin/vold \
     shutdown critical
     group root reserved_disk
     reboot_on_failure reboot,vold-failed
+    # CAP_SETGID, CAP_SETUID, CAP_SYS_RESOURCE are not used by the vold itself, but instead are used by the /system/bin/sdcard that vold execs
+    capabilities CHOWN DAC_OVERRIDE DAC_READ_SEARCH FOWNER FSETID KILL MKNOD NET_ADMIN SYS_ADMIN SYS_CHROOT SYS_NICE SYS_PTRACE BLOCK_SUSPEND SETGID SETUID SYS_RESOURCE
