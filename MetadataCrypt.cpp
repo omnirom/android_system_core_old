@@ -194,7 +194,7 @@ static bool create_crypto_blk_dev(const std::string& dm_name, const std::string&
             LOG(ERROR) << "Failed to populate default-key device " << dm_name;
             return false;
         }
-        if (!dm.WaitForDevice(dm_name, 5s, crypto_blkdev)) {
+        if (!dm.WaitForDevice(dm_name, 20s, crypto_blkdev)) {
             LOG(ERROR) << "Failed to wait for default-key device " << dm_name;
             return false;
         }
