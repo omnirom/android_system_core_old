@@ -16,3 +16,27 @@ cc_test {
     static_libs: ["libvold"],
     shared_libs: ["libbinder"]
 }
+
+cc_fuzz {
+    name: "vold_native_service_fuzzer",
+    defaults: [
+        "vold_default_flags",
+        "vold_default_libs",
+        "keystore2_use_latest_aidl_ndk_shared",
+        "service_fuzzer_defaults",
+    ],
+    static_libs: [
+        "libvold",
+        "android.security.maintenance-ndk",
+        "libkeymint_support",
+    ],
+    header_libs: ["libvold_headers"],
+    srcs: [
+        "VoldFuzzer.cpp",
+    ],
+    fuzz_config: {
+        cc: [
+            "maco@google.com",
+        ],
+    }
+}
