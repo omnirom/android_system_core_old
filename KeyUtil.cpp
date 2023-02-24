@@ -19,6 +19,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <thread>
 
 #include <fcntl.h>
 #include <linux/fscrypt.h>
@@ -38,6 +39,10 @@ namespace vold {
 
 using android::fscrypt::EncryptionOptions;
 using android::fscrypt::EncryptionPolicy;
+
+// This must be acquired before calling fscrypt ioctls that operate on keys.
+// This prevents race conditions between evicting and reinstalling keys.
+static std::mutex fscrypt_keyring_mutex;
 
 const KeyGeneration neverGen() {
     return KeyGeneration{0, false, false};
@@ -267,6 +272,7 @@ static bool installFsKeyringKey(const std::string& mountpoint, const EncryptionO
 
 bool installKey(const std::string& mountpoint, const EncryptionOptions& options,
                 const KeyBuffer& key, EncryptionPolicy* policy) {
+    const std::lock_guard<std::mutex> lock(fscrypt_keyring_mutex);
     policy->options = options;
     // Put the fscrypt_add_key_arg in an automatically-zeroing buffer, since we
     // have to copy the raw key into it.
@@ -360,7 +366,66 @@ static bool evictProvisioningKey(const std::string& ref) {
     return true;
 }
 
+static void waitForBusyFiles(const struct fscrypt_key_specifier key_spec, const std::string ref,
+                             const std::string mountpoint) {
+    android::base::unique_fd fd(open(mountpoint.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    if (fd == -1) {
+        PLOG(ERROR) << "Failed to open " << mountpoint << " to evict key";
+        return;
+    }
+
+    std::chrono::milliseconds wait_time(3200);
+    std::chrono::milliseconds total_wait_time(0);
+    while (wait_time <= std::chrono::milliseconds(51200)) {
+        total_wait_time += wait_time;
+        std::this_thread::sleep_for(wait_time);
+
+        const std::lock_guard<std::mutex> lock(fscrypt_keyring_mutex);
+
+        struct fscrypt_get_key_status_arg get_arg;
+        memset(&get_arg, 0, sizeof(get_arg));
+        get_arg.key_spec = key_spec;
+
+        if (ioctl(fd, FS_IOC_GET_ENCRYPTION_KEY_STATUS, &get_arg) != 0) {
+            PLOG(ERROR) << "Failed to get status for fscrypt key with ref " << ref << " from "
+                        << mountpoint;
+            return;
+        }
+        if (get_arg.status != FSCRYPT_KEY_STATUS_INCOMPLETELY_REMOVED) {
+            LOG(DEBUG) << "Key status changed, cancelling busy file cleanup for key with ref "
+                       << ref << ".";
+            return;
+        }
+
+        struct fscrypt_remove_key_arg remove_arg;
+        memset(&remove_arg, 0, sizeof(remove_arg));
+        remove_arg.key_spec = key_spec;
+
+        if (ioctl(fd, FS_IOC_REMOVE_ENCRYPTION_KEY, &remove_arg) != 0) {
+            PLOG(ERROR) << "Failed to clean up busy files for fscrypt key with ref " << ref
+                        << " from " << mountpoint;
+            return;
+        }
+        if (remove_arg.removal_status_flags & FSCRYPT_KEY_REMOVAL_STATUS_FLAG_OTHER_USERS) {
+            // Should never happen because keys are only added/removed as root.
+            LOG(ERROR) << "Unexpected case: key with ref " << ref
+                       << " is still added by other users!";
+        } else if (!(remove_arg.removal_status_flags &
+                     FSCRYPT_KEY_REMOVAL_STATUS_FLAG_FILES_BUSY)) {
+            LOG(INFO) << "Successfully cleaned up busy files for key with ref " << ref
+                      << ".  After waiting " << total_wait_time.count() << "ms.";
+            return;
+        }
+        LOG(WARNING) << "Files still open after waiting " << total_wait_time.count()
+                     << "ms.  Key with ref " << ref << " still has unlocked files!";
+        wait_time *= 2;
+    }
+    LOG(ERROR) << "Waiting for files to close never completed.  Files using key with ref " << ref
+               << " were not locked!";
+}
+
 bool evictKey(const std::string& mountpoint, const EncryptionPolicy& policy) {
+    const std::lock_guard<std::mutex> lock(fscrypt_keyring_mutex);
     if (policy.options.version == 1 && !isFsKeyringSupported()) {
         return evictKeyLegacy(policy.key_raw_ref);
     }
@@ -390,8 +455,14 @@ bool evictKey(const std::string& mountpoint, const EncryptionPolicy& policy) {
         // Should never happen because keys are only added/removed as root.
         LOG(ERROR) << "Unexpected case: key with ref " << ref << " is still added by other users!";
     } else if (arg.removal_status_flags & FSCRYPT_KEY_REMOVAL_STATUS_FLAG_FILES_BUSY) {
-        LOG(ERROR) << "Files still open after removing key with ref " << ref
-                   << ".  These files were not locked!";
+        LOG(WARNING)
+                << "Files still open after removing key with ref " << ref
+                << ".  These files were not locked!  Punting busy file clean up to worker thread.";
+        // Processes are killed asynchronously in ActivityManagerService due to performance issues
+        // with synchronous kills.  If there were busy files they will probably be killed soon. Wait
+        // for them asynchronously.
+        std::thread busyFilesThread(waitForBusyFiles, arg.key_spec, ref, mountpoint);
+        busyFilesThread.detach();
     }
 
     if (!evictProvisioningKey(ref)) return false;
