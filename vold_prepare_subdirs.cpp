@@ -114,6 +114,9 @@ static bool prepare_dir(struct selabel_handle* sehandle, mode_t mode, uid_t uid,
 static bool rmrf_contents(const std::string& path) {
     auto dirp = std::unique_ptr<DIR, int (*)(DIR*)>(opendir(path.c_str()), closedir);
     if (!dirp) {
+        if (errno == ENOENT) {
+            return true;
+        }
         PLOG(ERROR) << "Unable to open directory: " << path;
         return false;
     }
