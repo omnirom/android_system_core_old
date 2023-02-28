@@ -82,11 +82,9 @@ int main(int argc, char** argv) {
     parse_args(argc, argv);
 
     sehandle = selinux_android_file_context_handle();
-    if (!sehandle) {
-        LOG(ERROR) << "Failed to get SELinux file contexts handle";
-        exit(1);
+    if (sehandle) {
+        selinux_android_set_sehandle(sehandle);
     }
-    selinux_android_set_sehandle(sehandle);
 
     mkdir("/dev/block/vold", 0755);
 
