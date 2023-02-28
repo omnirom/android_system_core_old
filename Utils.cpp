@@ -23,6 +23,7 @@
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/properties.h>
+#include <android-base/scopeguard.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
@@ -100,13 +101,18 @@ std::string GetFuseMountPathForUser(userid_t user_id, const std::string& relativ
 status_t CreateDeviceNode(const std::string& path, dev_t dev) {
     std::lock_guard<std::mutex> lock(kSecurityLock);
     const char* cpath = path.c_str();
-    status_t res = 0;
+    auto clearfscreatecon = android::base::make_scope_guard([] { setfscreatecon(nullptr); });
+    auto secontext = std::unique_ptr<char, void (*)(char*)>(nullptr, freecon);
+    char* tmp_secontext;
 
-    char* secontext = nullptr;
-    if (sehandle) {
-        if (!selabel_lookup(sehandle, &secontext, cpath, S_IFBLK)) {
-            setfscreatecon(secontext);
-        }
+    if (selabel_lookup(sehandle, &tmp_secontext, cpath, S_IFBLK) != 0) {
+        PLOG(ERROR) << "Failed to look up selabel for device node " << path;
+        return -errno;
+    }
+    secontext.reset(tmp_secontext);
+    if (setfscreatecon(secontext.get()) != 0) {
+        LOG(ERROR) << "Failed to setfscreatecon for device node " << path;
+        return -EINVAL;
     }
 
     mode_t mode = 0660 | S_IFBLK;
@@ -114,16 +120,10 @@ status_t CreateDeviceNode(const std::string& path, dev_t dev) {
         if (errno != EEXIST) {
             PLOG(ERROR) << "Failed to create device node for " << major(dev) << ":" << minor(dev)
                         << " at " << path;
-            res = -errno;
+            return -errno;
         }
     }
-
-    if (secontext) {
-        setfscreatecon(nullptr);
-        freecon(secontext);
-    }
-
-    return res;
+    return OK;
 }
 
 status_t DestroyDeviceNode(const std::string& path) {
@@ -449,29 +449,23 @@ status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid,
                     unsigned int attrs) {
     std::lock_guard<std::mutex> lock(kSecurityLock);
     const char* cpath = path.c_str();
+    auto clearfscreatecon = android::base::make_scope_guard([] { setfscreatecon(nullptr); });
+    auto secontext = std::unique_ptr<char, void (*)(char*)>(nullptr, freecon);
+    char* tmp_secontext;
 
-    char* secontext = nullptr;
-    if (sehandle) {
-        if (!selabel_lookup(sehandle, &secontext, cpath, S_IFDIR)) {
-            setfscreatecon(secontext);
-        }
-    }
-
-    int res = fs_prepare_dir(cpath, mode, uid, gid);
-
-    if (secontext) {
-        setfscreatecon(nullptr);
-        freecon(secontext);
-    }
-
-    if (res) return -errno;
-    if (attrs) res = SetAttrs(path, attrs);
-
-    if (res == 0) {
-        return OK;
-    } else {
+    if (selabel_lookup(sehandle, &tmp_secontext, cpath, S_IFDIR) != 0) {
+        PLOG(ERROR) << "Failed to look up selabel for directory " << path;
         return -errno;
     }
+    secontext.reset(tmp_secontext);
+    if (setfscreatecon(secontext.get()) != 0) {
+        LOG(ERROR) << "Failed to setfscreatecon for directory " << path;
+        return -EINVAL;
+    }
+
+    if (fs_prepare_dir(cpath, mode, uid, gid) != 0) return -errno;
+    if (attrs && SetAttrs(path, attrs) != 0) return -errno;
+    return OK;
 }
 
 status_t ForceUnmount(const std::string& path) {
