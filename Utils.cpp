@@ -1772,15 +1772,18 @@ std::pair<android::base::unique_fd, std::string> OpenDirInProcfs(std::string_vie
 }
 
 bool IsFuseBpfEnabled() {
-    // TODO Once kernel supports flag, trigger off kernel flag unless
-    //      ro.fuse.bpf.enabled is explicitly set to false
     bool enabled;
+    std::string contents;
+
     if (base::GetProperty("ro.fuse.bpf.is_running", "") != "")
         enabled = base::GetBoolProperty("ro.fuse.bpf.is_running", false);
     else if (base::GetProperty("persist.sys.fuse.bpf.override", "") != "")
         enabled = base::GetBoolProperty("persist.sys.fuse.bpf.override", false);
-    else
+    else if (base::GetProperty("ro.fuse.bpf.enabled", "") != "")
         enabled = base::GetBoolProperty("ro.fuse.bpf.enabled", false);
+    else
+        enabled = base::ReadFileToString("/sys/fs/fuse/features/fuse_bpf", &contents) &&
+                  contents == "supported\n";
 
     if (enabled) {
         base::SetProperty("ro.fuse.bpf.is_running", "true");
