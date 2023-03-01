@@ -58,44 +58,49 @@ static bool prepare_dir_for_user(struct selabel_handle* sehandle, mode_t mode, u
                                  const std::string& path, uid_t user_id) {
     auto clearfscreatecon = android::base::make_scope_guard([] { setfscreatecon(nullptr); });
     auto secontext = std::unique_ptr<char, void (*)(char*)>(nullptr, freecon);
-    char* tmp_secontext;
+    if (sehandle) {
+        char* tmp_secontext;
 
-    if (selabel_lookup(sehandle, &tmp_secontext, path.c_str(), S_IFDIR) != 0) {
-        PLOG(ERROR) << "Failed to look up selabel for directory " << path;
-        return false;
-    }
-    secontext.reset(tmp_secontext);
+        if (selabel_lookup(sehandle, &tmp_secontext, path.c_str(), S_IFDIR) == 0) {
+            secontext.reset(tmp_secontext);
 
-    if (user_id != (uid_t)-1) {
-        if (selinux_android_context_with_level(secontext.get(), &tmp_secontext, user_id,
-                                               (uid_t)-1) != 0) {
-            PLOG(ERROR) << "Unable to create context with level for: " << path;
-            return false;
+            if (user_id != (uid_t)-1) {
+                if (selinux_android_context_with_level(secontext.get(), &tmp_secontext, user_id,
+                                                       (uid_t)-1) != 0) {
+                    PLOG(ERROR) << "Unable to create context with level for: " << path;
+                    return false;
+                }
+                secontext.reset(tmp_secontext);  // Free the context
+            }
         }
-        secontext.reset(tmp_secontext);
     }
 
     LOG(DEBUG) << "Setting up mode " << std::oct << mode << std::dec << " uid " << uid << " gid "
-               << gid << " context " << secontext.get() << " on path: " << path;
-    if (setfscreatecon(secontext.get()) != 0) {
-        LOG(ERROR) << "Failed to setfscreatecon for directory " << path;
-        return false;
+               << gid << " context " << (secontext ? secontext.get() : "null")
+               << " on path: " << path;
+    if (secontext) {
+        if (setfscreatecon(secontext.get()) != 0) {
+            PLOG(ERROR) << "Unable to setfscreatecon for: " << path;
+            return false;
+        }
     }
     if (fs_prepare_dir(path.c_str(), mode, uid, gid) != 0) {
         return false;
     }
-    char* tmp_oldsecontext = nullptr;
-    if (lgetfilecon(path.c_str(), &tmp_oldsecontext) < 0) {
-        PLOG(ERROR) << "Unable to read secontext for: " << path;
-        return false;
-    }
-    auto oldsecontext = std::unique_ptr<char, void (*)(char*)>(tmp_oldsecontext, freecon);
-    if (strcmp(secontext.get(), oldsecontext.get()) != 0) {
-        LOG(INFO) << "Relabelling from " << ((char*)oldsecontext.get()) << " to "
-                  << ((char*)secontext.get()) << ": " << path;
-        if (lsetfilecon(path.c_str(), secontext.get()) != 0) {
-            PLOG(ERROR) << "Relabelling failed for: " << path;
+    if (secontext) {
+        char* tmp_oldsecontext = nullptr;
+        if (lgetfilecon(path.c_str(), &tmp_oldsecontext) < 0) {
+            PLOG(ERROR) << "Unable to read secontext for: " << path;
             return false;
+        }
+        auto oldsecontext = std::unique_ptr<char, void (*)(char*)>(tmp_oldsecontext, freecon);
+        if (strcmp(secontext.get(), oldsecontext.get()) != 0) {
+            LOG(INFO) << "Relabelling from " << ((char*)oldsecontext.get()) << " to "
+                      << ((char*)secontext.get()) << ": " << path;
+            if (lsetfilecon(path.c_str(), secontext.get()) != 0) {
+                PLOG(ERROR) << "Relabelling failed for: " << path;
+                return false;
+            }
         }
     }
     return true;
@@ -163,10 +168,6 @@ static bool prepare_apex_subdirs(struct selabel_handle* sehandle, const std::str
 
 static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int flags) {
     struct selabel_handle* sehandle = selinux_android_file_context_handle();
-    if (!sehandle) {
-        LOG(ERROR) << "Failed to get SELinux file contexts handle";
-        return false;
-    }
 
     if (flags & android::os::IVold::STORAGE_FLAG_DE) {
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
