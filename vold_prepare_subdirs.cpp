@@ -58,32 +58,32 @@ static bool prepare_dir_for_user(struct selabel_handle* sehandle, mode_t mode, u
                                  const std::string& path, uid_t user_id) {
     auto clearfscreatecon = android::base::make_scope_guard([] { setfscreatecon(nullptr); });
     auto secontext = std::unique_ptr<char, void (*)(char*)>(nullptr, freecon);
-    if (sehandle) {
-        char* tmp_secontext;
+    char* tmp_secontext;
 
-        if (selabel_lookup(sehandle, &tmp_secontext, path.c_str(), S_IFDIR) == 0) {
-            secontext.reset(tmp_secontext);
-
-            if (user_id != (uid_t)-1) {
-                if (selinux_android_context_with_level(secontext.get(), &tmp_secontext, user_id,
-                                                       (uid_t)-1) != 0) {
-                    PLOG(ERROR) << "Unable to create context with level for: " << path;
-                    return false;
-                }
-                secontext.reset(tmp_secontext);  // Free the context
+    if (selabel_lookup(sehandle, &tmp_secontext, path.c_str(), S_IFDIR) == 0) {
+        secontext.reset(tmp_secontext);
+        if (user_id != (uid_t)-1) {
+            if (selinux_android_context_with_level(secontext.get(), &tmp_secontext, user_id,
+                                                   (uid_t)-1) != 0) {
+                PLOG(ERROR) << "Unable to create context with level for: " << path;
+                return false;
             }
+            secontext.reset(tmp_secontext);
         }
+        if (setfscreatecon(secontext.get()) != 0) {
+            LOG(ERROR) << "Failed to setfscreatecon for directory " << path;
+            return false;
+        }
+    } else if (errno == ENOENT) {
+        LOG(DEBUG) << "No selabel defined for directory " << path;
+    } else {
+        PLOG(ERROR) << "Failed to look up selabel for directory " << path;
+        return false;
     }
 
     LOG(DEBUG) << "Setting up mode " << std::oct << mode << std::dec << " uid " << uid << " gid "
                << gid << " context " << (secontext ? secontext.get() : "null")
                << " on path: " << path;
-    if (secontext) {
-        if (setfscreatecon(secontext.get()) != 0) {
-            PLOG(ERROR) << "Unable to setfscreatecon for: " << path;
-            return false;
-        }
-    }
     if (fs_prepare_dir(path.c_str(), mode, uid, gid) != 0) {
         return false;
     }
@@ -168,6 +168,10 @@ static bool prepare_apex_subdirs(struct selabel_handle* sehandle, const std::str
 
 static bool prepare_subdirs(const std::string& volume_uuid, int user_id, int flags) {
     struct selabel_handle* sehandle = selinux_android_file_context_handle();
+    if (!sehandle) {
+        LOG(ERROR) << "Failed to get SELinux file contexts handle";
+        return false;
+    }
 
     if (flags & android::os::IVold::STORAGE_FLAG_DE) {
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
