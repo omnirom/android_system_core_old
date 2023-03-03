@@ -660,8 +660,11 @@ bool destroyKey(const std::string& dir) {
         kSecdiscardPath,
         "--",
         dir + "/" + kFn_encrypted_key,
-        dir + "/" + kFn_secdiscardable,
     };
+    auto secdiscardable = dir + "/" + kFn_secdiscardable;
+    if (pathExists(secdiscardable)) {
+        secdiscard_cmd.push_back(secdiscardable);
+    }
     // Try each thing, even if previous things failed.
 
     for (auto& fn : {kFn_keymaster_key_blob, kFn_keymaster_key_blob_upgraded}) {
