@@ -14,14 +14,26 @@
  * limitations under the License.
  */
 
+#include <android-base/logging.h>
 #include <fuzzbinder/libbinder_driver.h>
 
 #include "VoldNativeService.h"
+#include "sehandle.h"
 
 using ::android::fuzzService;
 using ::android::sp;
 
 struct selabel_handle* sehandle;
+
+extern "C" int LLVMFuzzerInitialize(int argc, char argv) {
+    sehandle = selinux_android_file_context_handle();
+    if (!sehandle) {
+        LOG(ERROR) << "Failed to get SELinux file contexts handle in voldFuzzer!";
+        exit(1);
+    }
+    selinux_android_set_sehandle(sehandle);
+    return 0;
+}
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     auto voldService = sp<android::vold::VoldNativeService>::make();
