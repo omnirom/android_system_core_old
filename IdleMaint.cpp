@@ -630,7 +630,12 @@ static int32_t getLifeTimeWrite() {
         return -1;
     }
 
-    long long writeBytes = std::stoll(writeKbytesStr);
+    unsigned long long writeBytes = std::strtoull(writeKbytesStr.c_str(), NULL, 0);
+    /* Careful: values > LLONG_MAX can appear in the file due to a kernel bug. */
+    if (writeBytes / KBYTES_IN_SEGMENT > INT32_MAX) {
+        LOG(WARNING) << "Bad lifetime_write_kbytes: " << writeKbytesStr;
+        return -1;
+    }
     return writeBytes / KBYTES_IN_SEGMENT;
 }
 
