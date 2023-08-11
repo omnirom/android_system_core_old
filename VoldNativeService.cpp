@@ -930,5 +930,10 @@ binder::Status VoldNativeService::destroyDsuMetadataKey(const std::string& dsuSl
     return translateBool(destroy_dsu_metadata_key(dsuSlot));
 }
 
+binder::Status VoldNativeService::getStorageSize(int64_t* storageSize) {
+    ENFORCE_SYSTEM_OR_ROOT;
+    return translate(GetStorageSize(storageSize));
+}
+
 }  // namespace vold
 }  // namespace android

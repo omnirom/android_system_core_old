@@ -160,6 +160,8 @@ class VoldNativeService : public BinderService<VoldNativeService>, public os::Bn
     binder::Status bindMount(const std::string& sourceDir, const std::string& targetDir) override;
 
     binder::Status destroyDsuMetadataKey(const std::string& dsuSlot) override;
+
+    binder::Status getStorageSize(int64_t* storageSize) override;
 };
 
 }  // namespace vold

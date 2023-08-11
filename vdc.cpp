@@ -122,6 +122,10 @@ int main(int argc, char** argv) {
         checkStatus(args, vold->shutdown());
     } else if (args[0] == "volume" && args[1] == "reset") {
         checkStatus(args, vold->reset());
+    } else if (args[0] == "volume" && args[1] == "getStorageSize") {
+        int64_t size;
+        checkStatus(args, vold->getStorageSize(&size));
+        LOG(INFO) << size;
     } else if (args[0] == "cryptfs" && args[1] == "bindkeys") {
         bindkeys(args, vold);
     } else if (args[0] == "cryptfs" && args[1] == "mountFstab" && args.size() == 5) {
