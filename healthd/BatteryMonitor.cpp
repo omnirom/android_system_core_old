@@ -474,7 +474,7 @@ void BatteryMonitor::updateValues(void) {
             case ANDROID_POWER_SUPPLY_TYPE_DOCK:
                 path.clear();
                 path.appendFormat("%s/%s/online", POWER_SUPPLY_SYSFS_PATH, name);
-                if (access(path.string(), R_OK) == 0)
+                if (access(path.c_str(), R_OK) == 0)
                     mChargerNames.add(String8(name));
                 break;
             default:
@@ -484,10 +484,10 @@ void BatteryMonitor::updateValues(void) {
             // Look for "is_dock" file
             path.clear();
             path.appendFormat("%s/%s/is_dock", POWER_SUPPLY_SYSFS_PATH, name);
-            if (access(path.string(), R_OK) == 0) {
+            if (access(path.c_str(), R_OK) == 0) {
                 path.clear();
                 path.appendFormat("%s/%s/online", POWER_SUPPLY_SYSFS_PATH, name);
-                if (access(path.string(), R_OK) == 0)
+                if (access(path.c_str(), R_OK) == 0)
                     mChargerNames.add(String8(name));
 
             }
